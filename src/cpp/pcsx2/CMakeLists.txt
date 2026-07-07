@@ -27,6 +27,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	target_compile_definitions(PCSX2_FLAGS INTERFACE
 		"_M_ARM64=1"
 	)
+	# The GS core headers (GSDevice.h -> GSTextureVK.h -> VKLoader.h) include
+	# vulkan/vulkan.h unconditionally, so every target that links PCSX2_FLAGS
+	# (the PCSX2 core and the per-ISA GS-* libs) needs the vendored Vulkan and
+	# glslang headers on its include path — not just the app target. iOS reaches
+	# Vulkan through MoltenVK at runtime.
+	target_include_directories(PCSX2_FLAGS INTERFACE
+		"${CMAKE_SOURCE_DIR}/3rdparty/vulkan/include"
+		"${CMAKE_SOURCE_DIR}/3rdparty/glslang/glslang"
+		"${CMAKE_SOURCE_DIR}/3rdparty/glslang/include"
+	)
 endif()
 
 target_compile_options(PCSX2_FLAGS INTERFACE "${PCSX2_WARNINGS}")
