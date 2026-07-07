@@ -122,12 +122,18 @@ struct GamepadSettingsView: View {
         iPSX2Bridge.startButtonCapture()
         pollTimer?.invalidate()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
-            iPSX2Bridge.pollGamepadForCapture()
-            let captured = iPSX2Bridge.capturedButton()
-            if captured >= 0 {
-                iPSX2Bridge.setButtonMapping(Int32(ps2Index), toSDLButton: captured)
-                stopCapture()
-                mappingVersion += 1
+            // The timer is scheduled on the main run loop, so its block fires on
+            // the main thread. Under strict concurrency the block is nonisolated,
+            // so hop back onto the main actor to touch main-actor-isolated state
+            // (stopCapture(), mappingVersion).
+            MainActor.assumeIsolated {
+                iPSX2Bridge.pollGamepadForCapture()
+                let captured = iPSX2Bridge.capturedButton()
+                if captured >= 0 {
+                    iPSX2Bridge.setButtonMapping(Int32(ps2Index), toSDLButton: captured)
+                    stopCapture()
+                    mappingVersion += 1
+                }
             }
         }
     }
