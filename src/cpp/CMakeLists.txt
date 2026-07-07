@@ -52,6 +52,11 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	add_compile_definitions(_M_ARM64=1)
+	# iOS is a POSIX/Apple platform. PCSX2 gates its Unix code paths (DEV9
+	# sockets, AdapterUtils, threading, filesystem) behind __POSIX__, which
+	# upstream defines for every Unix/Apple target. Without it those files
+	# compile the "no platform" branch and fail (e.g. AdapterUtils::AdapterBuffer).
+	add_compile_definitions(__POSIX__=1)
     set(_M_ARM64 TRUE)
     set(_M_X86 FALSE)
     set(CMAKE_HOST_SYSTEM_PROCESSOR "arm64")
