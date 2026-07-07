@@ -3,7 +3,7 @@ name: Build iPSX2 iOS
 # Déclenche sur chaque push sur main, ou manuellement depuis l'onglet Actions
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, "claude/**"]
   workflow_dispatch:
 
 jobs:

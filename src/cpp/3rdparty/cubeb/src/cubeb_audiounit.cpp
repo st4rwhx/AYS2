@@ -131,6 +131,10 @@ static int
 audiounit_install_device_changed_callback(cubeb_stream * stm);
 static int
 audiounit_install_system_changed_callback(cubeb_stream * stm);
+static int
+audiounit_uninstall_device_changed_callback(cubeb_stream * stm);
+static int
+audiounit_uninstall_system_changed_callback(cubeb_stream * stm);
 #if !TARGET_OS_IPHONE
 static vector<AudioObjectID>
 audiounit_get_devices_of_type(cubeb_device_type devtype);
@@ -142,10 +146,6 @@ audiounit_get_device_presentation_latency(AudioObjectID devid,
 #if !TARGET_OS_IPHONE
 static AudioObjectID
 audiounit_get_default_device_id(cubeb_device_type type);
-static int
-audiounit_uninstall_device_changed_callback(cubeb_stream * stm);
-static int
-audiounit_uninstall_system_changed_callback(cubeb_stream * stm);
 static void
 audiounit_reinit_stream_async(cubeb_stream * stm, device_flags_value flags);
 #endif
@@ -501,7 +501,9 @@ audiounit_render_input(cubeb_stream * stm, AudioUnitRenderActionFlags * flags,
       // kAudioUnitErr_CannotDoInCurrentContext is returned when using a BT
       // headset and the profile is changed from A2DP to HFP/HSP. The previous
       // output device is no longer valid and must be reset.
+#if !TARGET_OS_IPHONE
       audiounit_reinit_stream_async(stm, DEV_INPUT | DEV_OUTPUT);
+#endif
     }
     // For now state that no error occurred and feed silence, stream will be
     // resumed once reinit has completed.
@@ -1285,6 +1287,18 @@ audiounit_install_device_changed_callback(cubeb_stream * /* stm */)
 
 static int
 audiounit_install_system_changed_callback(cubeb_stream * /* stm */)
+{
+  return CUBEB_OK;
+}
+
+static int
+audiounit_uninstall_device_changed_callback(cubeb_stream * /* stm */)
+{
+  return CUBEB_OK;
+}
+
+static int
+audiounit_uninstall_system_changed_callback(cubeb_stream * /* stm */)
 {
   return CUBEB_OK;
 }
@@ -2254,6 +2268,13 @@ audiounit_clamp_latency(cubeb_stream * stm, uint32_t latency_frames)
   }
   assert(stm->output_unit);
 
+#if TARGET_OS_IPHONE
+  // kAudioDevicePropertyBufferFrameSize is not available on iOS; the IO
+  // buffer duration is managed by AVAudioSession. Just keep the requested
+  // latency within the safe range.
+  return max(min<uint32_t>(latency_frames, SAFE_MAX_LATENCY_FRAMES),
+             SAFE_MIN_LATENCY_FRAMES);
+#else
   // If more than one stream operates in parallel
   // allow only lower values of latency
   int r;
@@ -2306,8 +2327,23 @@ audiounit_clamp_latency(cubeb_stream * stm, uint32_t latency_frames)
 
   return max(min<uint32_t>(latency_frames, upper_latency_limit),
              SAFE_MIN_LATENCY_FRAMES);
+#endif /* TARGET_OS_IPHONE */
 }
 
+#if TARGET_OS_IPHONE
+static int
+audiounit_set_buffer_size(cubeb_stream * stm, uint32_t new_size_frames,
+                          io_side side)
+{
+  // kAudioDevicePropertyBufferFrameSize is not available on iOS. The actual
+  // IO buffer duration is controlled through AVAudioSession by the host
+  // application, so accept the requested size and keep the unit defaults.
+  LOG("(%p) %s buffer size request of %u frames ignored on iOS "
+      "(AVAudioSession controls the IO buffer duration).",
+      stm, to_string(side), new_size_frames);
+  return CUBEB_OK;
+}
+#else
 /*
  * Change buffer size is prone to deadlock thus we change it
  * following the steps:
@@ -2451,6 +2487,7 @@ audiounit_set_buffer_size(cubeb_stream * stm, uint32_t new_size_frames,
       new_size_frames);
   return CUBEB_OK;
 }
+#endif /* TARGET_OS_IPHONE */
 
 static int
 audiounit_configure_input(cubeb_stream * stm)
