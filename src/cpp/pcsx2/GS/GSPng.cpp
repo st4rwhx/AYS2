@@ -5,6 +5,11 @@
 #include "GSExtra.h"
 #include "common/FileSystem.h"
 #include <zlib.h>
+// TargetConditionals defines TARGET_OS_IPHONE. Without it the macro is an
+// undefined identifier that the preprocessor treats as 0, so the
+// "#if !TARGET_OS_IPHONE" branches below wrongly compile their (placeholder,
+// unterminated) desktop bodies on iOS. Include it explicitly.
+#include <TargetConditionals.h>
 #if !TARGET_OS_IPHONE
 #include <png.h>
 #endif
