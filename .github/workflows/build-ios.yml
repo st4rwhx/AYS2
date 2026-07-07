@@ -62,7 +62,14 @@ jobs:
       # ── 5. Configurer cmake → génère iPSX2.xcodeproj ───────────────────────
       - name: CMake configure
         run: |
+          # --fresh wipes the cached CMakeCache/CMakeFiles and reruns configure
+          # from scratch, so generated headers (e.g. svnrev.h from
+          # write_svnrev_h) are always regenerated with the current cmake logic.
+          # Without it, the restored build/ cache can serve a stale generated
+          # header even though the cmake source changed. Compiled objects in
+          # DerivedData are kept, so incremental compilation still benefits.
           cmake \
+            --fresh \
             -B "$GITHUB_WORKSPACE/build" \
             -G Xcode \
             -DCMAKE_SYSTEM_NAME=iOS \
