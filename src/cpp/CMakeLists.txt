@@ -109,6 +109,16 @@ endif()
 get_git_version_info()
 write_svnrev_h()
 
+# Many first-party sources gate Apple-specific code on TARGET_OS_IPHONE but
+# forget to #include <TargetConditionals.h>, so the macro silently evaluates to
+# 0 and the desktop branch is compiled (e.g. common/Image.cpp pulling in
+# libpng/libjpeg that iOS doesn't link). Force-include the header for every
+# first-party TU below. Placed after SearchForStuff so 3rdparty targets — which
+# were already added there — are unaffected.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+	add_compile_options(-include TargetConditionals.h)
+endif()
+
 # make common
 add_subdirectory(common)
 

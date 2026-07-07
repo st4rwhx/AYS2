@@ -9,6 +9,10 @@
 #include "StringUtil.h"
 
 #include <common/FastJmp.h>
+// Defines TARGET_OS_IPHONE. Without it the guards below evaluate as 0 on iOS,
+// pulling in libpng/libjpeg (which iOS does not link) and referencing PNG/JPEG
+// handlers whose definitions are stubbed out — an undefined-symbol link error.
+#include <TargetConditionals.h>
 #if !TARGET_OS_IPHONE
 #include <jpeglib.h>
 #endif
