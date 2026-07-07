@@ -53,8 +53,8 @@ function(write_svnrev_h)
 "#define SVN_REV 0\n"
 "#define SVN_MODS 0\n"
 "#define GIT_TAG_STRING \"iPSX2-dev\"\n"
-// BuildVersion.cpp consumes these directly; upstream generates them from git.
-// On iOS we ship neutral defaults so the core compiles without a git query.
+# BuildVersion.cpp consumes these directly; upstream generates them from git.
+# On iOS we ship neutral defaults so the core compiles without a git query.
 "#define GIT_TAG \"iPSX2-dev\"\n"
 "#define GIT_TAGGED_COMMIT false\n"
 "#define GIT_TAG_HI 0\n"
