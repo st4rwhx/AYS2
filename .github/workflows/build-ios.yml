@@ -6,6 +6,9 @@ on:
     branches: [main, master, "claude/**"]
   workflow_dispatch:
 
+permissions:
+  contents: write # nécessaire pour publier l'IPA en GitHub Release
+
 jobs:
   build:
     name: Build iPSX2 (iOS arm64)
@@ -139,6 +142,30 @@ jobs:
           name: iPSX2-${{ github.sha }}
           path: iPSX2.ipa
           retention-days: 14 # Dispo 2 semaines
+
+      # ── 8b. Publier l'IPA en GitHub Release (lien direct pour Sideloadly) ───
+      # Release "roulante" ios-latest : recréée à chaque build réussi, elle
+      # pointe toujours vers le dernier IPA. Sur un repo public, l'asset a une
+      # URL de téléchargement directe (sans login) utilisable dans Sideloadly.
+      - name: Publish IPA to rolling Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="ios-latest"
+          # Supprime l'ancienne release + son tag (ignore si absente), puis recrée.
+          gh release delete "$TAG" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          gh release create "$TAG" iPSX2.ipa \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "iPSX2 iOS — dernier build" \
+            --prerelease \
+            --notes "IPA **non signé** du commit ${GITHUB_SHA:0:7} (run #${GITHUB_RUN_NUMBER}).
+
+          **Installation :** signe et installe avec Sideloadly / AltStore / SideStore.
+          **Prérequis :** ton propre BIOS PS2 + un jeu dumpé (.iso/.chd). Active le JIT via StikDebug.
+
+          Lien direct de l'IPA : télécharge \`iPSX2.ipa\` ci-dessous."
+          echo "Release publiée : https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
 
       # ── 9. Upload les logs si la build échoue ──────────────────────────────
       - name: Upload build logs (si erreur)
