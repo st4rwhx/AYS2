@@ -23,6 +23,12 @@ final class AppState: @unchecked Sendable {
     @ObservationIgnored private var autoBootObserver: NSObjectProtocol?
 
     private init() {
+        // Create the user-facing folders up front so the app's Documents
+        // directory shows in Files → On My iPhone → iPSX2 with clear "iso" and
+        // "bios" drop targets (UIFileSharingEnabled + LSSupportsOpeningDocumentsInPlace
+        // are set in Info.plist). Also makes the folder appear even before any import.
+        Self.ensureUserDirectories()
+
         shutdownObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("iPSX2VMDidShutdown"),
             object: nil, queue: .main
@@ -44,6 +50,28 @@ final class AppState: @unchecked Sendable {
         ) { [weak self] _ in
             self?.runningGameName = "AutoBoot"
             self?.currentScreen = .playing
+        }
+    }
+
+    /// Creates Documents/iso and Documents/bios if missing, plus a short
+    /// README so an empty folder still shows something useful in the Files app.
+    static func ensureUserDirectories() {
+        let fm = FileManager.default
+        guard let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        for sub in ["iso", "bios"] {
+            let dir = docs.appendingPathComponent(sub, isDirectory: true)
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        let readme = docs.appendingPathComponent("README.txt")
+        if !fm.fileExists(atPath: readme.path) {
+            let text = """
+            iPSX2 — user files
+            ------------------
+            • Put PS2 disc images (.iso / .bin / .img / .chd) in the "iso" folder.
+            • Put your PS2 BIOS dump (.bin) in the "bios" folder.
+            You can also import them from inside the app (Games / BIOS tabs → import button).
+            """
+            try? text.data(using: .utf8)?.write(to: readme)
         }
     }
 
