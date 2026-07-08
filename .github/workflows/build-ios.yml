@@ -116,8 +116,16 @@ jobs:
       # ── 7. Packager en .ipa ─────────────────────────────────────────────────
       - name: Package IPA
         run: |
-          APP=$(find "$GITHUB_WORKSPACE/build/DerivedData" -name "iPSX2.app" -type d | head -1)
+          # CMake's Xcode generator writes the final .app to build/Release-iphoneos,
+          # not under DerivedData (which only holds intermediates). Search the whole
+          # build tree so we find it regardless of layout.
+          APP=$(find "$GITHUB_WORKSPACE/build" -name "iPSX2.app" -type d | head -1)
           echo "App trouvée : $APP"
+          if [[ -z "$APP" ]]; then
+            echo "::error::iPSX2.app not found under build/"
+            find "$GITHUB_WORKSPACE/build" -name "*.app" -type d || true
+            exit 1
+          fi
           mkdir -p "$GITHUB_WORKSPACE/Payload"
           cp -r "$APP" "$GITHUB_WORKSPACE/Payload/iPSX2.app"
           cd "$GITHUB_WORKSPACE"
