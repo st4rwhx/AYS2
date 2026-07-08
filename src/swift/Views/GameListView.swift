@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ISOEntry: Identifiable {
     let id = UUID()
@@ -16,6 +17,7 @@ struct GameListView: View {
     @State private var showRestartAlert = false
     @State private var showStopAlert = false
     @State private var pendingGameName: String = ""
+    @State private var showImporter = false
 
     var sortedGames: [ISOEntry] {
         games.sorted { a, b in
@@ -42,6 +44,11 @@ struct GameListView: View {
             }
             .navigationTitle("Games")
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showImporter = true } label: {
+                        Image(systemName: "square.and.arrow.down")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { loadGames() } label: {
                         Image(systemName: "arrow.clockwise")
@@ -77,7 +84,27 @@ struct GameListView: View {
                 Text("VM is currently running.\nShut down and start \(target)?")
             }
         }
+        .fileImporter(
+            isPresented: $showImporter,
+            allowedContentTypes: [.data, .item],
+            allowsMultipleSelection: true
+        ) { result in
+            handleImport(result)
+        }
         .onAppear { loadGames() }
+    }
+
+    private func handleImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            for url in urls {
+                FileImportHandler.shared.handleURL(url)
+            }
+            loadGames()
+        case .failure(let error):
+            FileImportHandler.shared.lastImportMessage = "Import failed: \(error.localizedDescription)"
+            FileImportHandler.shared.showImportAlert = true
+        }
     }
 
     private func vmStatusSection(gameName: String) -> some View {
@@ -185,11 +212,17 @@ struct GameListView: View {
             Text("No Games Found")
                 .font(.title2)
                 .fontWeight(.semibold)
-            Text("Place ISO/BIN/CHD/IMG files in:\nDocuments/iso/")
+            Text("Import your own PS2 disc images\n(ISO / BIN / CHD / IMG).")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            Text("Use the Files app or iTunes File Sharing\nto transfer game files.")
+            Button {
+                showImporter = true
+            } label: {
+                Label("Import Game", systemImage: "square.and.arrow.down")
+            }
+            .buttonStyle(.borderedProminent)
+            Text("You can also drop files into Documents/iso/ via the Files app.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
