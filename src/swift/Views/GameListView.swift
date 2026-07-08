@@ -1,4 +1,4 @@
-// GameListView.swift — ROM list with favorites
+// GameListView.swift — ROM browser as a PS2-style floating-disc grid
 // SPDX-License-Identifier: GPL-3.0+
 
 import SwiftUI
@@ -19,6 +19,11 @@ struct GameListView: View {
     @State private var pendingGameName: String = ""
     @State private var showImporter = false
 
+    private let columns = [
+        GridItem(.flexible(), spacing: 16),
+        GridItem(.flexible(), spacing: 16)
+    ]
+
     var sortedGames: [ISOEntry] {
         games.sorted { a, b in
             if a.isFavorite != b.isFavorite { return a.isFavorite }
@@ -32,15 +37,21 @@ struct GameListView: View {
                 if games.isEmpty && appState.runningGameName == nil {
                     emptyState
                 } else {
-                    List {
-                        if let gameName = appState.runningGameName {
-                            vmStatusSection(gameName: gameName)
+                    ScrollView {
+                        LazyVStack(spacing: 18) {
+                            if let gameName = appState.runningGameName {
+                                runningCard(gameName: gameName)
+                            }
+                            LazyVGrid(columns: columns, spacing: 20) {
+                                ForEach(sortedGames) { game in
+                                    discTile(game)
+                                }
+                            }
                         }
-                        ForEach(sortedGames) { game in
-                            gameRow(game)
-                        }
+                        .padding(.horizontal, 18)
+                        .padding(.top, 10)
+                        .padding(.bottom, 28)
                     }
-                    .scrollContentBackground(.hidden)
                 }
             }
             .navigationTitle("Games")
@@ -84,6 +95,15 @@ struct GameListView: View {
                 let target = pendingGameName.isEmpty ? "BIOS Only" : pendingGameName
                 Text("VM is currently running.\nShut down and start \(target)?")
             }
+            .alert("Stop Emulation?", isPresented: $showStopAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Stop", role: .destructive) {
+                    iPSX2Bridge.requestVMStop()
+                    appState.runningGameName = nil
+                }
+            } message: {
+                Text("This will shut down the running game. All unsaved progress will be lost.")
+            }
         }
         .fileImporter(
             isPresented: $showImporter,
@@ -95,127 +115,143 @@ struct GameListView: View {
         .onAppear { loadGames() }
     }
 
-    private func handleImport(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            for url in urls {
-                FileImportHandler.shared.handleURL(url)
-            }
-            loadGames()
-        case .failure(let error):
-            FileImportHandler.shared.lastImportMessage = "Import failed: \(error.localizedDescription)"
-            FileImportHandler.shared.showImportAlert = true
-        }
-    }
+    // MARK: - Running card (resume / stop)
 
-    private func vmStatusSection(gameName: String) -> some View {
-        Section {
-            // Resume row — tap anywhere to return to game
+    private func runningCard(gameName: String) -> some View {
+        VStack(spacing: 0) {
             Button {
                 appState.returnToGame()
             } label: {
-                HStack {
+                HStack(spacing: 12) {
                     Image(systemName: "play.circle.fill")
-                        .foregroundStyle(.green)
                         .font(.title)
+                        .foregroundStyle(.green)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Now Running")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.white.opacity(0.65))
                         Text(gameName == "BIOS" ? "BIOS Only" : gameName)
-                            .font(.body)
-                            .fontWeight(.semibold)
+                            .font(.headline)
+                            .foregroundStyle(.white)
                     }
                     Spacer()
                     Text("Resume")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
+                        .font(.subheadline).fontWeight(.medium)
+                        .foregroundStyle(.white)
                     Image(systemName: "chevron.right")
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.white.opacity(0.5))
                 }
-                .padding(.vertical, 6)
+                .padding(14)
             }
-            .tint(.primary)
-
-            // Stop button — separate row with confirmation alert
+            Divider().overlay(Color.white.opacity(0.1))
             Button(role: .destructive) {
                 showStopAlert = true
             } label: {
-                HStack {
-                    Spacer()
-                    Label("Stop Emulation", systemImage: "stop.circle")
-                        .font(.subheadline)
-                    Spacer()
-                }
+                Label("Stop Emulation", systemImage: "stop.circle")
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
             }
         }
-        .alert("Stop Emulation?", isPresented: $showStopAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Stop", role: .destructive) {
-                iPSX2Bridge.requestVMStop()
-                appState.runningGameName = nil
-            }
-        } message: {
-            Text("This will shut down the running game. All unsaved progress will be lost.")
-        }
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(Color.green.opacity(0.12))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.green.opacity(0.4), lineWidth: 1)
+        )
     }
 
-    private func gameRow(_ game: ISOEntry) -> some View {
-        Button {
-            if game.name == appState.runningGameName {
-                appState.returnToGame()
-            } else if appState.runningGameName != nil {
-                pendingGameName = game.name
-                showRestartAlert = true
-            } else {
-                appState.bootGame(isoName: game.name)
-            }
+    // MARK: - Disc tile
+
+    private func discTile(_ game: ISOEntry) -> some View {
+        let isRunning = game.name == appState.runningGameName
+        return Button {
+            selectGame(game.name)
         } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(game.name)
-                            .font(.body)
-                            .foregroundStyle(.primary)
-                        if game.name == appState.runningGameName {
-                            Image(systemName: "circle.fill")
-                                .font(.system(size: 8))
-                                .foregroundStyle(.green)
-                        }
-                    }
-                    Text(formatSize(game.size))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button {
-                    toggleFavorite(game.name)
-                } label: {
-                    Image(systemName: game.isFavorite ? "star.fill" : "star")
-                        .foregroundStyle(game.isFavorite ? .yellow : .gray)
-                }
-                .buttonStyle(.plain)
-
-                Image(systemName: game.name == appState.runningGameName ? "play.fill" : "chevron.right")
-                    .foregroundStyle(game.name == appState.runningGameName ? .green : .secondary)
+            VStack(spacing: 10) {
+                DiscArt()
+                    .frame(width: 104, height: 104)
+                Text(game.name)
+                    .font(.subheadline).fontWeight(.semibold)
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(formatSize(game.size))
                     .font(.caption)
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .padding(.horizontal, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color.white.opacity(0.05))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(isRunning ? Color.green.opacity(0.55) : Color.white.opacity(0.08),
+                            lineWidth: 1)
+            )
+            .overlay(alignment: .topTrailing) {
+                if game.isFavorite {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.yellow)
+                        .padding(12)
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if isRunning {
+                    Circle()
+                        .fill(.green)
+                        .frame(width: 11, height: 11)
+                        .shadow(color: .green, radius: 5)
+                        .padding(13)
+                }
+            }
+            .shadow(color: isRunning ? Color.green.opacity(0.25) : Color.blue.opacity(0.15),
+                    radius: 12, y: 6)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                toggleFavorite(game.name)
+            } label: {
+                Label(game.isFavorite ? "Remove Favorite" : "Add Favorite",
+                      systemImage: game.isFavorite ? "star.slash" : "star")
             }
         }
-        .foregroundStyle(.primary)
     }
+
+    private func selectGame(_ name: String) {
+        if name == appState.runningGameName {
+            appState.returnToGame()
+        } else if appState.runningGameName != nil {
+            pendingGameName = name
+            showRestartAlert = true
+        } else {
+            appState.bootGame(isoName: name)
+        }
+    }
+
+    // MARK: - Empty state
 
     private var emptyState: some View {
         VStack(spacing: 16) {
-            Image(systemName: "opticaldisc")
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary)
+            DiscArt()
+                .frame(width: 96, height: 96)
+                .opacity(0.85)
             Text("No Games Found")
                 .font(.title2)
                 .fontWeight(.semibold)
+                .foregroundStyle(.white)
             Text("Import your own PS2 disc images\n(ISO / BIN / CHD / IMG).")
                 .font(.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
             Button {
                 showImporter = true
@@ -225,11 +261,13 @@ struct GameListView: View {
             .buttonStyle(.borderedProminent)
             Text("You can also drop files into Documents/iso/ via the Files app.")
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.white.opacity(0.5))
                 .multilineTextAlignment(.center)
         }
         .padding()
     }
+
+    // MARK: - Data
 
     private func loadGames() {
         let isoDir = iPSX2Bridge.isoDirectory()
@@ -254,6 +292,19 @@ struct GameListView: View {
         loadGames()
     }
 
+    private func handleImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            for url in urls {
+                FileImportHandler.shared.handleURL(url)
+            }
+            loadGames()
+        case .failure(let error):
+            FileImportHandler.shared.lastImportMessage = "Import failed: \(error.localizedDescription)"
+            FileImportHandler.shared.showImportAlert = true
+        }
+    }
+
     private func formatSize(_ bytes: UInt64) -> String {
         let gb = Double(bytes) / 1_073_741_824
         if gb >= 1.0 {
@@ -261,5 +312,41 @@ struct GameListView: View {
         }
         let mb = Double(bytes) / 1_048_576
         return String(format: "%.0f MB", mb)
+    }
+}
+
+/// A glossy PS2-style optical disc drawn entirely in SwiftUI.
+struct DiscArt: View {
+    private let sheen = Gradient(colors: [
+        Color(red: 0.49, green: 0.75, blue: 1.00),
+        Color(red: 0.04, green: 0.11, blue: 0.27),
+        Color(red: 0.29, green: 0.56, blue: 1.00),
+        Color(red: 0.04, green: 0.11, blue: 0.27),
+        Color(red: 0.49, green: 0.75, blue: 1.00),
+        Color(red: 0.04, green: 0.11, blue: 0.27),
+        Color(red: 0.29, green: 0.56, blue: 1.00),
+        Color(red: 0.49, green: 0.75, blue: 1.00)
+    ])
+
+    var body: some View {
+        GeometryReader { geo in
+            let d = min(geo.size.width, geo.size.height)
+            ZStack {
+                Circle()
+                    .fill(AngularGradient(gradient: sheen, center: .center))
+                Circle()
+                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                // hub hole
+                Circle()
+                    .fill(Color(red: 0.03, green: 0.06, blue: 0.16))
+                    .frame(width: d * 0.30, height: d * 0.30)
+                    .overlay(
+                        Circle().stroke(Color(red: 0.45, green: 0.65, blue: 1.0).opacity(0.35),
+                                        lineWidth: d * 0.035)
+                    )
+            }
+            .frame(width: d, height: d)
+            .shadow(color: Color.blue.opacity(0.35), radius: 10, y: 6)
+        }
     }
 }
