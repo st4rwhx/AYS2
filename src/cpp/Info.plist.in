@@ -15,7 +15,7 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleDisplayName</key>
-    <string>Cobalis</string>
+    <string>iPSX2</string>
     <key>CFBundleShortVersionString</key>
     <string>@IPSX2_VERSION@</string>
     <key>CFBundleVersion</key>

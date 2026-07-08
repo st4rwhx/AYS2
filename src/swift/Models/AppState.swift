@@ -65,8 +65,8 @@ final class AppState: @unchecked Sendable {
         let readme = docs.appendingPathComponent("README.txt")
         if !fm.fileExists(atPath: readme.path) {
             let text = """
-            Cobalis — user files
-            --------------------
+            iPSX2 — user files
+            ------------------
             • Put PS2 disc images (.iso / .bin / .img / .chd) in the "iso" folder.
             • Put your PS2 BIOS dump (.bin) in the "bios" folder.
             You can also import them from inside the app (Games / BIOS tabs → import button).

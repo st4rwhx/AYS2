@@ -11,7 +11,7 @@ struct RootView: View {
         ZStack {
             switch appState.currentScreen {
             case .menu:
-                Color(uiColor: .systemGroupedBackground)
+                PS2WaveBackground()
                     .ignoresSafeArea()
                 MenuTabView()
             case .playing:

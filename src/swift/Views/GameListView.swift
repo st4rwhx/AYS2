@@ -40,6 +40,7 @@ struct GameListView: View {
                             gameRow(game)
                         }
                     }
+                    .scrollContentBackground(.hidden)
                 }
             }
             .navigationTitle("Games")

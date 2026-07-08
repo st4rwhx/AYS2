@@ -177,6 +177,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     # Swift source files
     set(SWIFT_SOURCES
         ${CMAKE_SOURCE_DIR}/../swift/Views/RootView.swift
+        ${CMAKE_SOURCE_DIR}/../swift/Views/PS2WaveBackground.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/GameListView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/BIOSListView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/HelpView.swift
@@ -206,13 +207,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     add_executable(iPSX2 ios_main.mm iPSX2Bridge.mm ${SWIFT_SOURCES})
     set_target_properties(iPSX2 PROPERTIES
         MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_GUI_IDENTIFIER "com.cobalis.app"
-        MACOSX_BUNDLE_BUNDLE_NAME "Cobalis"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.balaj.ps2emu"
+        MACOSX_BUNDLE_BUNDLE_NAME "iPSX2"
         MACOSX_BUNDLE_BUNDLE_VERSION "${IPSX2_BUILD_NUMBER}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${IPSX2_VERSION}"
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_BINARY_DIR}/Info.plist"
         MACOSX_BUNDLE_EXECUTABLE_NAME "iPSX2"
-        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.cobalis.app"
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.balaj.ps2emu"
         XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2" # 1=iPhone, 2=iPad
         XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "${CMAKE_OSX_DEPLOYMENT_TARGET}"
         XCODE_ATTRIBUTE_SDKROOT "${CMAKE_OSX_SYSROOT}"

@@ -20,6 +20,7 @@ struct BIOSListView: View {
                             biosRow(bios)
                         }
                     }
+                    .scrollContentBackground(.hidden)
                 }
             }
             .navigationTitle("BIOS")
