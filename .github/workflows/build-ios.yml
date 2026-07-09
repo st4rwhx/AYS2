@@ -169,9 +169,12 @@ jobs:
           set -euo pipefail
           TAG="ios-latest"
           VERSION="0.1.${GITHUB_RUN_NUMBER}"
-          IPA_SIZE=$(stat -f%z iPSX2.ipa 2>/dev/null || stat -c%s iPSX2.ipa)
+          # Public-facing asset is branded ELORIS-PRISM; internal build target
+          # stays iPSX2 (scheme/paths), so rename the packaged IPA here.
+          cp iPSX2.ipa ELORIS-PRISM.ipa
+          IPA_SIZE=$(stat -f%z ELORIS-PRISM.ipa 2>/dev/null || stat -c%s ELORIS-PRISM.ipa)
           TODAY=$(date +%F)
-          IPA_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/iPSX2.ipa"
+          IPA_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/ELORIS-PRISM.ipa"
           ICON_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/icon.png"
 
           # Icon for the store listing.
@@ -200,18 +203,18 @@ jobs:
           PY
 
           gh release delete "$TAG" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
-          gh release create "$TAG" iPSX2.ipa source.json icon.png \
+          gh release create "$TAG" ELORIS-PRISM.ipa source.json icon.png \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "iPSX2 iOS — dernier build (v${VERSION})" \
+            --title "ELORIS-PRISM iOS — dernier build (v${VERSION})" \
             --prerelease \
             --notes "IPA **non signé** — v${VERSION} (commit ${GITHUB_SHA:0:7}, run #${GITHUB_RUN_NUMBER}).
 
           **Mise à jour auto (recommandé) :** ajoute cette source dans SideStore/AltStore :
           \`https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/source.json\`
-          Puis installe iPSX2 depuis la source — les prochaines versions arrivent en 1 tap, sans re-signer manuellement.
+          Puis installe ELORIS-PRISM depuis la source — les prochaines versions arrivent en 1 tap, sans re-signer manuellement.
 
-          **Ou installe directement** l'\`iPSX2.ipa\` ci-dessous (Sideloadly / AltStore)."
+          **Ou installe directement** l'\`ELORIS-PRISM.ipa\` ci-dessous (Sideloadly / AltStore)."
           echo "Release + source publiées : https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
 
       # ── 9. Upload les logs si la build échoue ──────────────────────────────

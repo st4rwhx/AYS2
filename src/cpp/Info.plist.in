@@ -15,7 +15,7 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleDisplayName</key>
-    <string>iPSX2</string>
+    <string>ELORIS-PRISM</string>
     <key>CFBundleShortVersionString</key>
     <string>@IPSX2_VERSION@</string>
     <key>CFBundleVersion</key>

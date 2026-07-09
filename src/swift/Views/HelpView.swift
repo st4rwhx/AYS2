@@ -29,7 +29,7 @@ private let helpData: [HelpSection] = [
         ),
         HelpItem(
             question: "Where is the Documents folder?",
-            answer: "On Mac: open Finder, select your iPhone in the sidebar, then the Files tab. On Windows: use iTunes > File Sharing. You can also use the iOS Files app (On My iPhone > iPSX2)."
+            answer: "On Mac: open Finder, select your iPhone in the sidebar, then the Files tab. On Windows: use iTunes > File Sharing. You can also use the iOS Files app (On My iPhone > ELORIS-PRISM)."
         ),
     ]),
     HelpSection(title: "Settings Guide", icon: "gearshape", items: [

@@ -1,14 +1,14 @@
 {
-  "name": "iPSX2",
-  "identifier": "com.balaj.ps2emu.source",
-  "subtitle": "PlayStation 2 emulator for iPhone & iPad",
+  "name": "ELORIS-PRISM",
+  "identifier": "com.balaj.elorisprism.source",
+  "subtitle": "ELORIS-PRISM",
   "apps": [
     {
-      "name": "iPSX2",
-      "bundleIdentifier": "com.balaj.ps2emu",
-      "developerName": "iPSX2",
-      "subtitle": "PlayStation 2 emulator for iOS",
-      "localizedDescription": "A PlayStation 2 emulator for iPhone and iPad, based on PCSX2. Import your own PS2 BIOS and disc images. JIT (full speed) requires a JIT enabler such as StikDebug + LocalDevVPN.",
+      "name": "ELORIS-PRISM",
+      "bundleIdentifier": "com.balaj.elorisprism",
+      "developerName": "ELORIS-PRISM",
+      "subtitle": "ELORIS-PRISM",
+      "localizedDescription": "ELORIS-PRISM.",
       "iconURL": "https://github.com/st4rwhx/iPCSX2/releases/download/ios-latest/icon.png",
       "tintColor": "1B5CFF",
       "category": "games",
@@ -18,14 +18,14 @@
           "version": "0.1.0",
           "date": "2026-07-09",
           "localizedDescription": "Latest development build.",
-          "downloadURL": "https://github.com/st4rwhx/iPCSX2/releases/download/ios-latest/iPSX2.ipa",
+          "downloadURL": "https://github.com/st4rwhx/iPCSX2/releases/download/ios-latest/ELORIS-PRISM.ipa",
           "size": 9245734,
           "minOSVersion": "17.0"
         }
       ],
       "version": "0.1.0",
       "versionDate": "2026-07-09",
-      "downloadURL": "https://github.com/st4rwhx/iPCSX2/releases/download/ios-latest/iPSX2.ipa",
+      "downloadURL": "https://github.com/st4rwhx/iPCSX2/releases/download/ios-latest/ELORIS-PRISM.ipa",
       "size": 9245734,
       "appPermissions": {}
     }
