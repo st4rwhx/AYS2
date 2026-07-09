@@ -21,15 +21,15 @@ struct GraphicsSettingsView: View {
 
             Section("Upscaling") {
                 Picker("Internal Resolution", selection: $settings.upscaleMultiplier) {
-                    Text("1x Native (512x448)").tag(Float(1.0))
-                    Text("2x (1024x896)").tag(Float(2.0))
-                    Text("3x (1536x1344)").tag(Float(3.0))
-                    Text("4x (2048x1792)").tag(Float(4.0))
-                    Text("5x (2560x2240)").tag(Float(5.0))
-                    Text("6x (3072x2688)").tag(Float(6.0))
-                    Text("8x (4096x3584)").tag(Float(8.0))
+                    Text("Native (1x)").tag(Float(1.0))
+                    Text("2x — ~HD").tag(Float(2.0))
+                    Text("3x — ~QHD").tag(Float(3.0))
+                    Text("4x — ~4K").tag(Float(4.0))
+                    Text("5x").tag(Float(5.0))
+                    Text("6x").tag(Float(6.0))
+                    Text("8x — ~8K").tag(Float(8.0))
                 }
-                Text("Higher values improve visual quality but reduce performance significantly. 4x+ recommended for A17 Pro / M-series. Requires restart.")
+                Text("Multiplies the game's NATIVE resolution — which varies per game (e.g. 512×448 or 640×448). There is no fixed 1080p/4K: the image scales up from native by this factor. Higher = sharper but heavier. Requires restart.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -109,8 +109,8 @@ struct GraphicsSettingsView: View {
             }
 
             Section("VSync") {
-                Stepper("Queue Size: \(settings.vsyncQueueSize)", value: $settings.vsyncQueueSize, in: 2...16)
-                Text("Higher values reduce frame drops but increase latency.")
+                Stepper("Queue Size: \(settings.vsyncQueueSize)", value: $settings.vsyncQueueSize, in: 0...3)
+                Text("Frames the GS thread may buffer. PCSX2 default is 2. Higher smooths frame pacing but adds input latency; 0 is lowest latency.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

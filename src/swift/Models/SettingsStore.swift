@@ -148,7 +148,7 @@ final class SettingsStore: @unchecked Sendable {
         // Graphics
         renderer = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "Renderer", defaultValue: 17))
         upscaleMultiplier = iPSX2Bridge.getINIFloat("EmuCore/GS", key: "upscale_multiplier", defaultValue: 1.0)
-        vsyncQueueSize = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "VsyncQueueSize", defaultValue: 8))
+        vsyncQueueSize = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "VsyncQueueSize", defaultValue: 2))
         textureFiltering = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "filter", defaultValue: 2))
         fxaa = iPSX2Bridge.getINIBool("EmuCore/GS", key: "fxaa", defaultValue: false)
         casMode = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "CASMode", defaultValue: 0))
@@ -188,7 +188,7 @@ final class SettingsStore: @unchecked Sendable {
         intcStat = iPSX2Bridge.getINIBool("EmuCore/Speedhacks", key: "IntcStat", defaultValue: true)
         renderer = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "Renderer", defaultValue: 17))
         upscaleMultiplier = iPSX2Bridge.getINIFloat("EmuCore/GS", key: "upscale_multiplier", defaultValue: 1.0)
-        vsyncQueueSize = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "VsyncQueueSize", defaultValue: 8))
+        vsyncQueueSize = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "VsyncQueueSize", defaultValue: 2))
         textureFiltering = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "filter", defaultValue: 2))
         fxaa = iPSX2Bridge.getINIBool("EmuCore/GS", key: "fxaa", defaultValue: false)
         casMode = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "CASMode", defaultValue: 0))
@@ -244,7 +244,7 @@ final class SettingsStore: @unchecked Sendable {
     func resetGraphicsDefaults() {
         renderer = 17           // Metal
         upscaleMultiplier = 1.0 // Native PS2
-        vsyncQueueSize = 8
+        vsyncQueueSize = 2
         textureFiltering = 2    // Bilinear (PS2)
         fxaa = false
         casMode = 0             // Disabled
