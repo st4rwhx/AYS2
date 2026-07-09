@@ -159,23 +159,32 @@ jobs:
       # pointe toujours vers le dernier IPA. Sur un repo public, l'asset a une
       # URL de téléchargement directe (sans login) utilisable dans Sideloadly.
       - name: Publish IPA to rolling Release
-        # Best-effort: the default Actions token may lack release write access
-        # (repo setting), returning 403. Don't fail the whole build over it —
-        # the IPA is always available as an artifact above.
+        # Publishes to the PUBLIC storefront repo (ELORIS-PRISM), NEVER to this
+        # source repo. Requires a repo-scoped PAT stored as the RELEASE_TOKEN
+        # secret (the default GITHUB_TOKEN can't write to another repo). If the
+        # secret/repo isn't set up yet this step no-ops instead of failing the
+        # build — the IPA is always available as an artifact above.
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Target public storefront repo. Change RELEASE_REPO if you rename it.
+          RELEASE_REPO: st4rwhx/ELORIS-PRISM
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
-          TAG="ios-latest"
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::warning::RELEASE_TOKEN secret not set — skipping publish to $RELEASE_REPO."
+            echo "Create a repo-scoped PAT and add it as the RELEASE_TOKEN secret to enable auto-publish."
+            exit 0
+          fi
+          TAG="latest"
           VERSION="0.1.${GITHUB_RUN_NUMBER}"
           # Public-facing asset is branded ELORIS-PRISM; internal build target
           # stays iPSX2 (scheme/paths), so rename the packaged IPA here.
           cp iPSX2.ipa ELORIS-PRISM.ipa
           IPA_SIZE=$(stat -f%z ELORIS-PRISM.ipa 2>/dev/null || stat -c%s ELORIS-PRISM.ipa)
           TODAY=$(date +%F)
-          IPA_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/ELORIS-PRISM.ipa"
-          ICON_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/icon.png"
+          IPA_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/ELORIS-PRISM.ipa"
+          ICON_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/icon.png"
 
           # Icon for the store listing.
           cp "src/assets/Assets.xcassets/AppIcon.appiconset/icon-1024.png" icon.png || true
@@ -202,20 +211,19 @@ jobs:
           print("source.json version:", version, "size:", size)
           PY
 
-          gh release delete "$TAG" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          gh release delete "$TAG" --yes --cleanup-tag --repo "$RELEASE_REPO" 2>/dev/null || true
           gh release create "$TAG" ELORIS-PRISM.ipa source.json icon.png \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "ELORIS-PRISM iOS — dernier build (v${VERSION})" \
+            --repo "$RELEASE_REPO" \
+            --title "ELORIS-PRISM — v${VERSION}" \
             --prerelease \
-            --notes "IPA **non signé** — v${VERSION} (commit ${GITHUB_SHA:0:7}, run #${GITHUB_RUN_NUMBER}).
+            --notes "v${VERSION}.
 
           **Mise à jour auto (recommandé) :** ajoute cette source dans SideStore/AltStore :
-          \`https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/source.json\`
-          Puis installe ELORIS-PRISM depuis la source — les prochaines versions arrivent en 1 tap, sans re-signer manuellement.
+          \`https://github.com/${RELEASE_REPO}/releases/download/${TAG}/source.json\`
+          Puis installe ELORIS-PRISM depuis la source — les prochaines versions arrivent en 1 tap.
 
-          **Ou installe directement** l'\`ELORIS-PRISM.ipa\` ci-dessous (Sideloadly / AltStore)."
-          echo "Release + source publiées : https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+          **Ou installe directement** l'\`ELORIS-PRISM.ipa\` ci-dessous."
+          echo "Release + source publiées : https://github.com/$RELEASE_REPO/releases/tag/$TAG"
 
       # ── 9. Upload les logs si la build échoue ──────────────────────────────
       - name: Upload build logs (si erreur)
