@@ -159,6 +159,10 @@ jobs:
       # pointe toujours vers le dernier IPA. Sur un repo public, l'asset a une
       # URL de téléchargement directe (sans login) utilisable dans Sideloadly.
       - name: Publish IPA to rolling Release
+        # Best-effort: the default Actions token may lack release write access
+        # (repo setting), returning 403. Don't fail the whole build over it —
+        # the IPA is always available as an artifact above.
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
