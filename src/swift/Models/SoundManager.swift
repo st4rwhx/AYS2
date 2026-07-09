@@ -6,7 +6,7 @@ import AVFoundation
 /// Plays short, original UI sounds for menu interactions. Uses the `.ambient`
 /// audio session so it obeys the mute switch and mixes with other audio, and
 /// never fights the emulator's own audio (menu sounds only fire in the menu).
-final class SoundManager {
+final class SoundManager: @unchecked Sendable {
     static let shared = SoundManager()
 
     enum UISound: String, CaseIterable {
