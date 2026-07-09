@@ -1204,7 +1204,25 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
             }
 
             // --- Initialize & Execute VM ---
-            if (VMManager::Initialize(boot_params)) {
+            bool initOk = VMManager::Initialize(boot_params);
+            if (!initOk && boot_params.source_type == CDVD_SourceType::Iso) {
+                // Authentic console behavior for an unreadable / corrupt disc:
+                // a real PS2 doesn't throw an error — it boots the BIOS, which
+                // probes the disc, fails, and drops to the red "Please insert a
+                // PlayStation or PlayStation 2 format disc" screen. So instead
+                // of an error dialog, retry booting the BIOS with no disc (full
+                // boot, so the BIOS runs its disc check rather than fast-booting
+                // past it). A readable-but-wrong-format ISO already reaches the
+                // red screen on its own via CDVD; this covers the file that
+                // can't even be opened.
+                Console.Warning("[VM] ISO '%s' could not be opened — booting BIOS "
+                                "(red screen) as a real PS2 would.", boot_params.filename.c_str());
+                VMBootParameters bios_params;
+                bios_params.fast_boot = false;
+                bios_params.source_type = CDVD_SourceType::NoDisc;
+                initOk = VMManager::Initialize(bios_params);
+            }
+            if (initOk) {
                 Console.WriteLn("[VM] VM initialized successfully");
                 VMManager::SetState(VMState::Running);
 
@@ -1227,7 +1245,9 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
                 Console.WriteLn("[VM] VM Thread: shutting down VM...");
                 VMManager::Shutdown(false);
             } else {
-                Console.Error("VM Thread: VMManager::Initialize failed!");
+                // Both the disc boot and the BIOS fallback failed — this is a
+                // real problem (e.g. a broken BIOS dump), not just a bad disc.
+                Console.Error("VM Thread: VMManager::Initialize failed (disc and BIOS fallback)!");
                 Host::ReportErrorAsync("Startup Error", "VM Initialization Failed.");
             }
 
