@@ -62,5 +62,8 @@ struct MenuTabView: View {
             .tag(3)
         }
         .tint(.blue)
+        .onChange(of: selectedTab) { _, _ in
+            SoundManager.shared.play(.nav)
+        }
     }
 }

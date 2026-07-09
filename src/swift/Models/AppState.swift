@@ -83,6 +83,7 @@ final class AppState: @unchecked Sendable {
     }
 
     func bootGame(isoName: String) {
+        SoundManager.shared.play(.boot)
         iPSX2Bridge.bootISO(isoName)
         iPSX2Bridge.requestVMBoot()
         runningGameName = isoName

@@ -199,6 +199,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         ${CMAKE_SOURCE_DIR}/../swift/Models/AppState.swift
         ${CMAKE_SOURCE_DIR}/../swift/Models/SettingsStore.swift
         ${CMAKE_SOURCE_DIR}/../swift/Models/FileImportHandler.swift
+        ${CMAKE_SOURCE_DIR}/../swift/Models/SoundManager.swift
     )
 
     # Generate Info.plist with version from CMake
@@ -330,6 +331,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     # Consolidate font resources into the "fonts" subdirectory of the bundle resources
     set_source_files_properties(${FONTS} PROPERTIES
         MACOSX_PACKAGE_LOCATION Resources/fonts
+    )
+
+    # Original UI sounds (PS2-flavored, self-made) -> Resources/sounds
+    file(GLOB UI_SOUNDS "${CMAKE_SOURCE_DIR}/../assets/resources/sounds/*.wav")
+    target_sources(iPSX2 PRIVATE ${UI_SOUNDS})
+    set_source_files_properties(${UI_SOUNDS} PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources/sounds
     )
 
     # Metal debug info: only for Debug builds

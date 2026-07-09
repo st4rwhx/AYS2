@@ -4,8 +4,18 @@
 import SwiftUI
 
 struct SettingsRootView: View {
+    @AppStorage("uiSoundsEnabled") private var uiSoundsEnabled = true
+
     var body: some View {
         List {
+            Section {
+                Toggle(isOn: $uiSoundsEnabled) {
+                    Label("UI Sounds", systemImage: "speaker.wave.2")
+                }
+            } footer: {
+                Text("Original menu sounds. Obeys the mute switch.")
+            }
+
             Section {
                 NavigationLink {
                     EmulatorSettingsView()
