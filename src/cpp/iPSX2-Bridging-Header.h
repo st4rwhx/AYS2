@@ -3,3 +3,6 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #import "iPSX2Bridge.h"
+
+// Native JIT FFI (Rust, built on the MIT idevice library).
+#import "jitkit.h"

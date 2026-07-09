@@ -251,6 +251,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     # For now assume it works or we link SDL3::SDL3.
     # We need headers.
     target_link_libraries(iPSX2 PRIVATE "-framework UIKit" "-framework Metal" "-framework MetalKit" "-framework QuartzCore" "-framework CoreText" "-framework CoreGraphics")
+
+    # Native JIT FFI (Rust, built on the MIT idevice library). CI cross-compiles
+    # libjitkit.a for aarch64-apple-ios before cmake runs; the header sits next
+    # to the crate and is pulled into the Swift bridging header.
+    target_include_directories(iPSX2 PRIVATE "${CMAKE_SOURCE_DIR}/../rust/jitkit")
+    target_link_libraries(iPSX2 PRIVATE "${CMAKE_SOURCE_DIR}/../rust/jitkit/target/aarch64-apple-ios/release/libjitkit.a")
 	# Git short hash for BUILD_ID
 	execute_process(
 		COMMAND git rev-parse --short HEAD

@@ -29,6 +29,13 @@ final class AppState: @unchecked Sendable {
         // are set in Info.plist). Also makes the folder appear even before any import.
         Self.ensureUserDirectories()
 
+        // Proof of the native JIT bridge (Rust `jitkit` FFI -> Swift). If this
+        // links and runs, the Rust -> Swift pipeline works end to end.
+        if let cstr = jitkit_version() {
+            NSLog("[jitkit] %@", String(cString: cstr))
+            jitkit_string_free(cstr)
+        }
+
         shutdownObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("iPSX2VMDidShutdown"),
             object: nil, queue: .main
