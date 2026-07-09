@@ -166,8 +166,12 @@ jobs:
         # build — the IPA is always available as an artifact above.
         continue-on-error: true
         env:
-          # Target public storefront repo. Change RELEASE_REPO if you rename it.
+          # Target public storefront repo (@handle/ELORIS-PRISM). Change this
+          # once the storefront account exists.
           RELEASE_REPO: st4rwhx/ELORIS-PRISM
+          # Contact for the GPL-3.0 written offer (§6). Anyone who has the app
+          # can request the corresponding source here. Fill in your email.
+          SOURCE_CONTACT: "[TON_EMAIL]"
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
@@ -188,6 +192,20 @@ jobs:
 
           # Icon for the store listing.
           cp "src/assets/Assets.xcassets/AppIcon.appiconset/icon-1024.png" icon.png || true
+
+          # GPL-3.0 §6 written offer. Ships in every release next to the IPA so
+          # any recipient can obtain the corresponding source on request. This
+          # is the ONLY compliance pointer needed — it names no repo and says
+          # nothing about what the app is, so it stays SEO-neutral.
+          cat > SOURCE-OFFER.txt <<OFFER
+          ELORIS-PRISM includes components licensed under the GNU General Public
+          License, version 3 (GPL-3.0). In accordance with section 6 of that
+          license, the complete corresponding source code is available to any
+          person who possesses this software, at no charge, on request for a
+          period of at least three years.
+
+          To request the corresponding source, contact: ${SOURCE_CONTACT}
+          OFFER
 
           # Regenerate the SideStore/AltStore source with this build's version,
           # size and date so SideStore detects it as an update (same bundle id =
@@ -212,7 +230,7 @@ jobs:
           PY
 
           gh release delete "$TAG" --yes --cleanup-tag --repo "$RELEASE_REPO" 2>/dev/null || true
-          gh release create "$TAG" ELORIS-PRISM.ipa source.json icon.png \
+          gh release create "$TAG" ELORIS-PRISM.ipa source.json icon.png SOURCE-OFFER.txt \
             --repo "$RELEASE_REPO" \
             --title "ELORIS-PRISM — v${VERSION}" \
             --prerelease \
