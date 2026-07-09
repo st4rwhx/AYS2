@@ -153,7 +153,7 @@ final class SettingsStore: @unchecked Sendable {
         fxaa = iPSX2Bridge.getINIBool("EmuCore/GS", key: "fxaa", defaultValue: false)
         casMode = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "CASMode", defaultValue: 0))
         casSharpness = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "CASSharpness", defaultValue: 50))
-        interlaceMode = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "deinterlace_mode", defaultValue: 7))
+        interlaceMode = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "deinterlace_mode", defaultValue: 0))
         aspectRatio = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "AspectRatio", defaultValue: 0))
         blendingAccuracy = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "accurate_blending_unit", defaultValue: 1))
         dithering = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "dithering_ps2", defaultValue: 2))
@@ -193,7 +193,7 @@ final class SettingsStore: @unchecked Sendable {
         fxaa = iPSX2Bridge.getINIBool("EmuCore/GS", key: "fxaa", defaultValue: false)
         casMode = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "CASMode", defaultValue: 0))
         casSharpness = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "CASSharpness", defaultValue: 50))
-        interlaceMode = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "deinterlace_mode", defaultValue: 7))
+        interlaceMode = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "deinterlace_mode", defaultValue: 0))
         aspectRatio = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "AspectRatio", defaultValue: 0))
         blendingAccuracy = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "accurate_blending_unit", defaultValue: 1))
         dithering = Int(iPSX2Bridge.getINIInt("EmuCore/GS", key: "dithering_ps2", defaultValue: 2))
@@ -249,7 +249,7 @@ final class SettingsStore: @unchecked Sendable {
         fxaa = false
         casMode = 0             // Disabled
         casSharpness = 50
-        interlaceMode = 7       // Adaptive
+        interlaceMode = 0       // Automatic (PCSX2 default)
         aspectRatio = 0         // Auto 4:3/3:2
         blendingAccuracy = 1    // Basic
         dithering = 2           // Scaled

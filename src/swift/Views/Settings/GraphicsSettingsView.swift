@@ -70,14 +70,16 @@ struct GraphicsSettingsView: View {
 
             Section("Display") {
                 Picker("Deinterlace", selection: $settings.interlaceMode) {
-                    Text("None").tag(0)
-                    Text("Weave (TFF)").tag(1)
-                    Text("Weave (BFF)").tag(2)
-                    Text("Bob (TFF)").tag(3)
-                    Text("Bob (BFF)").tag(4)
-                    Text("Blend (TFF)").tag(5)
-                    Text("Blend (BFF)").tag(6)
-                    Text("Adaptive (Default)").tag(7)
+                    Text("Automatic (Default)").tag(0)
+                    Text("Off").tag(1)
+                    Text("Weave (TFF)").tag(2)
+                    Text("Weave (BFF)").tag(3)
+                    Text("Bob (TFF)").tag(4)
+                    Text("Bob (BFF)").tag(5)
+                    Text("Blend (TFF)").tag(6)
+                    Text("Blend (BFF)").tag(7)
+                    Text("Adaptive (TFF)").tag(8)
+                    Text("Adaptive (BFF)").tag(9)
                 }
 
                 Picker("Aspect Ratio", selection: $settings.aspectRatio) {

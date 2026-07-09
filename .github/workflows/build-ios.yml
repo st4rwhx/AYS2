@@ -166,21 +166,53 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           TAG="ios-latest"
-          # Supprime l'ancienne release + son tag (ignore si absente), puis recrée.
+          VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          IPA_SIZE=$(stat -f%z iPSX2.ipa 2>/dev/null || stat -c%s iPSX2.ipa)
+          TODAY=$(date +%F)
+          IPA_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/iPSX2.ipa"
+          ICON_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/icon.png"
+
+          # Icon for the store listing.
+          cp "src/assets/Assets.xcassets/AppIcon.appiconset/icon-1024.png" icon.png || true
+
+          # Regenerate the SideStore/AltStore source with this build's version,
+          # size and date so SideStore detects it as an update (same bundle id =
+          # no new App ID consumed on update).
+          python3 - "$VERSION" "$IPA_SIZE" "$TODAY" "$IPA_URL" "$ICON_URL" <<'PY'
+          import json, sys
+          version, size, date, ipa, icon = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+          src = json.load(open("source.json"))
+          app = src["apps"][0]
+          app["iconURL"] = icon
+          app["downloadURL"] = ipa
+          app["version"] = version
+          app["versionDate"] = date
+          app["size"] = size
+          app["versions"] = [{
+              "version": version, "date": date,
+              "localizedDescription": "Latest development build.",
+              "downloadURL": ipa, "size": size, "minOSVersion": "17.0"
+          }]
+          json.dump(src, open("source.json", "w"), indent=2, ensure_ascii=False)
+          print("source.json version:", version, "size:", size)
+          PY
+
           gh release delete "$TAG" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
-          gh release create "$TAG" iPSX2.ipa \
+          gh release create "$TAG" iPSX2.ipa source.json icon.png \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "iPSX2 iOS — dernier build" \
+            --title "iPSX2 iOS — dernier build (v${VERSION})" \
             --prerelease \
-            --notes "IPA **non signé** du commit ${GITHUB_SHA:0:7} (run #${GITHUB_RUN_NUMBER}).
+            --notes "IPA **non signé** — v${VERSION} (commit ${GITHUB_SHA:0:7}, run #${GITHUB_RUN_NUMBER}).
 
-          **Installation :** signe et installe avec Sideloadly / AltStore / SideStore.
-          **Prérequis :** ton propre BIOS PS2 + un jeu dumpé (.iso/.chd). Active le JIT via StikDebug.
+          **Mise à jour auto (recommandé) :** ajoute cette source dans SideStore/AltStore :
+          \`https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/source.json\`
+          Puis installe iPSX2 depuis la source — les prochaines versions arrivent en 1 tap, sans re-signer manuellement.
 
-          Lien direct de l'IPA : télécharge \`iPSX2.ipa\` ci-dessous."
-          echo "Release publiée : https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+          **Ou installe directement** l'\`iPSX2.ipa\` ci-dessous (Sideloadly / AltStore)."
+          echo "Release + source publiées : https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
 
       # ── 9. Upload les logs si la build échoue ──────────────────────────────
       - name: Upload build logs (si erreur)
