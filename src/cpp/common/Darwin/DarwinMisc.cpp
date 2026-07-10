@@ -748,13 +748,58 @@ void* DarwinMisc::MmapCodeDualMap(size_t size)
     if (mode == JitMode::LuckTXM || mode == JitMode::LuckNoTXM) {
         void* jit_ptr = mmap(nullptr, size, PROT_READ | PROT_WRITE | PROT_EXEC,
                              MAP_PRIVATE | MAP_ANON | MAP_JIT, -1, 0);
-        if (jit_ptr != MAP_FAILED) {
-            g_code_rw_offset = 0;
-            s_jit_mode = JitMode::Simulator; // Same W^X toggle (pthread_jit_write_protect_np)
-            fprintf(stderr, "@@JIT_ALLOC@@ MAP_JIT OK (debugger mode) ptr=%p size=0x%zx offset=0\n", jit_ptr, size);
-            return jit_ptr;
+        if (jit_ptr == MAP_FAILED) {
+            fprintf(stderr, "@@JIT_ALLOC@@ MAP_JIT errno=%d, falling back to dual-map+brk\n", errno);
+        } else {
+            // [P54] iOS 26 TXM trap: mmap(MAP_JIT) can return a valid pointer even
+            // though the pages are NOT actually executable under the Trusted
+            // Execution Monitor. If we trust it, the recompiler emits code that
+            // faults on first execution and the game never boots (silent black
+            // screen) — and because we took this early-return we NEVER reach the
+            // dual-map + brk #0x69 + prepare_memory_region path that actually
+            // works on TXM. So VERIFY MAP_JIT for real: write a tiny function and
+            // run it. Only keep MAP_JIT if it genuinely executes; otherwise unmap
+            // and fall through to the dual-map+brk path (StikDebug registers the
+            // page via prepare_memory_region). Self-validating: fast path where it
+            // works, correct fallback where it doesn't.
+            auto jit_toggle = reinterpret_cast<void(*)(int)>(
+                dlsym(RTLD_DEFAULT, "pthread_jit_write_protect_np"));
+
+            static sigjmp_buf s_probe_jmp;
+            struct sigaction sa = {}, old_bus = {}, old_segv = {}, old_ill = {};
+            sa.sa_handler = +[](int) { siglongjmp(s_probe_jmp, 1); };
+            sigemptyset(&sa.sa_mask);
+            sigaction(SIGBUS,  &sa, &old_bus);
+            sigaction(SIGSEGV, &sa, &old_segv);
+            sigaction(SIGILL,  &sa, &old_ill);
+
+            bool exec_ok = false;
+            if (sigsetjmp(s_probe_jmp, 1) == 0) {
+                volatile u32* probe = reinterpret_cast<u32*>(jit_ptr);
+                if (jit_toggle) jit_toggle(0);   // W^X -> writable
+                probe[0] = 0x52824680u;          // movz w0, #0x1234
+                probe[1] = 0xD65F03C0u;          // ret
+                if (jit_toggle) jit_toggle(1);   // W^X -> executable
+                sys_icache_invalidate(jit_ptr, 8);
+                exec_ok = (reinterpret_cast<u32(*)()>(jit_ptr)() == 0x1234u);
+            } else {
+                if (jit_toggle) jit_toggle(1);   // restore protection after fault
+            }
+            sigaction(SIGBUS,  &old_bus,  nullptr);
+            sigaction(SIGSEGV, &old_segv, nullptr);
+            sigaction(SIGILL,  &old_ill,  nullptr);
+
+            if (exec_ok) {
+                g_code_rw_offset = 0;
+                s_jit_mode = JitMode::Simulator; // Same W^X toggle (pthread_jit_write_protect_np)
+                fprintf(stderr, "@@JIT_ALLOC@@ MAP_JIT OK + smoke-test PASS (debugger mode) ptr=%p size=0x%zx offset=0\n", jit_ptr, size);
+                return jit_ptr;
+            }
+
+            fprintf(stderr, "@@JIT_ALLOC@@ MAP_JIT smoke-test FAIL — pages not executable under TXM; using dual-map+brk\n");
+            munmap(jit_ptr, size);
+            // fall through to dual-map + brk (needs StikDebug prepare_memory_region)
         }
-        fprintf(stderr, "@@JIT_ALLOC@@ MAP_JIT errno=%d, falling back to dual-map+brk\n", errno);
     }
 
     // --- Dual-mapping path (LuckTXM / LuckNoTXM) ---
