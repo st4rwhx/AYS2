@@ -53,8 +53,7 @@ final class CoverArtManager: @unchecked Sendable {
         let key = s as NSString
         if let cached = memCache.object(forKey: key) { return cached as Data }
 
-        lock.lock(); let skip = negative.contains(s); lock.unlock()
-        if skip { return nil }
+        if isNegative(s) { return nil }
 
         let diskURL = coversDir.appendingPathComponent("\(s).img")
         if let data = try? Data(contentsOf: diskURL), UIImage(data: data) != nil {
@@ -71,8 +70,19 @@ final class CoverArtManager: @unchecked Sendable {
             return data
         }
 
-        lock.lock(); negative.insert(s); lock.unlock()
+        markNegative(s)
         return nil
+    }
+
+    // NSLock.lock()/unlock() are unavailable from async contexts under Swift 6,
+    // so the critical sections live in these synchronous helpers.
+    private func isNegative(_ s: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return negative.contains(s)
+    }
+    private func markNegative(_ s: String) {
+        lock.lock(); defer { lock.unlock() }
+        negative.insert(s)
     }
 
     // MARK: - Serial resolution (game file name -> disc serial), cached per file.
