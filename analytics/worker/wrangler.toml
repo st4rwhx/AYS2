@@ -1,0 +1,12 @@
+name = "eloris-telemetry"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# Repository that receives the auto-filed issue reports ("owner/repo").
+# Change this to your report repo, then `wrangler deploy`.
+[vars]
+REPORT_REPO = "st4rwhx/iPCSX2"
+
+# Secrets are NOT set here — set them with wrangler so they never hit git:
+#   wrangler secret put GITHUB_TOKEN     # fine-grained PAT, Issues:read+write
+#   wrangler secret put INGEST_KEY       # optional shared key (also set in app)

@@ -5,6 +5,8 @@ import SwiftUI
 
 struct SettingsRootView: View {
     @AppStorage("uiSoundsEnabled") private var uiSoundsEnabled = true
+    // Same UserDefaults key TelemetryManager reads; default on.
+    @AppStorage("telemetryEnabled") private var diagnosticsEnabled = true
 
     var body: some View {
         List {
@@ -14,6 +16,14 @@ struct SettingsRootView: View {
                 }
             } footer: {
                 Text("Original menu sounds. Obeys the mute switch.")
+            }
+
+            Section {
+                Toggle(isOn: $diagnosticsEnabled) {
+                    Label("Anonymous Diagnostics", systemImage: "waveform.path.ecg")
+                }
+            } footer: {
+                Text("Sends an anonymous report when the app crashes (device model, iOS version and a technical log — no account or personal data) so bugs can be fixed. No gameplay or personal data is collected.")
             }
 
             Section {

@@ -210,6 +210,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         ${CMAKE_SOURCE_DIR}/../swift/Models/FileImportHandler.swift
         ${CMAKE_SOURCE_DIR}/../swift/Models/SoundManager.swift
         ${CMAKE_SOURCE_DIR}/../swift/Models/CoverArtManager.swift
+        ${CMAKE_SOURCE_DIR}/../swift/Models/TelemetryManager.swift
     )
 
     # Generate Info.plist with version from CMake

@@ -6,6 +6,7 @@ import SwiftUI
 struct RootView: View {
     @State private var appState = AppState.shared
     @State private var fileImporter = FileImportHandler.shared
+    @State private var showDiagnosticsNotice = false
 
     var body: some View {
         ZStack {
@@ -17,6 +18,29 @@ struct RootView: View {
             case .playing:
                 GameScreenView()
             }
+
+            // Isolated anchor for the diagnostics work + first-run notice, kept
+            // on its own view so its alert doesn't collide with the import alert.
+            Color.clear
+                .task {
+                    // Only surface the notice once telemetry is actually wired.
+                    if TelemetryManager.shared.isConfigured && !TelemetryManager.shared.noticeShown {
+                        showDiagnosticsNotice = true
+                    }
+                    // Report any crash / fatal error from the previous session.
+                    TelemetryManager.shared.processPreviousSession()
+                }
+                .alert("Help improve ELORIS-PRISM", isPresented: $showDiagnosticsNotice) {
+                    Button("Turn Off") {
+                        TelemetryManager.shared.isEnabled = false
+                        TelemetryManager.shared.noticeShown = true
+                    }
+                    Button("OK") {
+                        TelemetryManager.shared.noticeShown = true
+                    }
+                } message: {
+                    Text("When something crashes, the app sends an anonymous diagnostic report (device model, iOS version, and a technical log — no account or personal data) so bugs can be fixed. You can turn this off any time in Settings.")
+                }
         }
         .onOpenURL { url in
             fileImporter.handleURL(url)

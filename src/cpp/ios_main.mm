@@ -1319,6 +1319,15 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     // Force stderr and stdout to pcsx2_log.txt
     std::string logPath = dataRoot + "/pcsx2_log.txt";
     
+    // [telemetry] Preserve the previous session's log before "w" truncates it, so
+    // the analytics layer can detect a crash/fatal error from the last run (the
+    // signal handler writes the backtrace here) and report it on next launch.
+    {
+        std::string prevPath = dataRoot + "/pcsx2_log.prev.txt";
+        ::remove(prevPath.c_str());
+        ::rename(logPath.c_str(), prevPath.c_str()); // no-op if logPath is absent
+    }
+
     // Redirect stderr to file
     if (freopen(logPath.c_str(), "w", stderr) == NULL) { // "w" clears old logs
         printf("Reopen stderr failed\n");
