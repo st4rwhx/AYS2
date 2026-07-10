@@ -171,7 +171,7 @@ jobs:
           RELEASE_REPO: balajsimon/ELORIS-PRISM
           # Contact for the GPL-3.0 written offer (§6). Anyone who has the app
           # can request the corresponding source here. Fill in your email.
-          SOURCE_CONTACT: "[TON_EMAIL]"
+          SOURCE_CONTACT: "balajsimonsorin@gmail.com"
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
