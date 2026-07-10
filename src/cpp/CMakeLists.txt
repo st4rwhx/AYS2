@@ -24,11 +24,20 @@ endif()
 set(CMAKE_OSX_ARCHITECTURES "arm64")
 
 # Version (single source of truth)
+# PATCH and BUILD_NUMBER are overridable from the command line so CI can pin
+# them to the run number (-DIPSX2_VERSION_PATCH=$GITHUB_RUN_NUMBER). This keeps
+# the version baked INTO the IPA (CFBundleShortVersionString) identical to the
+# version advertised in source.json — otherwise SideStore refuses to install
+# ("downloaded version does not match the version specified by the source").
 set(IPSX2_VERSION_MAJOR 0)
 set(IPSX2_VERSION_MINOR 1)
-set(IPSX2_VERSION_PATCH 2)
+if(NOT DEFINED IPSX2_VERSION_PATCH)
+    set(IPSX2_VERSION_PATCH 2)
+endif()
+if(NOT DEFINED IPSX2_BUILD_NUMBER)
+    set(IPSX2_BUILD_NUMBER 2)
+endif()
 set(IPSX2_VERSION "${IPSX2_VERSION_MAJOR}.${IPSX2_VERSION_MINOR}.${IPSX2_VERSION_PATCH}")
-set(IPSX2_BUILD_NUMBER 2)
 
 # Project Name
 project(iPSX2 VERSION ${IPSX2_VERSION} LANGUAGES C CXX)

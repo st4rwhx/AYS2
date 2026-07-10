@@ -93,6 +93,8 @@ jobs:
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -DCMAKE_CXX_STANDARD=20 \
             -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+            -DIPSX2_VERSION_PATCH="${GITHUB_RUN_NUMBER}" \
+            -DIPSX2_BUILD_NUMBER="${GITHUB_RUN_NUMBER}" \
             "$GITHUB_WORKSPACE/src/cpp" 2>&1 | tee cmake_output.txt
           # Extraire erreurs et les mettre dans le Summary public
           echo '## CMake Output' >> $GITHUB_STEP_SUMMARY
