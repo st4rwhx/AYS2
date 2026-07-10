@@ -76,6 +76,17 @@ typedef NS_ENUM(NSInteger, iPSX2PadButton) {
 + (nonnull NSString *)documentsDirectory;
 + (nonnull NSArray<NSString *> *)availableISOs;
 
+// [cover-art] Disc serial (e.g. "SLUS-20946") used to fetch box/disc art.
+// readDiscSerial scans the ISO's SYSTEM.CNF (works for iso/chd/cso/gz);
+// returns nil if it can't be read. currentGameSerial returns the running
+// game's serial (no scan needed) for the "Now Running" banner.
++ (nullable NSString *)readDiscSerial:(nonnull NSString *)path;
++ (nullable NSString *)currentGameSerial;
+// readDiscSerial mutates the global CDVD device (PCSX2 limitation) — callers
+// MUST NOT invoke it while a VM exists. isVMActive returns YES for any live VM
+// (running OR paused), so serial scanning can be skipped safely.
++ (BOOL)isVMActive;
+
 // [P44] ISO boot
 + (void)bootISO:(nonnull NSString *)isoName;
 

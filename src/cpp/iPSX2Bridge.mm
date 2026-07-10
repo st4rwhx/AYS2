@@ -12,6 +12,7 @@ extern "C" void iPSX2_SetSDLFullscreen(bool enabled);
 #include "SIO/Pad/PadDualshock2.h"
 #include "Counters.h"
 #include "GS/GSState.h"
+#include "GameList.h"
 #include "pcsx2/INISettingsInterface.h"
 #include "common/FileSystem.h"
 #include "common/Path.h"
@@ -206,6 +207,36 @@ static NSDate* s_lastNVMSaveDate = nil;
     scanDir(docsPath);
 
     return isos;
+}
+
+// [cover-art] Read the disc serial from an ISO without booting it. Uses PCSX2's
+// own GameList parser (handles iso/chd/cso/gz + SYSTEM.CNF). Potentially slow
+// (opens the image), so callers should run this off the main thread and cache
+// the result per filename. Returns nil when the serial can't be determined.
++ (nullable NSString *)readDiscSerial:(nonnull NSString *)path {
+    if (path.length == 0)
+        return nil;
+    GameList::Entry entry;
+    if (!GameList::PopulateEntryFromPath(std::string([path UTF8String]), &entry))
+        return nil;
+    if (entry.serial.empty())
+        return nil;
+    return [NSString stringWithUTF8String:entry.serial.c_str()];
+}
+
+// [cover-art] Serial of the currently running game (already computed at boot),
+// for the "Now Running" banner. nil if nothing is running / BIOS-only.
++ (nullable NSString *)currentGameSerial {
+    const std::string serial = VMManager::GetDiscSerial();
+    if (serial.empty())
+        return nil;
+    return [NSString stringWithUTF8String:serial.c_str()];
+}
+
+// YES if any VM is live (running or paused). Used to gate serial scanning:
+// readDiscSerial touches the global CDVD and must never run against a live VM.
++ (BOOL)isVMActive {
+    return VMManager::HasValidVM();
 }
 
 // Toggle overlay visibility via position (None vs TopRight).

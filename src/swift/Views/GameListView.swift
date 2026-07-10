@@ -123,9 +123,14 @@ struct GameListView: View {
                 appState.returnToGame()
             } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: "play.circle.fill")
-                        .font(.title)
-                        .foregroundStyle(.green)
+                    SerialCoverImage(serial: iPSX2Bridge.currentGameSerial(), contentMode: .fill) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.title)
+                            .foregroundStyle(.green)
+                    }
+                    .frame(width: 42, height: 58)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.15), lineWidth: 1))
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Now Running")
                             .font(.caption)
@@ -172,7 +177,7 @@ struct GameListView: View {
             selectGame(game.name)
         } label: {
             VStack(spacing: 10) {
-                DiscArt()
+                DiscFace(gameName: game.name)
                     .frame(width: 104, height: 104)
                 Text(game.name)
                     .font(.subheadline).fontWeight(.semibold)
