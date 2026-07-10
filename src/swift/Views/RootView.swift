@@ -6,9 +6,25 @@ import SwiftUI
 struct RootView: View {
     @State private var appState = AppState.shared
     @State private var fileImporter = FileImportHandler.shared
-    @State private var showDiagnosticsNotice = false
+    @State private var termsAccepted = TelemetryManager.shared.termsAccepted
 
     var body: some View {
+        if termsAccepted {
+            mainContent
+        } else {
+            // Consent gate: the app can't be used until the Terms (including the
+            // anonymous diagnostics consent) are accepted.
+            ZStack {
+                PS2WaveBackground().ignoresSafeArea()
+                TermsOfUseView(mode: .gate) {
+                    TelemetryManager.shared.termsAccepted = true
+                    termsAccepted = true
+                }
+            }
+        }
+    }
+
+    private var mainContent: some View {
         ZStack {
             switch appState.currentScreen {
             case .menu:
@@ -19,28 +35,9 @@ struct RootView: View {
                 GameScreenView()
             }
 
-            // Isolated anchor for the diagnostics work + first-run notice, kept
-            // on its own view so its alert doesn't collide with the import alert.
+            // Report any crash / error from the previous session (once per launch).
             Color.clear
-                .task {
-                    // Only surface the notice once telemetry is actually wired.
-                    if TelemetryManager.shared.isConfigured && !TelemetryManager.shared.noticeShown {
-                        showDiagnosticsNotice = true
-                    }
-                    // Report any crash / fatal error from the previous session.
-                    TelemetryManager.shared.processPreviousSession()
-                }
-                .alert("Help improve ELORIS-PRISM", isPresented: $showDiagnosticsNotice) {
-                    Button("Turn Off") {
-                        TelemetryManager.shared.isEnabled = false
-                        TelemetryManager.shared.noticeShown = true
-                    }
-                    Button("OK") {
-                        TelemetryManager.shared.noticeShown = true
-                    }
-                } message: {
-                    Text("When something crashes, the app sends an anonymous diagnostic report (device model, iOS version, and a technical log — no account or personal data) so bugs can be fixed. You can turn this off any time in Settings.")
-                }
+                .task { TelemetryManager.shared.processPreviousSession() }
         }
         .onOpenURL { url in
             fileImporter.handleURL(url)

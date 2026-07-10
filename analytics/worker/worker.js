@@ -32,6 +32,8 @@ export default {
     const device = cap(d.device, 64);
     const os = cap(d.os, 32);
     const jitMode = cap(d.jitMode, 200);
+    const game = cap(d.game, 32);
+    const perf = cap(d.perf, 200);
     const install = cap(d.installID, 64);
     const log = cap(d.log, 30000);
 
@@ -54,6 +56,7 @@ export default {
 
     const block =
 `**Device:** \`${device}\`  **iOS:** \`${os}\`  **Build:** \`${build}\`
+**Game:** \`${game || '—'}\`  **Perf:** \`${perf || '—'}\`
 **JIT:** \`${jitMode || '—'}\`  **Install:** \`${install.slice(0, 8)}\`
 
 <details><summary>Log excerpt</summary>

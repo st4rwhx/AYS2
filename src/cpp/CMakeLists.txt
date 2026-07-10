@@ -190,6 +190,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         ${CMAKE_SOURCE_DIR}/../swift/Views/GameListView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/BIOSListView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/HelpView.swift
+        ${CMAKE_SOURCE_DIR}/../swift/Views/TermsOfUseView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/GameScreenView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/MetalGameView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/EmulatorView.swift

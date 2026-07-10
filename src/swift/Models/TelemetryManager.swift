@@ -1,14 +1,15 @@
-// TelemetryManager.swift — anonymous, opt-out crash & error reporting.
+// TelemetryManager.swift — anonymous crash & error reporting (Terms-based consent).
 // SPDX-License-Identifier: GPL-3.0+
 //
 // On each launch the app preserves the previous session's log (pcsx2_log.prev.txt,
 // written by ios_main.mm before the new log truncates it). The emulator's signal
 // handler already writes crashes (SIGSEGV/BUS/ILL/ABRT + backtrace) and fatal
 // errors (JIT/VM alloc failures) into that log with @@ markers. This manager
-// scans it, and if it finds a crash or known fatal error, uploads an anonymous
+// scans it, and if it finds a crash or emulator error, uploads an anonymous
 // report to the ingest endpoint (a Cloudflare Worker that files a GitHub issue).
 // No account, no personal data — a random install UUID, device model, iOS
-// version, build id, and a capped log tail. Opt-out via Settings; default on.
+// version, build id, and a capped log tail. Consent is granted by accepting the
+// Terms of Use on first launch (see TermsOfUseView); there is no separate toggle.
 
 import Foundation
 import UIKit
@@ -20,8 +21,7 @@ final class TelemetryManager: @unchecked Sendable {
     // while empty the uploader is a safe no-op. Set this to the deployed URL.
     static let endpointString = ""
 
-    private let enabledKey = "telemetryEnabled"
-    private let noticeShownKey = "telemetryNoticeShown"
+    private let termsAcceptedKey = "termsAccepted"
     private let installIDKey = "telemetryInstallID"
 
     private let session: URLSession
@@ -35,15 +35,12 @@ final class TelemetryManager: @unchecked Sendable {
 
     // MARK: - Consent
 
-    /// Diagnostics on/off. Defaults to ON (first-run notice lets users opt out).
-    var isEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
-    }
-
-    var noticeShown: Bool {
-        get { UserDefaults.standard.bool(forKey: noticeShownKey) }
-        set { UserDefaults.standard.set(newValue, forKey: noticeShownKey) }
+    /// Consent is granted by accepting the Terms of Use on first launch — that IS
+    /// the consent, so there is no separate opt-out. Diagnostics are active for
+    /// every session once the Terms are accepted.
+    var termsAccepted: Bool {
+        get { UserDefaults.standard.bool(forKey: termsAcceptedKey) }
+        set { UserDefaults.standard.set(newValue, forKey: termsAcceptedKey) }
     }
 
     private var installID: String {
@@ -63,12 +60,13 @@ final class TelemetryManager: @unchecked Sendable {
 
     // MARK: - Launch hook
 
-    /// Scans the previous session's log for a crash / fatal error and uploads a
-    /// report if one is found. Call once per launch from the main actor; the
-    /// heavy work runs off the main thread and consumes the log so nothing is
-    /// reported twice. Device/OS are captured here (UIDevice is main-isolated).
+    /// Scans the previous session's log for a crash / error and uploads a report
+    /// if one is found. Runs on the main actor (UIDevice is main-isolated) and
+    /// hands the heavy work to a background queue; consumes the log so nothing is
+    /// reported twice.
+    @MainActor
     func processPreviousSession() {
-        guard isEnabled else { return }
+        guard termsAccepted else { return }
         let endpoint = self.endpoint
         let id = installID
         let device = Self.deviceModelIdentifier()
@@ -88,9 +86,22 @@ final class TelemetryManager: @unchecked Sendable {
 
     // MARK: - Report building
 
-    /// Builds a report only when the log shows a crash or a known fatal error;
-    /// returns nil for clean sessions so we don't spam the tracker.
+    /// Builds a report when the previous session shows a crash or an emulator
+    /// error — covering the whole emulator, not just JIT/VM. Returns nil for
+    /// clean sessions so the tracker isn't spammed.
+    ///
+    /// Coverage: hard crashes (signal handler), known-fatal JIT/VM markers, and
+    /// — crucially — anything surfaced to the user via `Host::ReportError`
+    /// (unsupported game, disc read failure, renderer/shader failure, boot
+    /// failure, etc.). ReportError is high-signal (it's a user-facing error
+    /// dialog), so this stays broad without flagging benign warnings.
     static func buildReport(from log: String, installID: String, device: String, os: String) -> [String: Any]? {
+        let lines = log.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        func firstLine(containing needle: String) -> String {
+            lines.first(where: { $0.contains(needle) }).map(Self.cleanSignature) ?? ""
+        }
+
+        // Priority order: hardest failures first.
         let signatures: [(marker: String, kind: String)] = [
             ("Signal: SIGSEGV", "crash-sigsegv"),
             ("Signal: SIGBUS", "crash-sigbus"),
@@ -101,29 +112,50 @@ final class TelemetryManager: @unchecked Sendable {
             ("Failed to allocate VM memory", "vm-alloc-fail"),
             ("CPUThreadInitialize failed", "vm-init-fail"),
         ]
-        guard let hit = signatures.first(where: { log.contains($0.marker) }) else { return nil }
 
-        let lines = log.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        func firstLine(containing needle: String) -> String {
-            lines.first(where: { $0.contains(needle) })?
-                .trimmingCharacters(in: .whitespaces) ?? ""
+        var kind: String?
+        var signature = ""
+        if let hit = signatures.first(where: { log.contains($0.marker) }) {
+            kind = hit.kind
+            signature = firstLine(containing: hit.marker)
+        } else if let err = lines.first(where: { $0.contains("Host::ReportError") }) {
+            // Any user-facing emulator error (disc/renderer/boot/unsupported/…).
+            kind = "error"
+            signature = Self.cleanSignature(err)
         }
+        guard let kind else { return nil } // clean session — nothing to report
 
-        // Last ~250 lines, hard-capped so payloads stay small.
-        let tail = lines.suffix(250).joined(separator: "\n")
-        let cappedTail = String(tail.suffix(24_000))
+        let tail = lines.suffix(300).joined(separator: "\n")
+        let cappedTail = String(tail.suffix(26_000))
 
         return [
             "installID": installID,
-            "kind": hit.kind,
-            "signature": hit.marker,
+            "kind": kind,
+            "signature": signature.isEmpty ? kind : signature,
             "build": firstLine(containing: "@@BUILD_ID@@"),
             "device": device,
             "os": os,
+            "game": Self.extractGameSerial(from: log),
             "jitMode": firstLine(containing: "@@JIT_MODE@@"),
-            "jitAlloc": firstLine(containing: "@@JIT_ALLOC@@ FATAL"),
+            "perf": firstLine(containing: "Speed:"), // OSD perf line, if logged
             "log": cappedTail,
         ]
+    }
+
+    /// Strips ANSI colour codes and a leading `[  2.09]` timestamp, and caps the
+    /// length — so the same error yields a stable fingerprint server-side.
+    private static func cleanSignature(_ s: String) -> String {
+        var out = s.replacingOccurrences(of: "\u{1b}\\[[0-9;]*m", with: "", options: .regularExpression)
+        out = out.replacingOccurrences(of: "^\\[\\s*[0-9.]+\\]\\s*", with: "", options: .regularExpression)
+        out = out.trimmingCharacters(in: .whitespaces)
+        return String(out.prefix(180))
+    }
+
+    /// Best-effort PS2 disc serial (e.g. SLUS-20946) so a report names the game.
+    private static func extractGameSerial(from log: String) -> String {
+        guard let r = log.range(of: "S[A-Z]{3}[-_ ]?[0-9]{3}\\.?[0-9]{2}", options: .regularExpression)
+        else { return "" }
+        return String(log[r])
     }
 
     // MARK: - Upload

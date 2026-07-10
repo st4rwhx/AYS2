@@ -5,8 +5,6 @@ import SwiftUI
 
 struct SettingsRootView: View {
     @AppStorage("uiSoundsEnabled") private var uiSoundsEnabled = true
-    // Same UserDefaults key TelemetryManager reads; default on.
-    @AppStorage("telemetryEnabled") private var diagnosticsEnabled = true
 
     var body: some View {
         List {
@@ -16,14 +14,6 @@ struct SettingsRootView: View {
                 }
             } footer: {
                 Text("Original menu sounds. Obeys the mute switch.")
-            }
-
-            Section {
-                Toggle(isOn: $diagnosticsEnabled) {
-                    Label("Anonymous Diagnostics", systemImage: "waveform.path.ecg")
-                }
-            } footer: {
-                Text("Sends an anonymous report when the app crashes (device model, iOS version and a technical log — no account or personal data) so bugs can be fixed. No gameplay or personal data is collected.")
             }
 
             Section {
@@ -56,10 +46,17 @@ struct SettingsRootView: View {
 
             Section {
                 NavigationLink {
+                    TermsOfUseView(mode: .view)
+                } label: {
+                    Label("Terms of Use & Privacy", systemImage: "hand.raised")
+                }
+                NavigationLink {
                     LicenseView()
                 } label: {
                     Label("Licenses & Credits", systemImage: "doc.text")
                 }
+            } footer: {
+                Text("Diagnostics are anonymous and part of the Terms of Use — device model, iOS version and technical logs on crashes/errors, to fix bugs. No account or personal data.")
             }
 
             Section("About") {

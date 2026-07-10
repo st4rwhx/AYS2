@@ -57,10 +57,18 @@ before the new log truncates it) and, **only if** it contains a crash
    `src/swift/Models/TelemetryManager.swift`. While it's empty the uploader is a
    safe no-op, so nothing is sent until you deploy.
 
-## Privacy notes
+## Consent & privacy
 
-- Reports are only sent for crashes / fatal errors, not normal use.
-- No gameplay, no filenames beyond the disc serial in logs, no account.
-- Default on, with a first-run notice and a Settings opt-out (GDPR-friendly
-  baseline). Set the default to off in `TelemetryManager.isEnabled` if you'd
-  rather make it strictly opt-in.
+- Consent is granted by **accepting the Terms of Use on first launch**
+  (`TermsOfUseView`, section 3) — that acceptance is the consent, so there is no
+  separate opt-out. The Terms are viewable any time in Settings.
+- Reports are only sent on **crashes or emulator errors** (anything surfaced via
+  `Host::ReportError` — unsupported game, disc/renderer/boot failure, JIT/VM),
+  never during normal play.
+- Anonymous: random install UUID, device model, iOS version, build, JIT mode, a
+  best-effort disc serial, and a capped log tail. No account, no personal data,
+  no gameplay content.
+
+> Note: making diagnostics mandatory (no opt-out) can carry legal obligations in
+> some regions (e.g. EU/GDPR). The Terms-acceptance model is a reasonable basis,
+> but consider your audience.
