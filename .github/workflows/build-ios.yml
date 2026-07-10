@@ -73,6 +73,29 @@ jobs:
           cargo build --release --target aarch64-apple-ios
           ls -lh target/aarch64-apple-ios/release/libjitkit.a
 
+      # ── 4c. PROBE: cross-compiler le moteur JIT complet (idevice) pour iOS ──
+      # C'est le jalon gating de l'option B (JIT natif + LocalDevVPN externe) :
+      # est-ce que la stack idevice (tokio + rustls + crypto aws-lc en C/asm)
+      # se cross-compile pour aarch64-apple-ios ? Si oui, le JIT natif est
+      # viable et on peut écrire le flux. Si non, on le saura ici sans casser
+      # le build de l'app (continue-on-error). N'est PAS linké dans l'app tant
+      # que le flux n'est pas écrit — c'est une validation de compilation.
+      - name: Probe jitkit device stack (idevice, iOS)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cd "$GITHUB_WORKSPACE/src/rust/jitkit"
+          echo '## jitkit device-stack iOS probe' >> $GITHUB_STEP_SUMMARY
+          if cargo build --release --features device --target aarch64-apple-ios 2>&1 | tee jitkit_device_probe.log | tail -30; then
+            echo '✅ idevice cross-compiles for iOS — native JIT (Option B) is viable.' >> $GITHUB_STEP_SUMMARY
+            ls -lh target/aarch64-apple-ios/release/libjitkit.a
+          else
+            echo '❌ idevice does NOT cross-compile for iOS yet — see log below.' >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -iE 'error(\[|:)|cannot|failed' jitkit_device_probe.log | tail -30 >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
       # ── 5. Configurer cmake → génère iPSX2.xcodeproj ───────────────────────
       - name: CMake configure
         run: |
