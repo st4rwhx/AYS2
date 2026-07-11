@@ -1399,7 +1399,14 @@ void vtlb_DynGenWrite(u32 sz, bool xmm, int addr_reg, int value_reg)
          (pc >= 0x80000000u && pc < 0x82000000u) ||
          (pc < 0x02000000u));
 
-	if (!CHECK_FASTMEM || vtlb_IsFaultingPC(pc) || force_bios_414x_no_fastmem)
+	// [SW-fastmem fix] The 32-bit GPR store (SW) fastmem fast-path corrupts the memory used
+	// for character vertex transforms — a sub-bisect showed reads are fine and 8/16/64/128
+	// and SWC1 (xmm) stores are fine; only SW (non-xmm, sz==32) is broken. Route every 32-bit
+	// GPR store through the slow memWrite32 path. Fixes stray/stretched polygons in 3D games;
+	// pairs with the bit-exact EE FPU ADDA/MULA fix.
+	const bool sw_fastmem_fix = (!xmm && sz == 32);
+
+	if (!CHECK_FASTMEM || vtlb_IsFaultingPC(pc) || force_bios_414x_no_fastmem || sw_fastmem_fix)
 	{
 		iFlushCall(FLUSH_FULLVTLB);
 
@@ -1815,7 +1822,10 @@ void vtlb_DynGenWrite_Const(u32 bits, bool xmm, u32 addr_const, int value_reg)
              (pc >= 0xBFC00000u && pc < 0xBFC80000u) ||
              (pc >= 0x80000000u && pc < 0x82000000u) ||
              (pc < 0x02000000u));
-        if (force_spad_memwrite || force_bios_write_const)
+        // [SW-fastmem fix] Same broken 32-bit GPR store path as vtlb_DynGenWrite — route
+        // every const-address SW (non-xmm, bits==32) through the slow memWrite32 path.
+        const bool sw_fastmem_fix_const = (!xmm && bits == 32);
+        if (force_spad_memwrite || force_bios_write_const || sw_fastmem_fix_const)
         {
             iFlushCall(FLUSH_FULLVTLB);
             armAsm->Mov(EAX, addr_const);
