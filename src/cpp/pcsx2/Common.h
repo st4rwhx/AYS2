@@ -69,5 +69,17 @@ inline bool iPSX2_IsSafeOnlyEnabled()
 	return (s_cached == 1);
 }
 
+// DEBUG_VERBOSE=1 re-enables the legacy hot-path "DEBUG: ..." logs, R103 block
+// dumps, counter/JIT trace, etc. Ship default is false (fully suppressed) — this
+// gates the recompiler/counter diagnostics that otherwise flood the log every
+// frame. Used by the backported emulator-core files (iR5900, Counters, ...).
+inline bool iPSX2_IsDebugVerbose()
+{
+	static int s_cached = -1;
+	if (s_cached < 0)
+		s_cached = iPSX2_GetRuntimeEnvBool("iPSX2_DEBUG_VERBOSE", false) ? 1 : 0;
+	return (s_cached == 1);
+}
+
 extern std::string ShiftJIS_ConvertString( const char* src );
 extern std::string ShiftJIS_ConvertString( const char* src, int maxlen );

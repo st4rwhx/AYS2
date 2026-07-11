@@ -2919,6 +2919,136 @@ u32 scaleblockcycles_clear()
 	return scaled;
 }
 
+// =============================================================================
+// [V3-features backport 2026-05-04] GTA VC gameplay 到達のための V3 mode 機能を
+// v1 JIT (recCpu) base に opt-in env で integrate。
+//
+// 統一 env: iPSX2_GTAVC_FIXES=1 で 全機能 ON
+// 個別 env: iPSX2_JIT_RUNTIME_BLK / iPSX2_JIT_INTERP_FALLBACK で個別制御
+//
+// Step 5: MTC0 mid-block cycle_mul 変化を runtime 反映、 iv2 と bit-exact 同等。
+// V3.3a/b: EE non-branch opcode を iv2 byte-exact 化。
+// =============================================================================
+
+bool jit_gtavc_fixes_enabled() {
+    static int s_flag = -1;
+    if (s_flag < 0) {
+        const char* e = std::getenv("iPSX2_GTAVC_FIXES");
+        // [V15] 実機 ipa 用 default ON (= ship 構成と等価)、 env=0 で OFF override 可
+        s_flag = (e && e[0] == '0') ? 0 : 1;
+        Console.WriteLn("@@CFG@@ iPSX2_GTAVC_FIXES=%d (V3-features unified, default ON)", s_flag);
+    }
+    return s_flag != 0;
+}
+
+bool jit_runtime_blk_enabled() {
+    static int s_flag = -1;
+    if (s_flag < 0) {
+        const char* e = std::getenv("iPSX2_JIT_RUNTIME_BLK");
+        if (e && e[0]) s_flag = (e[0] != '0') ? 1 : 0;
+        else           s_flag = jit_gtavc_fixes_enabled() ? 1 : 0;
+        Console.WriteLn("@@CFG@@ iPSX2_JIT_RUNTIME_BLK=%d (Step 5 runtime cycle accumulator)", s_flag);
+    }
+    return s_flag != 0;
+}
+
+bool jit_interp_fallback_enabled() {
+    static int s_flag = -1;
+    if (s_flag < 0) {
+        const char* e = std::getenv("iPSX2_JIT_INTERP_FALLBACK");
+        // [V15] V14.7 ship 構成: default OFF (= V3.3a/b OFF、 全 native)、 env=1 で ON override 可
+        s_flag = (e && e[0] && e[0] != '0') ? 1 : 0;
+        Console.WriteLn("@@CFG@@ iPSX2_JIT_INTERP_FALLBACK=%d (V3.3a/b non-branch iv2 fallback)", s_flag);
+    }
+    return s_flag != 0;
+}
+
+// is_branch_opcode_for_v3: branch family は v1 emit 維持 (interp fallback しない)。
+//   J/JAL/JR/JALR/B*/BC1*/SYSCALL/BREAK/ERET 等を識別。
+static inline bool is_branch_opcode_for_v3(u32 op) {
+    const u32 mainop = op >> 26;
+    if (mainop == 0x02 || mainop == 0x03) return true;  // J / JAL
+    if (mainop >= 0x04 && mainop <= 0x07) return true;  // BEQ / BNE / BLEZ / BGTZ
+    if (mainop == 0x14 || mainop == 0x15) return true;  // BEQL / BNEL
+    if (mainop == 0x16 || mainop == 0x17) return true;  // BLEZL / BGTZL
+    if (mainop == 0x01) return true;                    // REGIMM (BLTZ / BGEZ etc)
+    if (mainop == 0x11) {
+        const u32 fmt = (op >> 21) & 0x1F;
+        if (fmt == 0x08) return true;                   // BC1
+    }
+    if (mainop == 0x10) {
+        const u32 fmt = (op >> 21) & 0x1F;
+        if (fmt == 0x08) return true;                   // BC0
+        const u32 funct = op & 0x3F;
+        if ((op & 0xFFFFFFE0) == 0x42000000) {
+            if (funct == 0x18) return true;             // ERET
+        }
+    }
+    if (mainop == 0x00) {
+        const u32 funct = op & 0x3F;
+        if (funct == 0x08 || funct == 0x09) return true; // JR / JALR
+        if (funct == 0x0C || funct == 0x0D) return true; // SYSCALL / BREAK
+    }
+    return false;
+}
+
+extern u32 cpuBlockCycles;  // Interpreter.cpp で定義 (V3 Step 5 backport で extern 化)
+
+// armEmitFlushBlockCycles_runtime: block-end での runtime cycle flush (iv2 intUpdateCPUCycles 同等)。
+//   PS2 R5900: cycle += max(1, cpuBlockCycles >> 3)、 残 3 bit。
+void armEmitFlushBlockCycles_runtime(bool clear) {
+    using namespace a64;
+    armMoveAddressToReg(x16, &cpuBlockCycles);
+    armAsm->Ldr(w14, MemOperand(x16));
+    armAsm->Lsr(w15, w14, 3);
+    armAsm->Mov(w17, 1);
+    armAsm->Cmp(w15, 0);
+    armAsm->Csel(w15, w17, w15, eq);
+    armMoveAddressToReg(x16, &cpuRegs.cycle);
+    armAsm->Ldr(w17, MemOperand(x16));
+    armAsm->Add(w17, w17, w15);
+    armAsm->Str(w17, MemOperand(x16));
+    armMoveAddressToReg(x16, &cpuBlockCycles);
+    armAsm->And(w14, w14, 7);
+    armAsm->Str(w14, MemOperand(x16));
+    if (clear) {
+        s_nBlockCycles = 0;
+    }
+}
+
+// armEmitPerInstCycleAdd_runtime: per-inst で cpuBlockCycles += scaled を runtime に追加。
+static void armEmitPerInstCycleAdd_runtime(u32 raw_cycles) {
+    using namespace a64;
+    armMoveAddressToReg(x16, &cpuBlockCycles);
+    armAsm->Ldr(w14, MemOperand(x16));
+    armMoveAddressToReg(x17, &cpuRegs.CP0.r[16]);
+    armAsm->Ldr(w15, MemOperand(x17));
+    armAsm->Lsr(w15, w15, 18);
+    armAsm->And(w15, w15, 1);
+    armAsm->Mov(w17, 2);
+    armAsm->Sub(w15, w17, w15);
+    armAsm->Mov(w17, raw_cycles);
+    armAsm->Mul(w15, w17, w15);
+    armAsm->Add(w14, w14, w15);
+    armMoveAddressToReg(x16, &cpuBlockCycles);
+    armAsm->Str(w14, MemOperand(x16));
+}
+
+// armEmitPerInstCycleAdd: public entry。 jit_runtime_blk_enabled で gate。
+void armEmitPerInstCycleAdd(u32 raw_cycles) {
+    if (!jit_runtime_blk_enabled()) return;
+    armEmitPerInstCycleAdd_runtime(raw_cycles);
+}
+
+// armEmitCycleAdd: block-end での cycle flush wrapper。
+void armEmitCycleAdd(bool clear) {
+    if (jit_runtime_blk_enabled()) {
+        armEmitFlushBlockCycles_runtime(clear);
+    } else {
+        armAdd(PTR_CPU(cpuRegs.cycle), clear ? scaleblockcycles_clear() : scaleblockcycles());
+    }
+}
+
 // Generates dynarec code for Event tests followed by a block dispatch (branch).
 // Parameters:
 //   newpc - address to jump to at the end of the block.  If newpc == 0xffffffff then
@@ -2983,7 +3113,8 @@ static void iBranchTest(u32 newpc)
         armLoad(EAX, PTR_CPU(cpuRegs.nextEventCycle));
         
         // Calculate potential new cycle count
-        armAdd(PTR_CPU(cpuRegs.cycle), scaleblockcycles());
+        // [V3 backport 2026-05-04] Step 5 runtime path or legacy s_nBlockCycles path
+        armEmitCycleAdd(false);
         
         // Check if we passed nextEventCycle
         armLoadsw(EEX, PTR_CPU(cpuRegs.cycle));
@@ -3008,7 +3139,8 @@ static void iBranchTest(u32 newpc)
 	        {
 		        armLoad(EDX, PTR_CPU(cpuRegs.cycle));
 	        }
-	        armAdd(PTR_CPU(cpuRegs.cycle), scaleblockcycles());
+	        // [V3 backport 2026-05-04] Step 5 runtime path or legacy s_nBlockCycles path
+	        armEmitCycleAdd(false);
 	        armLoadsw(EAX, PTR_CPU(cpuRegs.cycle));
 	        if (s_probe_ibranch_41048_enabled && (newpc == 0x9FC41048 || newpc == 0x9FC41060))
 	        {
@@ -3531,6 +3663,8 @@ void recompileNextInstruction(bool delayslot, bool swapped_delay_slot)
 	{
 		// Note: Tests on a ps2 suggested more like 5 cycles for a NOP. But there's many factors in this..
 		s_nBlockCycles += 9 * (2 - ((cpuRegs.CP0.n.Config >> 18) & 0x1));
+		// [V3 backport 2026-05-04] Step 5 runtime per-inst cycle add (NOP path)
+		armEmitPerInstCycleAdd(9);
 	}
 	else
 	{
@@ -3549,7 +3683,22 @@ void recompileNextInstruction(bool delayslot, bool swapped_delay_slot)
 		}
 		s_nBlockCycles += opcode.cycles * (2 - ((cpuRegs.CP0.n.Config >> 18) & 0x1));
 		if (opcode.recompile) {
-			opcode.recompile();
+			// [V3.3a/b backport 2026-05-04] non-branch opcode を iv2 byte-exact interp fallback。
+			// branch family は v1 emit 維持 (PC writeback / dispatch / delay slot framework 整合性)。
+			const u32 op_v12 = cpuRegs.code;
+			const bool is_branch_v12 = is_branch_opcode_for_v3(op_v12);
+			bool path_v3_v12 = false;
+			if (!is_branch_v12 && opcode.interpret) {
+				path_v3_v12 = jit_interp_fallback_enabled();
+			}
+			if (__builtin_expect(path_v3_v12, 0)) {
+				iFlushCall(FLUSH_INTERPRETER);
+				recCall(opcode.interpret);
+			} else {
+				opcode.recompile();
+			}
+			// [V3 backport 2026-05-04] Step 5 runtime per-inst cycle add (non-NOP path)
+			armEmitPerInstCycleAdd(opcode.cycles);
 		} else {
 			// [iPSX2] Diagnostic for missing handlers
 			static bool logged = false;
@@ -4058,7 +4207,8 @@ static bool isInterpRangeBlock(u32 pc) {
 static void recRecompile(const u32 startpc)
 {
     // [R103] Compile-time log + code dump for bootstrap blocks
-    if (startpc >= 0x00100000u && startpc < 0x00100100u) {
+    // (= env iPSX2_DEBUG_VERBOSE=1 で復活、 release default suppress)
+    if (iPSX2_IsDebugVerbose() && startpc >= 0x00100000u && startpc < 0x00100100u) {
         static int s_100000_n = 0;
         Console.WriteLn(Color_Red, "[R103_BLOCK] startpc=%08x compile #%d cycle=%u",
             startpc, s_100000_n, cpuRegs.cycle);
@@ -6352,7 +6502,8 @@ static void recRecompile(const u32 startpc)
 	}
 
 StartRecomp:
-    // DEBUG: Final Block Limits
+    // DEBUG: Final Block Limits (= env iPSX2_DEBUG_VERBOSE=1 で復活、 release default suppress)
+    if (iPSX2_IsDebugVerbose())
     {
         static int log_lim = 0;
         if (log_lim < 500) { // Log first 500 compilations
@@ -6899,7 +7050,8 @@ StartRecomp:
 //				xMOV(ptr32[&cpuRegs.pc], pc);
                 armStore(PTR_CPU(cpuRegs.pc), (uint64_t)pc);
 //				xADD(ptr32[&cpuRegs.cycle], scaleblockcycles());
-                armAdd(PTR_CPU(cpuRegs.cycle), scaleblockcycles());
+                // [V3 backport 2026-05-04] Step 5 runtime path or legacy s_nBlockCycles path
+                armEmitCycleAdd(false);
 //				recBlocks.Link(HWADDR(pc), xJcc32());
                 armAsm->Nop();
                 recBlocks.Link(HWADDR(pc), (s32*)armGetCurrentCodePointer()-1);
