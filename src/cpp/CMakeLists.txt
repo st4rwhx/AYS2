@@ -352,6 +352,22 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         MACOSX_PACKAGE_LOCATION Resources/sounds
     )
 
+    # PCSX2 databases -> Resources root (EmuFolders::Resources == bundle resourcePath,
+    # same level GameDatabase.cpp reads GameIndex.yaml / RedumpDatabase.yaml from).
+    # Without GameIndex.yaml bundled the emulator logs "GameDB: 0 games on record"
+    # and NO per-title fixes apply (round/clamp modes, gamefixes, GS hacks), which
+    # leaves stray polygons and other per-game rendering glitches unpatched.
+    set(PCSX2_DATABASES
+        "${CMAKE_SOURCE_DIR}/../assets/resources/GameIndex.yaml"
+        "${CMAKE_SOURCE_DIR}/../assets/resources/RedumpDatabase.yaml")
+    foreach(_db ${PCSX2_DATABASES})
+        if(EXISTS "${_db}")
+            target_sources(iPSX2 PRIVATE "${_db}")
+            set_source_files_properties("${_db}" PROPERTIES
+                MACOSX_PACKAGE_LOCATION Resources)
+        endif()
+    endforeach()
+
     # Metal debug info: only for Debug builds
     set_target_properties(iPSX2 PROPERTIES
         XCODE_ATTRIBUTE_MTL_ENABLE_DEBUG_INFO "$<IF:$<CONFIG:Debug>,INCLUDE_SOURCE,>"
