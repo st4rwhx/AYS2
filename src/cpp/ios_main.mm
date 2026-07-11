@@ -42,6 +42,7 @@
 
 #include "pcsx2/Host.h"
 #include "pcsx2/Host/AudioStreamTypes.h"
+#include "IconsFontAwesome5.h"  // ICON_FA_SAVE / ICON_FA_FOLDER_OPEN for save-state OSD
 
 #include "common/WindowInfo.h"
 #include "common/HTTPDownloader.h"
@@ -301,13 +302,19 @@ namespace Host
         // Save/load state requests from the UI. Safe here: this runs on the CPU
         // thread between frames — the same place the desktop build performs them.
         if (VMManager::HasValidVM()) {
+            char osd[80];
             if (int slot = s_saveStateSlot.exchange(-1); slot >= 0) {
                 Console.WriteLn("[UI] Saving state to slot %d", slot);
-                VMManager::SaveStateToSlot(slot);
+                EmuFolders::EnsureFoldersExist(); // guarantee sstates/ exists before writing
+                const bool ok = VMManager::SaveStateToSlot(slot);
+                snprintf(osd, sizeof(osd), ok ? "State saved to slot %d." : "Failed to save state to slot %d.", slot);
+                Host::AddIconOSDMessage("ipsx2_savestate", ICON_FA_SAVE, std::string(osd), Host::OSD_INFO_DURATION);
             }
             if (int slot = s_loadStateSlot.exchange(-1); slot >= 0) {
                 Console.WriteLn("[UI] Loading state from slot %d", slot);
-                VMManager::LoadStateFromSlot(slot);
+                const bool ok = VMManager::LoadStateFromSlot(slot);
+                snprintf(osd, sizeof(osd), ok ? "State loaded from slot %d." : "No save state in slot %d.", slot);
+                Host::AddIconOSDMessage("ipsx2_savestate", ICON_FA_FOLDER_OPEN, std::string(osd), Host::OSD_INFO_DURATION);
             }
         }
 
