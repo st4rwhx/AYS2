@@ -24,6 +24,8 @@ struct BIOSListView: View {
                 }
             }
             .navigationTitle("BIOS")
+            .background(PS2WaveBackground().ignoresSafeArea())
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showImporter = true } label: {

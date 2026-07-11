@@ -55,6 +55,9 @@ struct GameListView: View {
                 }
             }
             .navigationTitle("Games")
+            .scrollContentBackground(.hidden)
+            .background(PS2WaveBackground().ignoresSafeArea())
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showImporter = true } label: {

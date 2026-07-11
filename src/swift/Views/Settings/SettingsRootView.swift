@@ -69,7 +69,10 @@ struct SettingsRootView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .background(PS2WaveBackground().ignoresSafeArea())
+        .toolbarBackground(.hidden, for: .navigationBar)
     }
 }

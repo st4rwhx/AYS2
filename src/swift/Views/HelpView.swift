@@ -108,7 +108,10 @@ struct HelpView: View {
                     Label("About", systemImage: "info.circle")
                 }
             }
+            .scrollContentBackground(.hidden)
             .navigationTitle("Help")
+            .background(PS2WaveBackground().ignoresSafeArea())
+            .toolbarBackground(.hidden, for: .navigationBar)
         }
     }
 }
