@@ -96,6 +96,8 @@ bool g_touchPadState[64] = {};
 // Persistent VM thread lifecycle
 static std::atomic<bool> s_vmThreadActive{false};   // true while VM is executing
 std::atomic<bool> s_requestVMStop{false};     // signal VM to stop from UI (extern for iPSX2Bridge)
+std::atomic<int> s_saveStateSlot{-1};         // >=0 = pending save-state slot request (extern for iPSX2Bridge)
+std::atomic<int> s_loadStateSlot{-1};         // >=0 = pending load-state slot request (extern for iPSX2Bridge)
 static std::atomic<bool> s_requestVMBoot{false};     // signal VM thread to boot
 static std::mutex s_vmMutex;
 static std::condition_variable s_vmCV;
@@ -294,6 +296,19 @@ namespace Host
             Console.WriteLn("[UI] PumpMessages: setting VM state to Stopping");
             VMManager::SetState(VMState::Stopping);
             return;
+        }
+
+        // Save/load state requests from the UI. Safe here: this runs on the CPU
+        // thread between frames — the same place the desktop build performs them.
+        if (VMManager::HasValidVM()) {
+            if (int slot = s_saveStateSlot.exchange(-1); slot >= 0) {
+                Console.WriteLn("[UI] Saving state to slot %d", slot);
+                VMManager::SaveStateToSlot(slot);
+            }
+            if (int slot = s_loadStateSlot.exchange(-1); slot >= 0) {
+                Console.WriteLn("[UI] Loading state from slot %d", slot);
+                VMManager::LoadStateFromSlot(slot);
+            }
         }
 
         PadBase* pad = Pad::GetPad(0, 0);

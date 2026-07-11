@@ -61,6 +61,13 @@ typedef NS_ENUM(NSInteger, iPSX2PadButton) {
 + (void)requestVMStop;
 + (void)setFullScreen:(BOOL)enabled;
 
+// Save states. The request is executed on the emulation thread between frames;
+// these calls just enqueue it. hasStateSlot: reports whether a slot file
+// already exists for the running game (so the UI can enable/disable Load).
++ (void)saveStateSlot:(int)slot;
++ (void)loadStateSlot:(int)slot;
++ (BOOL)hasStateSlot:(int)slot;
+
 // Info
 + (nonnull NSString *)biosName;
 + (nonnull NSString *)buildVersion;

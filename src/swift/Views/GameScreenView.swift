@@ -83,6 +83,32 @@ struct GameScreenView: View {
                 }
             }
             Divider()
+            Menu {
+                ForEach(1...4, id: \.self) { slot in
+                    Button {
+                        iPSX2Bridge.saveStateSlot(Int32(slot))
+                        SoundManager.shared.play(.nav)
+                    } label: {
+                        Label("Slot \(slot)", systemImage: "\(slot).circle")
+                    }
+                }
+            } label: {
+                Label("Save State", systemImage: "square.and.arrow.down")
+            }
+            Menu {
+                ForEach(1...4, id: \.self) { slot in
+                    Button {
+                        iPSX2Bridge.loadStateSlot(Int32(slot))
+                        SoundManager.shared.play(.nav)
+                    } label: {
+                        Label("Slot \(slot)", systemImage: "\(slot).circle")
+                    }
+                    .disabled(!iPSX2Bridge.hasStateSlot(Int32(slot)))
+                }
+            } label: {
+                Label("Load State", systemImage: "square.and.arrow.up")
+            }
+            Divider()
             Button {
                 appState.returnToMenu()
             } label: {

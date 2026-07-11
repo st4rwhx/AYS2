@@ -86,7 +86,10 @@ struct VirtualControllerView: View {
     @ViewBuilder
     func portraitLayout(w: CGFloat, h: CGFloat) -> some View {
         ZStack {
-            Color(white: 0.10).opacity(Double(settings.padOpacity))  // A002: apply opacity to background too
+            // Subtle vertical gradient for the pad area (nicer than flat grey).
+            LinearGradient(colors: [Color(white: 0.13), Color(white: 0.05)],
+                           startPoint: .top, endPoint: .bottom)
+                .opacity(Double(settings.padOpacity))  // A002: apply opacity to background too
 
             GeometryReader { cGeo in
                 let cW = cGeo.size.width
@@ -160,38 +163,65 @@ struct PSBtn: View {
     let sym: String; let clr: Color; let sz: CGFloat; let btn: iPSX2PadButton
     @State private var on = false
     var body: some View {
-        Text(sym)
-            .font(.system(size: sz * 0.42, weight: .bold))
-            .foregroundStyle(on ? .white : clr)
-            .frame(width: sz, height: sz)
-            .background(Circle().fill(on ? clr.opacity(0.6) : .black.opacity(0.25))
-                .stroke(clr.opacity(on ? 1.0 : 0.5), lineWidth: on ? 2.5 : 1.5))
-            .scaleEffect(on ? 0.88 : 1.0)
-            .animation(.easeOut(duration: 0.06), value: on)
-            .contentShape(Circle())
-            .simultaneousGesture(DragGesture(minimumDistance: 0)
-                .onChanged { _ in guard !on else { return }; on = true
-                    EmulatorBridge.shared.setPadButton(btn, pressed: true)
-                    if SettingsStore.shared.hapticFeedback {
-                        HapticManager.medium.impactOccurred()
-                    }
+        ZStack {
+            // Glossy domed base: radial gradient gives a 3D sphere highlight.
+            Circle()
+                .fill(RadialGradient(
+                    colors: on ? [clr.opacity(0.95), clr.opacity(0.45)]
+                               : [Color(white: 0.17), Color(white: 0.05)],
+                    center: UnitPoint(x: 0.35, y: 0.30),
+                    startRadius: 1, endRadius: sz * 0.85))
+            // Coloured ring + faint inner ring for depth.
+            Circle().strokeBorder(clr.opacity(on ? 1.0 : 0.7), lineWidth: on ? 2.5 : 1.8)
+            Circle().strokeBorder(.white.opacity(0.10), lineWidth: 1).padding(2)
+            Text(sym)
+                .font(.system(size: sz * 0.44, weight: .bold, design: .rounded))
+                .foregroundStyle(on ? .white : clr)
+        }
+        .frame(width: sz, height: sz)
+        .shadow(color: on ? clr.opacity(0.6) : .black.opacity(0.45),
+                radius: on ? 9 : 3, x: 0, y: on ? 0 : 2)
+        .scaleEffect(on ? 0.9 : 1.0)
+        .animation(.easeOut(duration: 0.06), value: on)
+        .contentShape(Circle())
+        .simultaneousGesture(DragGesture(minimumDistance: 0)
+            .onChanged { _ in guard !on else { return }; on = true
+                EmulatorBridge.shared.setPadButton(btn, pressed: true)
+                if SettingsStore.shared.hapticFeedback {
+                    HapticManager.medium.impactOccurred()
                 }
-                .onEnded { _ in on = false; EmulatorBridge.shared.setPadButton(btn, pressed: false) })
+            }
+            .onEnded { _ in on = false; EmulatorBridge.shared.setPadButton(btn, pressed: false) })
     }
 }
 
 struct PadBtn: View {
     let label: String; let w: CGFloat; let h: CGFloat; let btn: iPSX2PadButton
     @State private var on = false
+    private var accent: Color { Color(red: 0.29, green: 0.56, blue: 1.0) }
+    private var radius: CGFloat { min(h * 0.35, 12) }
     var body: some View {
         Text(label)
-            .font(.system(size: min(w, h) * 0.38, weight: .semibold))
-            .foregroundStyle(on ? .black : .white)
+            .font(.system(size: min(w, h) * 0.4, weight: .semibold, design: .rounded))
+            .foregroundStyle(on ? .white : .white.opacity(0.9))
             .frame(width: w, height: h)
-            .background(RoundedRectangle(cornerRadius: 7)
-                .fill(on ? .white.opacity(0.7) : .black.opacity(0.22))
-                .stroke(.white.opacity(on ? 0.8 : 0.25), lineWidth: 1))
-            .scaleEffect(on ? 0.9 : 1.0)
+            .background(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(LinearGradient(
+                        colors: on ? [accent.opacity(0.9), accent.opacity(0.5)]
+                                   : [Color(white: 0.18), Color(white: 0.07)],
+                        startPoint: .top, endPoint: .bottom))
+                    // Top gloss highlight.
+                    .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .fill(LinearGradient(colors: [.white.opacity(0.14), .clear],
+                                             startPoint: .top, endPoint: .center)))
+                    // Rim.
+                    .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .strokeBorder(.white.opacity(on ? 0.6 : 0.20), lineWidth: 1))
+            )
+            .shadow(color: on ? accent.opacity(0.55) : .black.opacity(0.4),
+                    radius: on ? 7 : 2, x: 0, y: on ? 0 : 1.5)
+            .scaleEffect(on ? 0.92 : 1.0)
             .animation(.easeOut(duration: 0.06), value: on)
             .contentShape(Rectangle())
             .simultaneousGesture(DragGesture(minimumDistance: 0)
@@ -214,12 +244,27 @@ struct StickView: View {
 
     var body: some View {
         ZStack {
-            Circle().fill(.black.opacity(0.18)).stroke(.white.opacity(0.18), lineWidth: 1).frame(width: sz)
-            Circle().fill(.white.opacity(0.35)).frame(width: knob).offset(off)
+            // Recessed base well.
+            Circle()
+                .fill(RadialGradient(colors: [Color(white: 0.04), Color(white: 0.13)],
+                                     center: .center, startRadius: 1, endRadius: sz * 0.55))
+                .overlay(Circle().strokeBorder(.white.opacity(0.14), lineWidth: 1))
+                .frame(width: sz)
+            // Glossy thumb knob; tints blue while dragging.
+            Circle()
+                .fill(RadialGradient(
+                    colors: isDragging
+                        ? [Color(red: 0.42, green: 0.66, blue: 1.0), Color(red: 0.16, green: 0.32, blue: 0.7)]
+                        : [Color(white: 0.44), Color(white: 0.14)],
+                    center: UnitPoint(x: 0.35, y: 0.30), startRadius: 1, endRadius: knob))
+                .overlay(Circle().strokeBorder(.white.opacity(0.28), lineWidth: 1))
+                .frame(width: knob)
+                .shadow(color: .black.opacity(0.5), radius: 3, x: 0, y: 2)
+                .offset(off)
             // L3/R3 label
             Text(isLeft ? "L3" : "R3")
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.white.opacity(0.3))
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.35))
                 .offset(y: sz / 2 + 8)
         }
         .contentShape(Circle())

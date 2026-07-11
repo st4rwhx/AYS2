@@ -131,6 +131,28 @@ static NSDate* s_lastNVMSaveDate = nil;
     iPSX2_SetSDLFullscreen(enabled ? true : false);
 }
 
++ (void)saveStateSlot:(int)slot {
+    extern std::atomic<int> s_saveStateSlot;
+    s_saveStateSlot.store(slot);
+}
+
++ (void)loadStateSlot:(int)slot {
+    extern std::atomic<int> s_loadStateSlot;
+    s_loadStateSlot.store(slot);
+}
+
++ (BOOL)hasStateSlot:(int)slot {
+    if (!VMManager::HasValidVM())
+        return NO;
+    const std::string serial = VMManager::GetDiscSerial();
+    if (serial.empty())
+        return NO;
+    const std::string path = VMManager::GetSaveStateFileName(serial.c_str(), VMManager::GetDiscCRC(), slot);
+    if (path.empty())
+        return NO;
+    return [[NSFileManager defaultManager] fileExistsAtPath:[NSString stringWithUTF8String:path.c_str()]];
+}
+
 + (nonnull NSString *)buildVersion {
     NSString *ver = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"?";
     return [NSString stringWithFormat:@"iPSX2 v%@", ver];
