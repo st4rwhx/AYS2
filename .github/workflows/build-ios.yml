@@ -20,7 +20,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1 # Pas besoin de tout l'historique git
+          fetch-depth: 30 # historique récent pour générer le changelog SideStore
 
       # ── 2. Sélectionner Xcode ──────────────────────────────────────────────
       - name: Select Xcode
@@ -209,12 +209,24 @@ jobs:
           To request the corresponding source, contact: ${SOURCE_CONTACT}
           OFFER
 
+          # Build a human-readable changelog from recent commit subjects. This
+          # becomes the version's localizedDescription, which SideStore/AltStore
+          # render as the "What's New" text — so users see what actually changed
+          # instead of a generic "Latest development build." Subjects only (never
+          # bodies), so commit trailers never leak into the store listing.
+          CHANGELOG="$(git log -10 --no-merges --pretty=format:'• %s' 2>/dev/null \
+            | grep -viE '^• (ci|chore|build)(\(|:)' | head -8)"
+          [ -z "$CHANGELOG" ] && CHANGELOG="• Latest development build."
+          export CHANGELOG
+
           # Regenerate the SideStore/AltStore source with this build's version,
           # size and date so SideStore detects it as an update (same bundle id =
           # no new App ID consumed on update).
           python3 - "$VERSION" "$IPA_SIZE" "$TODAY" "$IPA_URL" "$ICON_URL" <<'PY'
-          import json, sys
+          import json, sys, os
           version, size, date, ipa, icon = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+          notes = (os.environ.get("CHANGELOG") or "").strip()[:1200] or "• Latest development build."
+          desc = f"What's new in v{version}:\n{notes}"
           src = json.load(open("source.json"))
           app = src["apps"][0]
           app["iconURL"] = icon
@@ -224,11 +236,11 @@ jobs:
           app["size"] = size
           app["versions"] = [{
               "version": version, "date": date,
-              "localizedDescription": "Latest development build.",
+              "localizedDescription": desc,
               "downloadURL": ipa, "size": size, "minOSVersion": "17.0"
           }]
           json.dump(src, open("source.json", "w"), indent=2, ensure_ascii=False)
-          print("source.json version:", version, "size:", size)
+          print("source.json version:", version, "\nnotes:\n" + desc)
           PY
 
           gh release delete "$TAG" --yes --cleanup-tag --repo "$RELEASE_REPO" 2>/dev/null || true
