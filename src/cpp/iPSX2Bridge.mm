@@ -155,7 +155,7 @@ static NSDate* s_lastNVMSaveDate = nil;
 
 + (nonnull NSString *)buildVersion {
     NSString *ver = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"?";
-    return [NSString stringWithFormat:@"iPSX2 v%@", ver];
+    return [NSString stringWithFormat:@"ELORIS-PRISM v%@", ver];
 }
 
 + (nullable NSString *)currentISOPath {

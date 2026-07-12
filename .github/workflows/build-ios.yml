@@ -215,7 +215,8 @@ jobs:
           # instead of a generic "Latest development build." Subjects only (never
           # bodies), so commit trailers never leak into the store listing.
           CHANGELOG="$(git log -10 --no-merges --pretty=format:'• %s' 2>/dev/null \
-            | grep -viE '^• (ci|chore|build)(\(|:)' | head -8)"
+            | grep -viE '^• (ci|chore|build)(\(|:)' \
+            | sed -E "s/otti'?s?/upstream/Ig" | head -8)"
           [ -z "$CHANGELOG" ] && CHANGELOG="• Latest development build."
           export CHANGELOG
 

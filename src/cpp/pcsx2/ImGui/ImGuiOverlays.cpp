@@ -178,12 +178,12 @@ __ri void ImGuiManager::DrawPerformanceOverlay(float& position_y, float scale, f
 
 		if (GSConfig.OsdShowVersion)
 		{
+// IPSX2_VERSION_STR arrives from CMake already as a quoted string literal
+// (IPSX2_VERSION_STR="0.1.71"); stringifying it again produced v"dev".
 #ifndef IPSX2_VERSION_STR
 #define IPSX2_VERSION_STR "dev"
 #endif
-#define IPSX2_STRINGIFY_(x) #x
-#define IPSX2_STRINGIFY(x) IPSX2_STRINGIFY_(x)
-			text.append_format("{}iPSX2 v{}", first ? "" : " | ", IPSX2_STRINGIFY(IPSX2_VERSION_STR));
+			text.append_format("{}ELORIS-PRISM v{}", first ? "" : " | ", IPSX2_VERSION_STR);
 			first = false;
 		}
 

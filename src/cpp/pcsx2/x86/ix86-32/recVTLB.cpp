@@ -284,11 +284,14 @@ static bool IsFixBios414xNoFastmemEnabled()
     static int s_enabled = -1;
     if (s_enabled < 0)
     {
-        // [P47] Device: mach_vm_remap shares physical pages → fastmem safe → default OFF.
-        // Simulator: mmap(MAP_ANON) non-shared pages → fastmem reads stale → default ON (slow path).
-        // Env override: iPSX2_FIX_BIOS_414X_NO_FASTMEM=1 forces slow path on any platform.
+        // [P47] Device: mach_vm_remap shares physical pages → assumed fastmem safe → was default OFF.
+        // [V15 root cause] That assumption is WRONG on real devices: with dual-mapping the fastmem
+        // fast-path reads STALE data (observed as corrupted BIOS on device while the Simulator was
+        // fine — and in-game as flickering/disappearing geometry). Default is now ON everywhere so
+        // guest loads take the slow-but-correct memRead path; set iPSX2_FIX_BIOS_414X_NO_FASTMEM=0
+        // to restore the old fast-path behaviour for debugging.
         const bool is_dual_map = (DarwinMisc::g_code_rw_offset != 0);
-        const bool env_override = iPSX2_GetRuntimeEnvBool("iPSX2_FIX_BIOS_414X_NO_FASTMEM", false);
+        const bool env_override = iPSX2_GetRuntimeEnvBool("iPSX2_FIX_BIOS_414X_NO_FASTMEM", true);
         s_enabled = (!is_dual_map || env_override) ? 1 : 0;
         Console.WriteLn("@@CFG@@ iPSX2_FIX_BIOS_414X_NO_FASTMEM=%d (dual_map=%d offset=%td)",
             s_enabled, (int)is_dual_map, DarwinMisc::g_code_rw_offset);

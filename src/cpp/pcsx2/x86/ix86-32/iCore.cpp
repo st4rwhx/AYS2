@@ -613,7 +613,16 @@ void _writebackX86Reg(int x86reg)
                     }
                 }
 //				xMOV(ptr64[&cpuRegs.GPR.r[x86regs[x86reg].reg].UL[0]], xRegister64(x86reg));
-                armStore(PTR_CPU(cpuRegs.GPR.r[x86regs[x86reg].reg].UL[0]), a64::XRegister(HostGprPhys(x86reg)));
+                // [P201] Write UD[0] only (8-byte STR at an explicitly computed offset).
+                // PS2 R5900: 32/64-bit instructions preserve UD[1]; only MMI writes both
+                // halves. A wider store here (or any offset slip) zeroes MMI-set UD[1]
+                // and corrupts 128-bit GPR state used by geometry code.
+                {
+                    const int greg = x86regs[x86reg].reg;
+                    const s64 off = offsetof(cpuRegistersPack, cpuRegs.GPR.r[0].UD[0]) + greg * sizeof(u128);
+                    armAsm->Str(a64::XRegister(HostGprPhys(x86reg)),
+                        a64::MemOperand(RSTATE_CPU, off));
+                }
             }
 		}
 		break;

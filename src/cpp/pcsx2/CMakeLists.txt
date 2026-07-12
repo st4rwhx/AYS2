@@ -21,6 +21,12 @@ target_link_libraries(PCSX2 PRIVATE PCSX2_FLAGS)
 target_compile_features(PCSX2_FLAGS INTERFACE cxx_std_20)
 target_compile_definitions(PCSX2_FLAGS INTERFACE "${PCSX2_DEFS}")
 
+# App version string for the in-game OSD (ImGuiOverlays). The parent scope sets
+# IPSX2_VERSION; without this the overlay falls back to "dev".
+if(DEFINED IPSX2_VERSION)
+	target_compile_definitions(PCSX2_FLAGS INTERFACE IPSX2_VERSION_STR="${IPSX2_VERSION}")
+endif()
+
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	message(STATUS "Forcing _M_ARM64 for iOS")
 	set(_M_ARM64 TRUE)
