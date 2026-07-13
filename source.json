@@ -1,11 +1,11 @@
 {
   "name": "ELORIS-PRISM",
-  "identifier": "com.ayanodeath.elorisprism.source",
+  "identifier": "com.balaj.elorisprism.source",
   "subtitle": "ELORIS-PRISM",
   "apps": [
     {
       "name": "ELORIS-PRISM",
-      "bundleIdentifier": "com.ayanodeath.elorisprism",
+      "bundleIdentifier": "com.balaj.elorisprism",
       "developerName": "ELORIS-PRISM",
       "subtitle": "PlayStation 2 emulator for iPhone & iPad",
       "localizedDescription": "ELORIS-PRISM is a PlayStation 2 emulator for iPhone and iPad. Load your own PS2 BIOS and disc images (.iso / .chd) and play with full-speed JIT via a JIT enabler such as StikDebug. See each update's \"What's New\" for the latest changes.",

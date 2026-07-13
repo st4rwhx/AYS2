@@ -34,7 +34,7 @@ UX and a frictionless setup.
 **Source URL:** `https://elorisprism.<account>.workers.dev`
 (short proxy of the GitHub release `source.json`; downloads are on GitHub Releases)
 
-**Bundle id:** `com.ayanodeath.elorisprism`
+**Bundle id:** `com.balaj.elorisprism`
 
 **Entitlements:** the app uses no special entitlements beyond standard sandbox
 (file access for imported ISO/BIOS via the Files app). No network entitlement
