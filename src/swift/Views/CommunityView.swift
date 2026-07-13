@@ -8,7 +8,7 @@ import SwiftUI
 
 enum CommunityLinks {
     static let discord = URL(string: "https://discord.gg/AXAzExECSv")!
-    static let github = URL(string: "https://github.com/st4rwhx/iPCSX2")!
+    static let github = URL(string: "https://github.com/balajsimon/ELORIS-PRISM")!
 
     /// Discord "blurple".
     static let blurple = Color(red: 0.345, green: 0.396, blue: 0.949)
