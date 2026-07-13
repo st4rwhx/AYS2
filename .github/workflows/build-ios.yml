@@ -186,20 +186,26 @@ jobs:
           VERSION="0.1.${GITHUB_RUN_NUMBER}"
           # Public-facing asset is branded ELORIS-PRISM; internal build target
           # stays iPSX2 (scheme/paths), so rename the packaged IPA here.
-          cp iPSX2.ipa ELORIS-PRISM.ipa
-          IPA_SIZE=$(stat -f%z ELORIS-PRISM.ipa 2>/dev/null || stat -c%s ELORIS-PRISM.ipa)
+          # Versioned filename → the download URL is IMMUTABLE per version. A
+          # client whose cached source.json is a build or two behind still
+          # resolves to a matching IPA (no "downloaded version does not match"),
+          # because the rolling release is never deleted and old versioned IPAs
+          # stay reachable. Only the feed files (source.json/icon) are refreshed.
+          IPA_NAME="ELORIS-PRISM-${VERSION}.ipa"
+          cp iPSX2.ipa "$IPA_NAME"
+          IPA_SIZE=$(stat -f%z "$IPA_NAME" 2>/dev/null || stat -c%s "$IPA_NAME")
           TODAY=$(date +%F)
           # Integrity hashes — required by SideStore's Community-Source submission
           # (md5, anti bait-and-switch) and generally good practice.
-          IPA_MD5=$(md5 -q ELORIS-PRISM.ipa 2>/dev/null || md5sum ELORIS-PRISM.ipa | cut -d' ' -f1)
-          IPA_SHA=$(shasum -a 256 ELORIS-PRISM.ipa | cut -d' ' -f1)
-          printf 'ELORIS-PRISM.ipa\n  version: %s\n  size:    %s bytes\n  md5:     %s\n  sha256:  %s\n' \
-            "$VERSION" "$IPA_SIZE" "$IPA_MD5" "$IPA_SHA" > checksums.txt
+          IPA_MD5=$(md5 -q "$IPA_NAME" 2>/dev/null || md5sum "$IPA_NAME" | cut -d' ' -f1)
+          IPA_SHA=$(shasum -a 256 "$IPA_NAME" | cut -d' ' -f1)
+          printf '%s\n  version: %s\n  size:    %s bytes\n  md5:     %s\n  sha256:  %s\n' \
+            "$IPA_NAME" "$VERSION" "$IPA_SIZE" "$IPA_MD5" "$IPA_SHA" > checksums.txt
           {
             echo '## Release checksums'
             echo '```'; cat checksums.txt; echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          IPA_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/ELORIS-PRISM.ipa"
+          IPA_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/${IPA_NAME}"
           ICON_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/icon.png"
 
           # Icon for the store listing.
@@ -254,19 +260,19 @@ jobs:
           print("source.json version:", version, "\nnotes:\n" + desc)
           PY
 
-          gh release delete "$TAG" --yes --cleanup-tag --repo "$RELEASE_REPO" 2>/dev/null || true
-          gh release create "$TAG" ELORIS-PRISM.ipa source.json icon.png SOURCE-OFFER.txt checksums.txt \
-            --repo "$RELEASE_REPO" \
-            --title "ELORIS-PRISM — v${VERSION}" \
-            --prerelease \
-            --notes "v${VERSION}.
-
-          **Mise à jour auto (recommandé) :** ajoute cette source dans SideStore/AltStore :
-          \`https://github.com/${RELEASE_REPO}/releases/download/${TAG}/source.json\`
-          Puis installe ELORIS-PRISM depuis la source — les prochaines versions arrivent en 1 tap.
-
-          **Ou installe directement** l'\`ELORIS-PRISM.ipa\` ci-dessous."
-          echo "Release + source publiées : https://github.com/$RELEASE_REPO/releases/tag/$TAG"
+          # Never delete the rolling release — that would wipe older versioned
+          # IPAs and turn a harmless "slightly stale" install into a 404. Create
+          # it once, then clobber-upload: the versioned IPA accumulates, the feed
+          # files (source.json/icon/offer/checksums) are always refreshed.
+          gh release view "$TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$RELEASE_REPO" \
+              --title "ELORIS-PRISM (rolling)" \
+              --prerelease \
+              --notes "Rolling ELORIS-PRISM release. Add this source in SideStore/AltStore for 1-tap updates:
+          \`https://github.com/${RELEASE_REPO}/releases/download/${TAG}/source.json\`"
+          gh release upload "$TAG" "$IPA_NAME" source.json icon.png SOURCE-OFFER.txt checksums.txt \
+            --repo "$RELEASE_REPO" --clobber
+          echo "Published $IPA_NAME + source.json → https://github.com/$RELEASE_REPO/releases/tag/$TAG"
 
       # ── 9. Upload les logs si la build échoue ──────────────────────────────
       - name: Upload build logs (si erreur)
