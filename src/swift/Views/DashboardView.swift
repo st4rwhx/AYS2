@@ -14,6 +14,14 @@ enum DashSection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// One indexed game (disc image) on disk.
+struct ISOEntry: Identifiable {
+    let id = UUID()
+    let name: String
+    let size: UInt64
+    var isFavorite: Bool
+}
+
 struct DashboardView: View {
     @State private var section: DashSection = .games
 
@@ -259,7 +267,7 @@ struct GamesCarouselView: View {
         .padding(.horizontal, 30)
     }
 
-    // MARK: - Data / actions (mirrors GameListView)
+    // MARK: - Data / actions
 
     private func selectGame(_ name: String) {
         if name == appState.runningGameName {

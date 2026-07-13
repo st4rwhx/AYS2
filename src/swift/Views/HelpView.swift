@@ -109,7 +109,7 @@ struct HelpView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .aeroScreen(.underwater)
+            .aeroScreen()
             .toolbar(.hidden, for: .navigationBar)
         }
     }

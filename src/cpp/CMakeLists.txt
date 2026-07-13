@@ -186,8 +186,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     # Swift source files
     set(SWIFT_SOURCES
         ${CMAKE_SOURCE_DIR}/../swift/Views/RootView.swift
-        ${CMAKE_SOURCE_DIR}/../swift/Views/PS2WaveBackground.swift
-        ${CMAKE_SOURCE_DIR}/../swift/Views/GameListView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/BIOSListView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/HelpView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/TermsOfUseView.swift
@@ -200,7 +198,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         ${CMAKE_SOURCE_DIR}/../swift/Views/EmulatorView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/VirtualControllerView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/LicenseView.swift
-        ${CMAKE_SOURCE_DIR}/../swift/Views/Settings/SettingsRootView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/Settings/EmulatorSettingsView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/Settings/GraphicsSettingsView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/Settings/OverlaySettingsView.swift

@@ -25,7 +25,7 @@ struct BIOSListView: View {
             }
             .navigationTitle("BIOS")
             .navigationBarTitleDisplayMode(.inline)
-            .aeroScreen(.dewdrop)
+            .aeroScreen()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showImporter = true } label: {
