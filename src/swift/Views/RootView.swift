@@ -16,7 +16,7 @@ struct RootView: View {
             // Consent gate: the app can't be used until the Terms (including the
             // anonymous diagnostics consent) are accepted.
             ZStack {
-                PS2WaveBackground().ignoresSafeArea()
+                AeroBackground()
                 TermsOfUseView(mode: .gate) {
                     TelemetryManager.shared.termsAccepted = true
                     termsAccepted = true
@@ -29,8 +29,7 @@ struct RootView: View {
         ZStack {
             switch appState.currentScreen {
             case .menu:
-                PS2WaveBackground()
-                    .ignoresSafeArea()
+                AeroBackground()
                 MenuTabView()
                     .overlay(alignment: .bottomTrailing) {
                         // Kept on every tab, floating clear of the tab bar.

@@ -55,9 +55,7 @@ struct GameListView: View {
                 }
             }
             .navigationTitle("Games")
-            .scrollContentBackground(.hidden)
-            .background(PS2WaveBackground().ignoresSafeArea())
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .aeroScreen(.landscape)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showImporter = true } label: {
@@ -249,30 +247,14 @@ struct GameListView: View {
     // MARK: - Empty state
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            DiscArt()
-                .frame(width: 96, height: 96)
-                .opacity(0.85)
-            Text("No Games Found")
-                .font(.title2)
-                .fontWeight(.semibold)
-                .foregroundStyle(.white)
-            Text("Import your own PS2 disc images\n(ISO / BIN / CHD / IMG).")
-                .font(.body)
-                .foregroundStyle(.white.opacity(0.7))
-                .multilineTextAlignment(.center)
-            Button {
-                showImporter = true
-            } label: {
-                Label("Import Game", systemImage: "square.and.arrow.down")
-            }
-            .buttonStyle(.borderedProminent)
-            Text("You can also drop files into Documents/iso/ via the Files app.")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.5))
-                .multilineTextAlignment(.center)
-        }
-        .padding()
+        AeroEmptyState(
+            title: "No games yet",
+            message: "Import a PS2 disc image — ISO, BIN, CHD or IMG — to start your library.",
+            buttonTitle: "Import a game",
+            systemImage: "square.and.arrow.down",
+            hint: "Or drop files into On My iPhone › ELORIS-PRISM › iso",
+            action: { showImporter = true }
+        )
     }
 
     // MARK: - Data

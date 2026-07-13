@@ -24,8 +24,7 @@ struct BIOSListView: View {
                 }
             }
             .navigationTitle("BIOS")
-            .background(PS2WaveBackground().ignoresSafeArea())
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .aeroScreen(.dewdrop)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showImporter = true } label: {
@@ -87,29 +86,14 @@ struct BIOSListView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "cpu")
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary)
-            Text("No BIOS Found")
-                .font(.title2)
-                .fontWeight(.semibold)
-            Text("Import a PS2 BIOS file (.bin) dumped\nfrom your own console.")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Button {
-                showImporter = true
-            } label: {
-                Label("Import BIOS", systemImage: "square.and.arrow.down")
-            }
-            .buttonStyle(.borderedProminent)
-            Text("You can also drop files into Documents/bios/ via the Files app.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-        }
-        .padding()
+        AeroEmptyState(
+            title: "No BIOS yet",
+            message: "Add a PS2 BIOS you dumped from your own console to boot games.",
+            buttonTitle: "Import BIOS",
+            systemImage: "square.and.arrow.down",
+            hint: "Or drop a .bin into On My iPhone › ELORIS-PRISM › bios",
+            action: { showImporter = true }
+        )
     }
 
     private func loadBIOSes() {

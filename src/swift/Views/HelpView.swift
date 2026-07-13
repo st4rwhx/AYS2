@@ -110,7 +110,7 @@ struct HelpView: View {
             }
             .scrollContentBackground(.hidden)
             .navigationTitle("Help")
-            .background(PS2WaveBackground().ignoresSafeArea())
+            .aeroScreen(.underwater)
             .toolbarBackground(.hidden, for: .navigationBar)
         }
     }
