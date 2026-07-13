@@ -9,7 +9,7 @@
       "developerName": "ELORIS-PRISM",
       "subtitle": "PlayStation 2 emulator for iPhone & iPad",
       "localizedDescription": "ELORIS-PRISM is a PlayStation 2 emulator for iPhone and iPad. Load your own PS2 BIOS and disc images (.iso / .chd) and play with full-speed JIT via a JIT enabler such as StikDebug. See each update's \"What's New\" for the latest changes.",
-      "iconURL": "https://github.com/balajsimon/ELORIS-PRISM/releases/download/latest/icon.png",
+      "iconURL": "https://github.com/ayanodeath/ELORIS-PRISM/releases/download/latest/icon.png",
       "tintColor": "1B5CFF",
       "category": "games",
       "screenshotURLs": [],
@@ -18,14 +18,14 @@
           "version": "0.1.0",
           "date": "2026-07-09",
           "localizedDescription": "Latest development build.",
-          "downloadURL": "https://github.com/balajsimon/ELORIS-PRISM/releases/download/latest/ELORIS-PRISM.ipa",
+          "downloadURL": "https://github.com/ayanodeath/ELORIS-PRISM/releases/download/latest/ELORIS-PRISM.ipa",
           "size": 9245734,
           "minOSVersion": "17.0"
         }
       ],
       "version": "0.1.0",
       "versionDate": "2026-07-09",
-      "downloadURL": "https://github.com/balajsimon/ELORIS-PRISM/releases/download/latest/ELORIS-PRISM.ipa",
+      "downloadURL": "https://github.com/ayanodeath/ELORIS-PRISM/releases/download/latest/ELORIS-PRISM.ipa",
       "size": 9245734,
       "appPermissions": {}
     }

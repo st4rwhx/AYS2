@@ -170,7 +170,7 @@ jobs:
         env:
           # Target public storefront repo (@handle/ELORIS-PRISM). Change this
           # once the storefront account exists.
-          RELEASE_REPO: balajsimon/ELORIS-PRISM
+          RELEASE_REPO: ayanodeath/ELORIS-PRISM
           # Contact for the GPL-3.0 written offer (§6). Anyone who has the app
           # can request the corresponding source here. Fill in your email.
           SOURCE_CONTACT: "balajsimonsorin@gmail.com"
