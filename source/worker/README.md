@@ -35,6 +35,28 @@ Add that URL as the source in SideStore. Because the app's bundle id never
 changes, existing installs keep updating whether they use the short URL or the
 GitHub one.
 
+## One-tap install link (redirect)
+
+The Worker also serves a redirect page that turns a normal `https://` link into
+a one-tap "Add to SideStore":
+
+```
+https://elorisprism.<your-account>.workers.dev/install
+```
+
+Share **that** link (bio, Discord, website). On iOS it opens SideStore and
+offers to add the source; it has a visible fallback button and an AltStore
+alternative if the auto-redirect is blocked.
+
+How it works: SideStore registers the URL scheme `sidestore://source?url=<feed>`.
+You can't share that scheme directly (it crashes without the app installed and
+browsers block custom schemes), so the `/install` page redirects to it from a
+normal web page — that's the whole "redirect repo install" trick.
+
+Routes summary:
+- `/` and `/source.json` → the source feed (add this in SideStore)
+- `/install` (or `/add`) → the one-tap redirect page (share this with people)
+
 ## If you later buy `elorisprism.app`
 
 Add it as a custom domain to this same Worker (Cloudflare dashboard →
