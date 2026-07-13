@@ -41,9 +41,9 @@ struct DashboardView: View {
                             SoundManager.shared.play(.nav)
                         } label: {
                             VStack(spacing: 6) {
-                                Text(s.rawValue.uppercased())
-                                    .font(.subheadline.weight(.bold))
-                                    .tracking(0.5)
+                                Text(s.rawValue)
+                                    .font(.system(.title3, design: .serif))
+                                    .fontWeight(section == s ? .semibold : .regular)
                                     .foregroundStyle(section == s ? Retro.ink : Retro.faint)
                                 Rectangle()
                                     .fill(section == s ? Retro.accent : Color.clear)
@@ -165,14 +165,12 @@ struct GamesCarouselView: View {
                         }
                     }
                 Text(game.name)
-                    .font(.subheadline.weight(.bold))
+                    .font(.system(.callout, design: .serif))
+                    .textCase(.lowercase)
                     .foregroundStyle(Retro.ink)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .frame(width: 158)
-                Text(formatSize(game.size))
-                    .font(Retro.mono)
-                    .foregroundStyle(Retro.accent)
             }
         }
         .buttonStyle(.plain)
@@ -195,10 +193,10 @@ struct GamesCarouselView: View {
                 .rotationEffect(.degrees(45))
                 .overlay(Rectangle().strokeBorder(Retro.accent.opacity(0.6), lineWidth: 1)
                     .frame(width: 44, height: 44).rotationEffect(.degrees(45)))
-            Text("No games yet")
-                .font(.title3.weight(.bold)).foregroundStyle(Retro.ink)
+            Text("no games yet")
+                .font(.system(.title2, design: .serif)).foregroundStyle(Retro.ink)
             Text("Import a PS2 disc image — ISO, BIN, CHD or IMG.")
-                .font(.subheadline).foregroundStyle(Retro.mut)
+                .font(.system(.subheadline, design: .serif)).foregroundStyle(Retro.mut)
                 .multilineTextAlignment(.center)
             Button { showImporter = true } label: {
                 Label("Import a game", systemImage: "plus")
@@ -255,11 +253,5 @@ struct GamesCarouselView: View {
             FileImportHandler.shared.lastImportMessage = "Import failed: \(error.localizedDescription)"
             FileImportHandler.shared.showImportAlert = true
         }
-    }
-
-    private func formatSize(_ bytes: UInt64) -> String {
-        let gb = Double(bytes) / 1_073_741_824
-        if gb >= 1.0 { return String(format: "%.1f GB", gb) }
-        return String(format: "%.0f MB", Double(bytes) / 1_048_576)
     }
 }

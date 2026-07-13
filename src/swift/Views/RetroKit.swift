@@ -22,6 +22,10 @@ enum Retro {
     static let accent = Color(red: 0.153, green: 0.427, blue: 1.0)   // #2769FF
 
     static let mono = Font.system(.footnote, design: .monospaced)
+
+    /// Standard PS2 DVD-case cover ratio (height ÷ width). Covers are shown at
+    /// this ratio, whole and uncropped, exactly like a real case.
+    static let coverRatio: CGFloat = 1.40
 }
 
 /// Solid dark backdrop with a faint retro grid fading from the top.
@@ -48,39 +52,44 @@ struct RetroBackground: View {
     }
 }
 
-/// A game's cover art, clean — just the artwork, no frame. Falls back to a
-/// solid tile with the title when no cover is available.
+/// A game's cover art shown whole and uncropped at true PS2 case proportions —
+/// the full artwork, never cut. Falls back to a solid tile with the title when
+/// no cover is available.
 struct CleanCover: View {
     let gameName: String
     var width: CGFloat = 150
 
     @State private var image: UIImage?
 
-    private var height: CGFloat { width * 1.32 }
+    private var height: CGFloat { width * Retro.coverRatio }
 
     var body: some View {
-        Group {
+        ZStack {
+            // Dark backdrop so a cover that isn't exactly case-ratio letterboxes
+            // cleanly instead of being cropped.
+            Retro.bg2
             if let image {
-                Image(uiImage: image).resizable().scaledToFill()
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
             } else {
-                ZStack {
-                    LinearGradient(colors: [Retro.panel2, Retro.bg2], startPoint: .top, endPoint: .bottom)
-                    Text(gameName)
-                        .font(.system(size: width * 0.11, weight: .bold, design: .rounded))
-                        .foregroundStyle(Retro.mut)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(4)
-                        .padding(10)
-                }
+                LinearGradient(colors: [Retro.panel2, Retro.bg2], startPoint: .top, endPoint: .bottom)
+                Text(gameName)
+                    .font(.system(size: width * 0.11, design: .serif))
+                    .textCase(.lowercase)
+                    .foregroundStyle(Retro.mut)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(4)
+                    .padding(10)
             }
         }
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(Retro.line2, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .strokeBorder(Retro.line, lineWidth: 0.5)
         )
-        .shadow(color: .black.opacity(0.7), radius: 16, x: 0, y: 14)
+        .shadow(color: .black.opacity(0.6), radius: 14, x: 0, y: 12)
         .task(id: gameName) {
             image = nil
             guard let serial = await CoverArtManager.shared.serial(forGameName: gameName),
@@ -92,13 +101,14 @@ struct CleanCover: View {
     }
 }
 
-/// Uppercase mono section label used across the dashboard.
+/// Small serif section label used across the dashboard.
 struct RetroLabel: View {
     let text: String
     var body: some View {
-        Text(text.uppercased())
-            .font(Retro.mono)
-            .tracking(2)
+        Text(text)
+            .font(.system(.footnote, design: .serif))
+            .textCase(.lowercase)
+            .tracking(0.5)
             .foregroundStyle(Retro.faint)
     }
 }
