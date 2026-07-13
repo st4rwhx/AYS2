@@ -1,53 +1,46 @@
-// RetroKit.swift — clean, solid "console dashboard" design system.
+// RetroKit.swift — light "console dashboard" (NXE-style) design system.
 // SPDX-License-Identifier: GPL-3.0+
 //
-// Flat, defined, solid — no glass, no photos, no bubbles. A dark console-grade
-// base, one PlayStation-blue accent, mono labels. Layout inspired by the
-// horizontal-nav + cover-carousel dashboards of modern console emulators,
-// rebuilt natively in SwiftUI (no third-party code — those apps are closed).
+// Faithful rebuild of the modern console-dashboard look: an airy light field,
+// a horizontal top nav, big solid tiles, full uncropped covers and clean white
+// cards. Xbox's dashboard is green; this is a PS2 emulator, so the single
+// accent is PlayStation blue. Native SwiftUI — no third-party code.
 
 import SwiftUI
 
 enum Retro {
-    static let bg     = Color(red: 0.055, green: 0.059, blue: 0.071) // #0E0F12
-    static let bg2    = Color(red: 0.071, green: 0.075, blue: 0.094) // #12131A
-    static let panel  = Color(red: 0.094, green: 0.102, blue: 0.125) // #181A20
-    static let panel2 = Color(red: 0.118, green: 0.129, blue: 0.161) // #1E2129
-    static let line   = Color(red: 0.172, green: 0.184, blue: 0.216) // #2C2F38
-    static let line2  = Color(red: 0.227, green: 0.243, blue: 0.286) // #3A3E49
-    static let ink    = Color(red: 0.925, green: 0.921, blue: 0.902) // #ECEBE6
-    static let mut    = Color(red: 0.545, green: 0.560, blue: 0.603) // #8B8F9A
-    static let faint  = Color(red: 0.361, green: 0.376, blue: 0.412) // #5C6069
-    /// PlayStation blue accent.
-    static let accent = Color(red: 0.153, green: 0.427, blue: 1.0)   // #2769FF
+    // Light NXE base — airy, near-white with a faint cool tint.
+    static let bg     = Color(red: 0.929, green: 0.941, blue: 0.961) // #EDF0F5
+    static let bg2    = Color(red: 0.882, green: 0.902, blue: 0.937) // #E1E6EF (left band)
+    static let panel  = Color.white
+    static let panel2 = Color(red: 0.957, green: 0.965, blue: 0.980) // #F4F6FA
+    static let line   = Color(red: 0.827, green: 0.847, blue: 0.886) // #D3D8E2
+    static let line2  = Color(red: 0.737, green: 0.765, blue: 0.816) // #BCC3D0
+
+    // Ink on light.
+    static let ink    = Color(red: 0.106, green: 0.114, blue: 0.141) // #1B1D24
+    static let mut    = Color(red: 0.353, green: 0.376, blue: 0.439) // #5A6070
+    static let faint  = Color(red: 0.541, green: 0.565, blue: 0.627) // #8A90A0
+
+    /// PlayStation blue accent (the console-dashboard tile colour).
+    static let accent     = Color(red: 0.153, green: 0.427, blue: 1.0)  // #2769FF
+    static let accentDeep = Color(red: 0.102, green: 0.310, blue: 0.800) // #1A4FCC
 
     static let mono = Font.system(.footnote, design: .monospaced)
 
-    /// Standard PS2 DVD-case cover ratio (height ÷ width). Covers are shown at
-    /// this ratio, whole and uncropped, exactly like a real case.
+    /// Standard PS2 DVD-case cover ratio (height ÷ width).
     static let coverRatio: CGFloat = 1.40
 }
 
-/// Solid dark backdrop with a faint retro grid fading from the top.
+/// Light NXE backdrop: a subtle deeper band on the left fading into an airy
+/// near-white field, exactly like the console dashboard.
 struct RetroBackground: View {
     var body: some View {
         ZStack {
             Retro.bg.ignoresSafeArea()
-            GeometryReader { geo in
-                Path { p in
-                    let step: CGFloat = 46
-                    var x: CGFloat = 0
-                    while x <= geo.size.width { p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: geo.size.height)); x += step }
-                    var y: CGFloat = 0
-                    while y <= geo.size.height { p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: geo.size.width, y: y)); y += step }
-                }
-                .stroke(Retro.line, lineWidth: 1)
-                .mask(
-                    LinearGradient(colors: [.white.opacity(0.5), .clear],
-                                   startPoint: .top, endPoint: .center)
-                )
-            }
-            .ignoresSafeArea()
+            LinearGradient(colors: [Retro.bg2, Retro.bg, Retro.bg, Retro.panel2],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                .ignoresSafeArea()
         }
     }
 }
@@ -65,18 +58,17 @@ struct CleanCover: View {
 
     var body: some View {
         ZStack {
-            // Dark backdrop so a cover that isn't exactly case-ratio letterboxes
-            // cleanly instead of being cropped.
-            Retro.bg2
+            // Neutral backdrop so an off-ratio cover letterboxes cleanly
+            // instead of being cropped.
+            Retro.panel2
             if let image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
             } else {
-                LinearGradient(colors: [Retro.panel2, Retro.bg2], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: [Retro.panel, Retro.panel2], startPoint: .top, endPoint: .bottom)
                 Text(gameName)
-                    .font(.system(size: width * 0.11, design: .serif))
-                    .textCase(.lowercase)
+                    .font(.system(size: width * 0.11, weight: .semibold))
                     .foregroundStyle(Retro.mut)
                     .multilineTextAlignment(.center)
                     .lineLimit(4)
@@ -84,12 +76,12 @@ struct CleanCover: View {
             }
         }
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .strokeBorder(Retro.line, lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .strokeBorder(Retro.line2, lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.6), radius: 14, x: 0, y: 12)
+        .shadow(color: .black.opacity(0.22), radius: 10, x: 0, y: 8)
         .task(id: gameName) {
             image = nil
             guard let serial = await CoverArtManager.shared.serial(forGameName: gameName),
@@ -101,15 +93,13 @@ struct CleanCover: View {
     }
 }
 
-/// Small serif section label used across the dashboard.
+/// Small accent section label (e.g. "Indexed 4 games").
 struct RetroLabel: View {
     let text: String
     var body: some View {
         Text(text)
-            .font(.system(.footnote, design: .serif))
-            .textCase(.lowercase)
-            .tracking(0.5)
-            .foregroundStyle(Retro.faint)
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(Retro.accent)
     }
 }
 
@@ -118,12 +108,53 @@ struct RetroButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.subheadline.weight(.bold))
-            .textCase(.uppercase)
-            .tracking(0.5)
             .foregroundStyle(.white)
-            .padding(.vertical, 12).padding(.horizontal, 22)
-            .background(Retro.accent)
-            .overlay(Rectangle().strokeBorder(.white.opacity(0.18), lineWidth: 1))
-            .opacity(configuration.isPressed ? 0.8 : 1)
+            .padding(.vertical, 11).padding(.horizontal, 20)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(LinearGradient(colors: [Retro.accent, Retro.accentDeep],
+                                         startPoint: .top, endPoint: .bottom))
+            )
+            .opacity(configuration.isPressed ? 0.85 : 1)
+    }
+}
+
+// MARK: - Shared console-dashboard chrome
+
+/// The bumper-button pill (LB / RB) shown either side of the top nav.
+struct BumperPill: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11, weight: .heavy))
+            .foregroundStyle(Retro.mut)
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Retro.line2, lineWidth: 1.5))
+    }
+}
+
+/// The bottom action-hint bar (Ⓐ select  Ⓑ back …) like the console dashboard.
+struct HintBar: View {
+    struct Hint: Identifiable { let id = UUID(); let glyph: String; let color: Color; let label: String }
+    let hints: [Hint]
+
+    var body: some View {
+        HStack(spacing: 18) {
+            Spacer(minLength: 0)
+            ForEach(hints) { h in
+                HStack(spacing: 6) {
+                    Text(h.glyph)
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(h.color))
+                    Text(h.label)
+                        .font(.footnote)
+                        .foregroundStyle(Retro.mut)
+                }
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 8)
     }
 }

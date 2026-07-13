@@ -1,9 +1,10 @@
-// DashboardView.swift — console-style home: horizontal top nav + cover carousel.
+// DashboardView.swift — console-style home: horizontal top nav + tiled sections.
 // SPDX-License-Identifier: GPL-3.0+
 //
-// Replaces the bottom TabView with a top section nav and a swipeable row of
-// clean game covers. Native SwiftUI rebuild of the horizontal-dashboard layout
-// (no third-party code). Reuses the existing BIOS/Settings/Help screens.
+// Faithful native-SwiftUI rebuild of the modern console-dashboard layout: a
+// light field, a horizontal top nav (logo · bumpers · tabs · avatar), a
+// swipeable row of full covers, a tiled Settings grid and clean white detail
+// cards. PlayStation blue accent (this is a PS2 emulator). No third-party code.
 
 import SwiftUI
 import UniformTypeIdentifiers
@@ -20,31 +21,58 @@ struct DashboardView: View {
         ZStack {
             RetroBackground()
             VStack(spacing: 0) {
-                topNav
+                TopNav(section: $section)
                 Rectangle().fill(Retro.line).frame(height: 1)
                 content
             }
         }
+        .preferredColorScheme(.light)   // NXE dashboard is always light
     }
 
-    private var topNav: some View {
-        HStack(spacing: 14) {
-            Rectangle()
-                .strokeBorder(Retro.accent, lineWidth: 2)
-                .frame(width: 18, height: 18)
-                .rotationEffect(.degrees(45))
+    @ViewBuilder
+    private var content: some View {
+        switch section {
+        case .games:    GamesCarouselView()
+        case .bios:     BIOSListView()
+        case .settings: SettingsGridView()
+        case .help:     HelpView()
+        }
+    }
+}
+
+// MARK: - Top navigation bar (logo · bumpers · tabs · avatar)
+
+struct TopNav: View {
+    @Binding var section: DashSection
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Logo mark in a rounded square, like the console's home glyph.
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(Retro.line2, lineWidth: 1.5)
+                .frame(width: 34, height: 34)
+                .overlay(
+                    Rectangle()
+                        .fill(LinearGradient(colors: [Retro.accent, Retro.accentDeep],
+                                             startPoint: .top, endPoint: .bottom))
+                        .frame(width: 15, height: 15)
+                        .rotationEffect(.degrees(45))
+                )
+
+            BumperPill(text: "LB")
+
+            // Section tabs with the active green→blue underline.
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 20) {
+                HStack(spacing: 22) {
                     ForEach(DashSection.allCases) { s in
                         Button {
                             section = s
                             SoundManager.shared.play(.nav)
                         } label: {
-                            VStack(spacing: 6) {
+                            VStack(spacing: 5) {
                                 Text(s.rawValue)
-                                    .font(.system(.title3, design: .serif))
-                                    .fontWeight(section == s ? .semibold : .regular)
-                                    .foregroundStyle(section == s ? Retro.ink : Retro.faint)
+                                    .font(.system(size: 17, weight: section == s ? .bold : .regular))
+                                    .foregroundStyle(section == s ? Retro.ink : Retro.mut)
                                 Rectangle()
                                     .fill(section == s ? Retro.accent : Color.clear)
                                     .frame(height: 2)
@@ -53,22 +81,24 @@ struct DashboardView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.trailing, 20)
+                .padding(.horizontal, 2)
             }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 18)
-        .padding(.top, 6)
-    }
 
-    @ViewBuilder
-    private var content: some View {
-        switch section {
-        case .games:    GamesCarouselView()
-        case .bios:     BIOSListView()
-        case .settings: NavigationStack { SettingsRootView() }
-        case .help:     HelpView()
+            BumperPill(text: "RB")
+
+            // Gamerpic-style avatar.
+            Circle()
+                .strokeBorder(Retro.accent, lineWidth: 2)
+                .frame(width: 32, height: 32)
+                .overlay(
+                    Text("P")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Retro.accent)
+                )
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
     }
 }
 
@@ -88,6 +118,10 @@ struct GamesCarouselView: View {
         }
     }
 
+    private var withCoverText: String {
+        "Indexed \(games.count) game\(games.count == 1 ? "" : "s")"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -95,17 +129,22 @@ struct GamesCarouselView: View {
                 emptyState
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 20) {
+                    HStack(alignment: .top, spacing: 18) {
                         ForEach(sortedGames) { game in
                             coverItem(game)
                         }
                     }
-                    .padding(.horizontal, 22)
-                    .padding(.top, 26)
-                    .padding(.bottom, 20)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                    .padding(.bottom, 16)
                 }
             }
             Spacer(minLength: 0)
+            HintBar(hints: [
+                .init(glyph: "✛", color: Retro.accent, label: "add game"),
+                .init(glyph: "A", color: Color(red: 0.30, green: 0.68, blue: 0.31), label: "select"),
+                .init(glyph: "B", color: Color(red: 0.85, green: 0.25, blue: 0.22), label: "back"),
+            ])
         }
         .fileImporter(isPresented: $showImporter,
                       allowedContentTypes: [.data, .item],
@@ -125,7 +164,7 @@ struct GamesCarouselView: View {
 
     private var header: some View {
         HStack(alignment: .center) {
-            RetroLabel(text: games.isEmpty ? "No games" : "Indexed \(games.count) game\(games.count == 1 ? "" : "s")")
+            RetroLabel(text: withCoverText)
             Spacer()
             Button { loadGames() } label: {
                 Image(systemName: "arrow.clockwise").foregroundStyle(Retro.mut)
@@ -136,7 +175,7 @@ struct GamesCarouselView: View {
             .buttonStyle(RetroButtonStyle())
         }
         .padding(.horizontal, 20)
-        .padding(.top, 14)
+        .padding(.top, 12)
     }
 
     private func coverItem(_ game: ISOEntry) -> some View {
@@ -144,36 +183,65 @@ struct GamesCarouselView: View {
         return Button {
             selectGame(game.name)
         } label: {
-            VStack(spacing: 10) {
-                CleanCover(gameName: game.name, width: 158)
-                    .overlay(alignment: .topTrailing) {
-                        if game.isFavorite {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Retro.accent)
-                                .padding(8)
-                        }
+            CleanCover(gameName: game.name, width: 168)
+                // "Local" badge, top-left.
+                .overlay(alignment: .topLeading) {
+                    Text("Local")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Capsule().fill(Retro.accent))
+                        .padding(8)
+                }
+                // Options button, top-right.
+                .overlay(alignment: .topTrailing) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Retro.ink)
+                        .frame(width: 26, height: 26)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(0.9)))
+                        .padding(8)
+                }
+                // Favorite star, if any.
+                .overlay(alignment: .bottomTrailing) {
+                    if game.isFavorite {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.yellow)
+                            .shadow(color: .black.opacity(0.6), radius: 2)
+                            .padding(8)
                     }
-                    .overlay(alignment: .bottomLeading) {
-                        if isRunning {
-                            Text("RUNNING")
-                                .font(.system(size: 9, weight: .heavy)).tracking(1)
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 7).padding(.vertical, 3)
-                                .background(Retro.accent)
-                                .padding(8)
-                        }
+                }
+                // Title overlaid at the bottom of the cover, on a legibility scrim.
+                .overlay(alignment: .bottom) {
+                    Text(game.name)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 22).padding(.bottom, 10)
+                        .background(
+                            LinearGradient(colors: [.clear, .black.opacity(0.78)],
+                                           startPoint: .top, endPoint: .bottom)
+                        )
+                }
+                .overlay(alignment: .topLeading) {
+                    if isRunning {
+                        Text("RUNNING")
+                            .font(.system(size: 9, weight: .heavy)).tracking(1)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7).padding(.vertical, 3)
+                            .background(Capsule().fill(Color(red: 0.30, green: 0.68, blue: 0.31)))
+                            .padding(.top, 40).padding(.leading, 8)
                     }
-                Text(game.name)
-                    .font(.system(.callout, design: .serif))
-                    .textCase(.lowercase)
-                    .foregroundStyle(Retro.ink)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .frame(width: 158)
-            }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .shadow(color: .black.opacity(0.22), radius: 10, x: 0, y: 8)
         }
         .buttonStyle(.plain)
+        .frame(width: 168)
         .contextMenu {
             Button {
                 toggleFavorite(game.name)
@@ -187,16 +255,13 @@ struct GamesCarouselView: View {
     private var emptyState: some View {
         VStack(spacing: 14) {
             Spacer()
-            Rectangle()
-                .strokeBorder(Retro.line2, lineWidth: 2)
-                .frame(width: 74, height: 74)
-                .rotationEffect(.degrees(45))
-                .overlay(Rectangle().strokeBorder(Retro.accent.opacity(0.6), lineWidth: 1)
-                    .frame(width: 44, height: 44).rotationEffect(.degrees(45)))
-            Text("no games yet")
-                .font(.system(.title2, design: .serif)).foregroundStyle(Retro.ink)
+            Image(systemName: "square.stack.3d.up.slash")
+                .font(.system(size: 54, weight: .thin))
+                .foregroundStyle(Retro.line2)
+            Text("No games yet")
+                .font(.title2.weight(.bold)).foregroundStyle(Retro.ink)
             Text("Import a PS2 disc image — ISO, BIN, CHD or IMG.")
-                .font(.system(.subheadline, design: .serif)).foregroundStyle(Retro.mut)
+                .font(.subheadline).foregroundStyle(Retro.mut)
                 .multilineTextAlignment(.center)
             Button { showImporter = true } label: {
                 Label("Import a game", systemImage: "plus")
@@ -253,5 +318,123 @@ struct GamesCarouselView: View {
             FileImportHandler.shared.lastImportMessage = "Import failed: \(error.localizedDescription)"
             FileImportHandler.shared.showImportAlert = true
         }
+    }
+}
+
+// MARK: - Settings as a tiled grid (console-dashboard "hub")
+
+struct SettingsGridView: View {
+    private let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 14) {
+                    SettingsTile(title: "Emulation", subtitle: "Core · Speed · Cheats",
+                                 systemImage: "cpu") { EmulatorSettingsView() }
+                    SettingsTile(title: "Video", subtitle: "Renderer · Resolution · FPS",
+                                 systemImage: "display") { GraphicsSettingsView() }
+                    SettingsTile(title: "Overlay", subtitle: "OSD · HUD · Stats",
+                                 systemImage: "text.below.photo") { OverlaySettingsView() }
+                    SettingsTile(title: "Controls", subtitle: "Gamepad · Mapping",
+                                 systemImage: "gamecontroller") { GamepadSettingsView() }
+                    SettingsTile(title: "Virtual Pad", subtitle: "Touch · Layout · Scale",
+                                 systemImage: "hand.draw") { VirtualPadSettingsView() }
+                    SettingsTile(title: "System", subtitle: "Sounds · About · Version",
+                                 systemImage: "gearshape") { SystemSettingsView() }
+                }
+                .padding(16)
+            }
+            .background(RetroBackground())
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Settings").font(.headline).foregroundStyle(Retro.ink)
+                }
+            }
+        }
+    }
+}
+
+/// One large solid tile in the Settings hub.
+struct SettingsTile<Destination: View>: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    @ViewBuilder let destination: () -> Destination
+
+    var body: some View {
+        NavigationLink {
+            destination()
+        } label: {
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(LinearGradient(colors: [Retro.accent, Retro.accentDeep],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                // Big translucent icon, bottom-right.
+                Image(systemName: systemImage)
+                    .font(.system(size: 58, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.20))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(10)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title.uppercased())
+                        .font(.system(size: 19, weight: .bold))
+                        .foregroundStyle(.white)
+                    Spacer(minLength: 0)
+                    Text(subtitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.82))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                .padding(14)
+            }
+            .frame(height: 132)
+            .shadow(color: Retro.accentDeep.opacity(0.25), radius: 8, x: 0, y: 5)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Small "System" settings screen (the bits that had no dedicated view).
+struct SystemSettingsView: View {
+    @AppStorage("uiSoundsEnabled") private var uiSoundsEnabled = true
+
+    var body: some View {
+        List {
+            Section {
+                Toggle(isOn: $uiSoundsEnabled) {
+                    Label("UI Sounds", systemImage: "speaker.wave.2")
+                }
+            } footer: {
+                Text("Original menu sounds. Obeys the mute switch.")
+            }
+            Section {
+                NavigationLink {
+                    TermsOfUseView(mode: .view)
+                } label: {
+                    Label("Terms of Use & Privacy", systemImage: "hand.raised")
+                }
+                NavigationLink {
+                    LicenseView()
+                } label: {
+                    Label("Licenses & Credits", systemImage: "doc.text")
+                }
+            } footer: {
+                Text("Diagnostics are anonymous and part of the Terms of Use — device model, iOS version and technical logs on crashes/errors, to fix bugs. No account or personal data.")
+            }
+            Section("About") {
+                HStack {
+                    Text("Version")
+                    Spacer()
+                    Text(iPSX2Bridge.buildVersion())
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
+            }
+        }
+        .navigationTitle("System")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

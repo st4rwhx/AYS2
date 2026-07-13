@@ -70,12 +70,12 @@ extension View {
     /// Wraps the view in a frosted, glossy Aero glass panel.
     func aeroGlass(corner: CGFloat = 22) -> some View { modifier(AeroGlass(corner: corner)) }
 
-    /// Places the app's photographic backdrop behind a screen and makes its own
-    /// scroll surfaces transparent so the photo shows through.
+    /// Places the app's light NXE backdrop behind a screen. Grouped lists keep
+    /// their native white cards (the console-dashboard detail look), so we no
+    /// longer hide the scroll background here.
     func aeroScreen(_ scene: Aero.Scene = .landscape) -> some View {
         self
-            .scrollContentBackground(.hidden)
-            .background(AeroBackground(scene: scene))
+            .background(RetroBackground())
             .toolbarBackground(.hidden, for: .navigationBar)
     }
 }
