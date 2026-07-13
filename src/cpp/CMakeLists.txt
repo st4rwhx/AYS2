@@ -193,6 +193,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         ${CMAKE_SOURCE_DIR}/../swift/Views/TermsOfUseView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/CommunityView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/AeroKit.swift
+        ${CMAKE_SOURCE_DIR}/../swift/Views/RetroKit.swift
+        ${CMAKE_SOURCE_DIR}/../swift/Views/DashboardView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/GameScreenView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/MetalGameView.swift
         ${CMAKE_SOURCE_DIR}/../swift/Views/EmulatorView.swift

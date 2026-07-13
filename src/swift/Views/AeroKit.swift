@@ -23,20 +23,11 @@ enum Aero {
 struct AeroBackground: View {
     var scene: Aero.Scene = .landscape
 
+    // The app moved to the solid "Clean Retro" identity; this now renders the
+    // retro backdrop so every screen that still calls `aeroScreen()` stays
+    // consistent without touching each view.
     var body: some View {
-        Image(scene.rawValue)
-            .resizable()
-            .aspectRatio(contentMode: .fill)
-            .ignoresSafeArea()
-            // Gentle top gloss + a whisper of bottom scrim so white glass and
-            // text stay legible over any part of the photo.
-            .overlay(
-                LinearGradient(
-                    colors: [.white.opacity(0.14), .clear, Aero.ink.opacity(0.10)],
-                    startPoint: .top, endPoint: .bottom
-                )
-                .ignoresSafeArea()
-            )
+        RetroBackground()
     }
 }
 

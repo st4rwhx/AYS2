@@ -16,7 +16,7 @@ struct RootView: View {
             // Consent gate: the app can't be used until the Terms (including the
             // anonymous diagnostics consent) are accepted.
             ZStack {
-                AeroBackground()
+                RetroBackground()
                 TermsOfUseView(mode: .gate) {
                     TelemetryManager.shared.termsAccepted = true
                     termsAccepted = true
@@ -29,13 +29,11 @@ struct RootView: View {
         ZStack {
             switch appState.currentScreen {
             case .menu:
-                AeroBackground()
-                MenuTabView()
+                DashboardView()
                     .overlay(alignment: .bottomTrailing) {
-                        // Kept on every tab, floating clear of the tab bar.
                         CommunityBar()
                             .padding(.trailing, 16)
-                            .padding(.bottom, 96)
+                            .padding(.bottom, 22)
                     }
             case .playing:
                 GameScreenView()
