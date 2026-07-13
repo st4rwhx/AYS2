@@ -17,6 +17,10 @@ final class AppState: @unchecked Sendable {
     var runningGameName: String? = nil
     var hideStatusBar: Bool = false
 
+    /// Whether the community welcome sheet has been shown this launch (reset
+    /// each process start, so the invite appears once per app startup).
+    @ObservationIgnored var didShowCommunityPrompt = false
+
     @ObservationIgnored private var pendingBootAction: (() -> Void)?
     @ObservationIgnored private var shutdownObserver: NSObjectProtocol?
 

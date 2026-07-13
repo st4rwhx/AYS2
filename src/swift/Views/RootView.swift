@@ -7,6 +7,7 @@ struct RootView: View {
     @State private var appState = AppState.shared
     @State private var fileImporter = FileImportHandler.shared
     @State private var termsAccepted = TelemetryManager.shared.termsAccepted
+    @State private var showCommunity = false
 
     var body: some View {
         if termsAccepted {
@@ -31,6 +32,12 @@ struct RootView: View {
                 PS2WaveBackground()
                     .ignoresSafeArea()
                 MenuTabView()
+                    .overlay(alignment: .bottomTrailing) {
+                        // Kept on every tab, floating clear of the tab bar.
+                        CommunityBar()
+                            .padding(.trailing, 16)
+                            .padding(.bottom, 96)
+                    }
             case .playing:
                 GameScreenView()
             }
@@ -46,6 +53,17 @@ struct RootView: View {
             Button("OK") {}
         } message: {
             Text(fileImporter.lastImportMessage ?? "")
+        }
+        .sheet(isPresented: $showCommunity) {
+            CommunityWelcomeView()
+        }
+        .task {
+            // Invite to the Discord / GitHub once per app launch, after the
+            // Terms gate has been cleared.
+            if !AppState.shared.didShowCommunityPrompt {
+                AppState.shared.didShowCommunityPrompt = true
+                showCommunity = true
+            }
         }
     }
 }
