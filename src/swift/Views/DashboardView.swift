@@ -85,16 +85,6 @@ struct TopNav: View {
             }
 
             BumperPill(text: "RB")
-
-            // Gamerpic-style avatar.
-            Circle()
-                .strokeBorder(Retro.accent, lineWidth: 2)
-                .frame(width: 32, height: 32)
-                .overlay(
-                    Text("P")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(Retro.accent)
-                )
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
@@ -141,9 +131,9 @@ struct GamesCarouselView: View {
             }
             Spacer(minLength: 0)
             HintBar(hints: [
-                .init(glyph: "✛", color: Retro.accent, label: "add game"),
-                .init(glyph: "A", color: Color(red: 0.30, green: 0.68, blue: 0.31), label: "select"),
-                .init(glyph: "B", color: Color(red: 0.85, green: 0.25, blue: 0.22), label: "back"),
+                .init(button: .triangle, label: "add game"),
+                .init(button: .cross, label: "select"),
+                .init(button: .circle, label: "back"),
             ])
         }
         .fileImporter(isPresented: $showImporter,
@@ -183,62 +173,47 @@ struct GamesCarouselView: View {
         return Button {
             selectGame(game.name)
         } label: {
-            CleanCover(gameName: game.name, width: 168)
-                // "Local" badge, top-left.
-                .overlay(alignment: .topLeading) {
-                    Text("Local")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10).padding(.vertical, 4)
-                        .background(Capsule().fill(Retro.accent))
-                        .padding(8)
-                }
-                // Options button, top-right.
-                .overlay(alignment: .topTrailing) {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(Retro.ink)
-                        .frame(width: 26, height: 26)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(0.9)))
-                        .padding(8)
-                }
-                // Favorite star, if any.
-                .overlay(alignment: .bottomTrailing) {
-                    if game.isFavorite {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.yellow)
-                            .shadow(color: .black.opacity(0.6), radius: 2)
-                            .padding(8)
+            VStack(spacing: 8) {
+                CleanCover(gameName: game.name, width: 168)
+                    // Options button, top-right.
+                    .overlay(alignment: .topTrailing) {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Retro.ink)
+                            .frame(width: 24, height: 24)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(0.92)))
+                            .padding(7)
                     }
-                }
-                // Title overlaid at the bottom of the cover, on a legibility scrim.
-                .overlay(alignment: .bottom) {
-                    Text(game.name)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 8)
-                        .padding(.top, 22).padding(.bottom, 10)
-                        .background(
-                            LinearGradient(colors: [.clear, .black.opacity(0.78)],
-                                           startPoint: .top, endPoint: .bottom)
-                        )
-                }
-                .overlay(alignment: .topLeading) {
-                    if isRunning {
-                        Text("RUNNING")
-                            .font(.system(size: 9, weight: .heavy)).tracking(1)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 7).padding(.vertical, 3)
-                            .background(Capsule().fill(Color(red: 0.30, green: 0.68, blue: 0.31)))
-                            .padding(.top, 40).padding(.leading, 8)
+                    // Favorite star, if any.
+                    .overlay(alignment: .topLeading) {
+                        if game.isFavorite {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.yellow)
+                                .padding(6)
+                                .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(0.92)))
+                                .padding(7)
+                        }
                     }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                .shadow(color: .black.opacity(0.22), radius: 10, x: 0, y: 8)
+                    // Running badge, bottom-left.
+                    .overlay(alignment: .bottomLeading) {
+                        if isRunning {
+                            Text("RUNNING")
+                                .font(.system(size: 9, weight: .heavy)).tracking(1)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 7).padding(.vertical, 3)
+                                .background(Capsule().fill(Color(red: 0.30, green: 0.68, blue: 0.31)))
+                                .padding(7)
+                        }
+                    }
+                // Small title BELOW the cover, on the light field — no dark scrim.
+                Text(displayName(game.name))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Retro.ink)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .frame(width: 168)
+            }
         }
         .buttonStyle(.plain)
         .frame(width: 168)
@@ -250,6 +225,15 @@ struct GamesCarouselView: View {
                       systemImage: game.isFavorite ? "star.slash" : "star")
             }
         }
+    }
+
+    /// Drops the disc-image extension for a cleaner title under the cover.
+    private func displayName(_ name: String) -> String {
+        let lower = name.lowercased()
+        for ext in [".iso", ".bin", ".chd", ".img", ".elf", ".cso", ".gz"] where lower.hasSuffix(ext) {
+            return String(name.dropLast(ext.count))
+        }
+        return name
     }
 
     private var emptyState: some View {
@@ -346,12 +330,7 @@ struct SettingsGridView: View {
                 .padding(16)
             }
             .background(RetroBackground())
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Settings").font(.headline).foregroundStyle(Retro.ink)
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 }

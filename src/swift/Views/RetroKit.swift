@@ -133,9 +133,43 @@ struct BumperPill: View {
     }
 }
 
-/// The bottom action-hint bar (Ⓐ select  Ⓑ back …) like the console dashboard.
+/// A PlayStation face button (△ ○ ✕ □) drawn in its signature colour.
+enum PSButton: String, Identifiable {
+    case triangle, circle, cross, square
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .triangle: return "triangle"
+        case .circle:   return "circle"
+        case .cross:    return "xmark"
+        case .square:   return "square"
+        }
+    }
+    var color: Color {
+        switch self {
+        case .triangle: return Color(red: 0.13, green: 0.75, blue: 0.55) // green
+        case .circle:   return Color(red: 0.92, green: 0.26, blue: 0.30) // red
+        case .cross:    return Color(red: 0.30, green: 0.55, blue: 0.95) // blue
+        case .square:   return Color(red: 0.95, green: 0.42, blue: 0.72) // pink
+        }
+    }
+}
+
+struct PSGlyph: View {
+    let button: PSButton
+    var body: some View {
+        Image(systemName: button.symbol)
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(button.color)
+            .frame(width: 22, height: 22)
+            .overlay(Circle().strokeBorder(button.color, lineWidth: 1.5))
+    }
+}
+
+/// The bottom action-hint bar (△ select  ✕ back …) using PS2 face buttons.
 struct HintBar: View {
-    struct Hint: Identifiable { let id = UUID(); let glyph: String; let color: Color; let label: String }
+    struct Hint: Identifiable { let id = UUID(); let button: PSButton; let label: String }
     let hints: [Hint]
 
     var body: some View {
@@ -143,11 +177,7 @@ struct HintBar: View {
             Spacer(minLength: 0)
             ForEach(hints) { h in
                 HStack(spacing: 6) {
-                    Text(h.glyph)
-                        .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .frame(width: 20, height: 20)
-                        .background(Circle().fill(h.color))
+                    PSGlyph(button: h.button)
                     Text(h.label)
                         .font(.footnote)
                         .foregroundStyle(Retro.mut)

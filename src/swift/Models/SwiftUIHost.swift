@@ -23,6 +23,11 @@ class iPSX2HostingController<Content: View>: UIHostingController<Content> {
         let hostingController = iPSX2HostingController(rootView: RootView())
         hostingController.view.backgroundColor = .clear
         hostingController.view.isOpaque = false
+        // The whole menu uses the light NXE dashboard skin. Forcing the style on
+        // the hosting controller guarantees every pushed detail screen (Graphics,
+        // System, BIOS, Help…) renders light too — a SwiftUI preferredColorScheme
+        // does not reliably reach views pushed inside nested NavigationStacks.
+        hostingController.overrideUserInterfaceStyle = .light
         return hostingController
     }
 }

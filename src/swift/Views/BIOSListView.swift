@@ -24,6 +24,7 @@ struct BIOSListView: View {
                 }
             }
             .navigationTitle("BIOS")
+            .navigationBarTitleDisplayMode(.inline)
             .aeroScreen(.dewdrop)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -86,14 +87,30 @@ struct BIOSListView: View {
     }
 
     private var emptyState: some View {
-        AeroEmptyState(
-            title: "No BIOS yet",
-            message: "Add a PS2 BIOS you dumped from your own console to boot games.",
-            buttonTitle: "Import BIOS",
-            systemImage: "square.and.arrow.down",
-            hint: "Or drop a .bin into On My iPhone › ELORIS-PRISM › bios",
-            action: { showImporter = true }
-        )
+        VStack(spacing: 14) {
+            Spacer()
+            Image(systemName: "memorychip")
+                .font(.system(size: 54, weight: .thin))
+                .foregroundStyle(Retro.line2)
+            Text("No BIOS yet")
+                .font(.title2.weight(.bold)).foregroundStyle(Retro.ink)
+            Text("Add a PS2 BIOS you dumped from your own console to boot games.")
+                .font(.subheadline).foregroundStyle(Retro.mut)
+                .multilineTextAlignment(.center)
+            Button { showImporter = true } label: {
+                Label("Import BIOS", systemImage: "square.and.arrow.down")
+            }
+            .buttonStyle(RetroButtonStyle())
+            .padding(.top, 4)
+            Text("Or drop a .bin into On My iPhone › ELORIS-PRISM › bios")
+                .font(.footnote).foregroundStyle(Retro.faint)
+                .multilineTextAlignment(.center)
+                .padding(.top, 2)
+            Spacer()
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 30)
     }
 
     private func loadBIOSes() {
