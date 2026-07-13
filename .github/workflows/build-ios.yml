@@ -189,6 +189,16 @@ jobs:
           cp iPSX2.ipa ELORIS-PRISM.ipa
           IPA_SIZE=$(stat -f%z ELORIS-PRISM.ipa 2>/dev/null || stat -c%s ELORIS-PRISM.ipa)
           TODAY=$(date +%F)
+          # Integrity hashes — required by SideStore's Community-Source submission
+          # (md5, anti bait-and-switch) and generally good practice.
+          IPA_MD5=$(md5 -q ELORIS-PRISM.ipa 2>/dev/null || md5sum ELORIS-PRISM.ipa | cut -d' ' -f1)
+          IPA_SHA=$(shasum -a 256 ELORIS-PRISM.ipa | cut -d' ' -f1)
+          printf 'ELORIS-PRISM.ipa\n  version: %s\n  size:    %s bytes\n  md5:     %s\n  sha256:  %s\n' \
+            "$VERSION" "$IPA_SIZE" "$IPA_MD5" "$IPA_SHA" > checksums.txt
+          {
+            echo '## Release checksums'
+            echo '```'; cat checksums.txt; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
           IPA_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/ELORIS-PRISM.ipa"
           ICON_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/icon.png"
 
@@ -245,7 +255,7 @@ jobs:
           PY
 
           gh release delete "$TAG" --yes --cleanup-tag --repo "$RELEASE_REPO" 2>/dev/null || true
-          gh release create "$TAG" ELORIS-PRISM.ipa source.json icon.png SOURCE-OFFER.txt \
+          gh release create "$TAG" ELORIS-PRISM.ipa source.json icon.png SOURCE-OFFER.txt checksums.txt \
             --repo "$RELEASE_REPO" \
             --title "ELORIS-PRISM — v${VERSION}" \
             --prerelease \
