@@ -143,6 +143,68 @@ struct CrystalBadge: View {
     }
 }
 
+// MARK: - 3D game case (jaquette) — replaces the spinning disc
+
+/// A game shown as a realistic 3D PS2 case: cover front + a left spine, tilted
+/// in perspective with a top gloss and a soft contact shadow. Falls back to a
+/// crystal case when no cover art is found.
+struct BoxArt: View {
+    let gameName: String
+    var height: CGFloat = 150
+
+    @State private var image: UIImage?
+
+    private var caseWidth: CGFloat { height * 0.70 }   // PS2 DVD-case proportions
+    private var spineWidth: CGFloat { max(6, height * 0.055) }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Left spine (the case's side face).
+            Rectangle()
+                .fill(LinearGradient(
+                    colors: [.black.opacity(0.55), .white.opacity(0.18), .black.opacity(0.45)],
+                    startPoint: .leading, endPoint: .trailing))
+                .frame(width: spineWidth)
+            // Front cover.
+            frontCover
+        }
+        .frame(width: caseWidth, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(.white.opacity(0.35), lineWidth: 1)
+        )
+        .rotation3DEffect(.degrees(15), axis: (x: 0, y: 1, z: 0), anchor: .trailing, perspective: 0.55)
+        .shadow(color: .black.opacity(0.45), radius: 9, x: -4, y: 9)
+    }
+
+    private var frontCover: some View {
+        ZStack {
+            if let image {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                LinearGradient(colors: [Aero.sky, Aero.ink], startPoint: .top, endPoint: .bottom)
+                Image("Crystal")
+                    .resizable().scaledToFit()
+                    .padding(caseWidth * 0.16)
+                    .shadow(color: Aero.sky.opacity(0.6), radius: 10)
+            }
+        }
+        .overlay(alignment: .top) {   // wet top-gloss
+            LinearGradient(colors: [.white.opacity(0.4), .clear], startPoint: .top, endPoint: .center)
+                .allowsHitTesting(false)
+        }
+        .task(id: gameName) {
+            image = nil
+            guard let serial = await CoverArtManager.shared.serial(forGameName: gameName),
+                  !serial.isEmpty else { return }
+            if let data = await CoverArtManager.shared.imageData(for: serial) {
+                image = UIImage(data: data)
+            }
+        }
+    }
+}
+
 // MARK: - Reusable empty-state that fills the screen (fixes the "floating card")
 
 struct AeroEmptyState: View {

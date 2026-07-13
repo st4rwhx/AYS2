@@ -164,23 +164,29 @@ struct PSBtn: View {
     @State private var on = false
     var body: some View {
         ZStack {
-            // Glossy domed base: radial gradient gives a 3D sphere highlight.
+            // Wet aqua glass dome — a pressable water droplet.
             Circle()
                 .fill(RadialGradient(
-                    colors: on ? [clr.opacity(0.95), clr.opacity(0.45)]
-                               : [Color(white: 0.17), Color(white: 0.05)],
-                    center: UnitPoint(x: 0.35, y: 0.30),
-                    startRadius: 1, endRadius: sz * 0.85))
-            // Coloured ring + faint inner ring for depth.
-            Circle().strokeBorder(clr.opacity(on ? 1.0 : 0.7), lineWidth: on ? 2.5 : 1.8)
-            Circle().strokeBorder(.white.opacity(0.10), lineWidth: 1).padding(2)
+                    colors: on ? [.white, clr.opacity(0.9), clr.opacity(0.55)]
+                               : [.white, Aero.sky.opacity(0.9), Aero.deep],
+                    center: UnitPoint(x: 0.34, y: 0.28),
+                    startRadius: 1, endRadius: sz * 0.95))
+            // Bright top gloss streak (the wet highlight).
+            Ellipse()
+                .fill(LinearGradient(colors: [.white.opacity(0.9), .clear],
+                                     startPoint: .top, endPoint: .bottom))
+                .frame(width: sz * 0.56, height: sz * 0.3)
+                .offset(y: -sz * 0.22)
+                .blur(radius: 0.5)
+            Circle().strokeBorder(.white.opacity(0.7), lineWidth: 1)
             Text(sym)
                 .font(.system(size: sz * 0.44, weight: .bold, design: .rounded))
                 .foregroundStyle(on ? .white : clr)
+                .shadow(color: .black.opacity(0.3), radius: 1, y: 1)
         }
         .frame(width: sz, height: sz)
-        .shadow(color: on ? clr.opacity(0.6) : .black.opacity(0.45),
-                radius: on ? 9 : 3, x: 0, y: on ? 0 : 2)
+        .shadow(color: on ? clr.opacity(0.6) : Aero.deep.opacity(0.5),
+                radius: on ? 10 : 4, x: 0, y: on ? 0 : 3)
         .scaleEffect(on ? 0.9 : 1.0)
         .animation(.easeOut(duration: 0.06), value: on)
         .contentShape(Circle())
@@ -203,24 +209,25 @@ struct PadBtn: View {
     var body: some View {
         Text(label)
             .font(.system(size: min(w, h) * 0.4, weight: .semibold, design: .rounded))
-            .foregroundStyle(on ? .white : .white.opacity(0.9))
+            .foregroundStyle(on ? .white : Aero.ink)
             .frame(width: w, height: h)
             .background(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .fill(LinearGradient(
-                        colors: on ? [accent.opacity(0.9), accent.opacity(0.5)]
-                                   : [Color(white: 0.18), Color(white: 0.07)],
+                        colors: on ? [.white, accent, Aero.deep]
+                                   : [.white.opacity(0.95), Aero.sky.opacity(0.85), Aero.deep.opacity(0.95)],
                         startPoint: .top, endPoint: .bottom))
-                    // Top gloss highlight.
+                    // Strong wet top gloss.
                     .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .fill(LinearGradient(colors: [.white.opacity(0.14), .clear],
-                                             startPoint: .top, endPoint: .center)))
+                        .fill(LinearGradient(colors: [.white.opacity(0.7), .clear],
+                                             startPoint: .top, endPoint: .center))
+                        .padding(1.2))
                     // Rim.
                     .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
-                        .strokeBorder(.white.opacity(on ? 0.6 : 0.20), lineWidth: 1))
+                        .strokeBorder(.white.opacity(on ? 0.85 : 0.55), lineWidth: 1))
             )
-            .shadow(color: on ? accent.opacity(0.55) : .black.opacity(0.4),
-                    radius: on ? 7 : 2, x: 0, y: on ? 0 : 1.5)
+            .shadow(color: on ? accent.opacity(0.6) : Aero.deep.opacity(0.45),
+                    radius: on ? 8 : 3, x: 0, y: on ? 0 : 2)
             .scaleEffect(on ? 0.92 : 1.0)
             .animation(.easeOut(duration: 0.06), value: on)
             .contentShape(Rectangle())
@@ -250,16 +257,22 @@ struct StickView: View {
                                      center: .center, startRadius: 1, endRadius: sz * 0.55))
                 .overlay(Circle().strokeBorder(.white.opacity(0.14), lineWidth: 1))
                 .frame(width: sz)
-            // Glossy thumb knob; tints blue while dragging.
+            // Wet glass thumb knob; brightens while dragging.
             Circle()
                 .fill(RadialGradient(
                     colors: isDragging
-                        ? [Color(red: 0.42, green: 0.66, blue: 1.0), Color(red: 0.16, green: 0.32, blue: 0.7)]
-                        : [Color(white: 0.44), Color(white: 0.14)],
-                    center: UnitPoint(x: 0.35, y: 0.30), startRadius: 1, endRadius: knob))
-                .overlay(Circle().strokeBorder(.white.opacity(0.28), lineWidth: 1))
+                        ? [.white, Aero.sky, Aero.deep]
+                        : [.white, Aero.sky.opacity(0.8), Aero.deep.opacity(0.9)],
+                    center: UnitPoint(x: 0.34, y: 0.28), startRadius: 1, endRadius: knob))
+                .overlay(
+                    Ellipse()
+                        .fill(LinearGradient(colors: [.white.opacity(0.85), .clear], startPoint: .top, endPoint: .bottom))
+                        .frame(width: knob * 0.6, height: knob * 0.32)
+                        .offset(y: -knob * 0.22)
+                )
+                .overlay(Circle().strokeBorder(.white.opacity(0.6), lineWidth: 1))
                 .frame(width: knob)
-                .shadow(color: .black.opacity(0.5), radius: 3, x: 0, y: 2)
+                .shadow(color: Aero.deep.opacity(0.6), radius: 3, x: 0, y: 2)
                 .offset(off)
             // L3/R3 label
             Text(isLeft ? "L3" : "R3")

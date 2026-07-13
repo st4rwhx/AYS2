@@ -655,8 +655,13 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     // Re-ensure EmuFolders (idempotent)
     EmuFolders::DataRoot = dataRoot;
     EmuFolders::Bios = dataRoot + "/bios";
+    // Save states MUST live under the writable Documents root, or
+    // VMManager::SaveStateToSlot() silently fails (unconfigured path). This is
+    // the fix for "save state doesn't work" — GetSaveStateFileName then resolves
+    // to a real, writable, and re-readable location.
+    EmuFolders::Savestates = dataRoot + "/sstates";
     // ...
-    
+
     Console.WriteLn("PCSX2 iOS: Initializing logic in SceneDelegate...");
     
     // Settings Initialization
@@ -1336,6 +1341,9 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     EmuFolders::Bios = dataRoot + "/bios";
     // ... [Init other folders if needed, but DataRoot is key] ...
     EmuFolders::Logs = dataRoot + "/logs";
+    // Writable save-state dir (see the SceneDelegate init) — without this
+    // SaveStateToSlot() fails because Savestates points nowhere writable.
+    EmuFolders::Savestates = dataRoot + "/sstates";
 
     // --- Unified Logging Redirection ---
     // Force stderr and stdout to pcsx2_log.txt

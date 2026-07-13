@@ -177,30 +177,28 @@ struct GameListView: View {
         return Button {
             selectGame(game.name)
         } label: {
-            VStack(spacing: 10) {
-                DiscFace(gameName: game.name)
-                    .frame(width: 104, height: 104)
+            VStack(spacing: 12) {
+                BoxArt(gameName: game.name, height: 132)
+                    .padding(.top, 4)
                 Text(game.name)
                     .font(.subheadline).fontWeight(.semibold)
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                    .shadow(color: Aero.ink.opacity(0.4), radius: 3, y: 1)
                 Text(formatSize(game.size))
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .shadow(color: Aero.ink.opacity(0.3), radius: 2, y: 1)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .padding(.horizontal, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.white.opacity(0.05))
-            )
+            .aeroGlass(corner: 20)
             .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(isRunning ? Color.green.opacity(0.55) : Color.white.opacity(0.08),
-                            lineWidth: 1)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(isRunning ? Aero.leaf.opacity(0.75) : .clear, lineWidth: 1.5)
             )
             .overlay(alignment: .topTrailing) {
                 if game.isFavorite {
