@@ -92,7 +92,7 @@ final class CoverArtManager: @unchecked Sendable {
     // scans are serialized on this one queue, and skipped entirely whenever a VM
     // is live (running or paused). Results are cached per file name so each ISO
     // is scanned at most once.
-    private let scanQueue = DispatchQueue(label: "com.balaj.elorisprism.coverserialscan")
+    private let scanQueue = DispatchQueue(label: "com.ayanodeath.elorisprism.coverserialscan")
 
     /// Resolves the disc serial for a game file name. Returns nil (without
     /// caching) if a VM is active, so it retries once the emulator is idle.
