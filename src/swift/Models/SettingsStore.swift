@@ -46,7 +46,11 @@ enum JITScriptProtocol: String, CaseIterable, Identifiable {
     }
 
     static var defaultValue: JITScriptProtocol {
-        ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26 ? .universal : .legacy
+        // Legacy (brk #0x69, the DolphiniOS/StikDebug "Dolphin.js" handshake) is the
+        // JIT path that actually works on iOS sideload setups, including iOS 26.
+        // Universal (brk #0xf00d) needs an enabler almost nobody has and SIGTRAPs
+        // on a normal StikDebug device, so default to legacy on every iOS version.
+        .legacy
     }
 
     static func normalized(_ rawValue: String) -> JITScriptProtocol {
@@ -633,15 +637,18 @@ final class SettingsStore: @unchecked Sendable {
         let protocolValue = JITScriptProtocol.normalized(
             ARMSX2Bridge.getINIString("ARMSX2iOS/JIT", key: "ScriptProtocol", defaultValue: JITScriptProtocol.defaultValue.rawValue)
         )
-        let migrated = ARMSX2Bridge.getINIBool("ARMSX2iOS/Migrations", key: "JITScriptProtocolByOSV1", defaultValue: false)
-        if !migrated && JITScriptProtocol.defaultValue == .legacy && protocolValue == .universal {
+        let migrated = ARMSX2Bridge.getINIBool("ARMSX2iOS/Migrations", key: "JITScriptProtocolByOSV2", defaultValue: false)
+        // One-time reset of the old "universal" (brk #0xf00d) default that SIGTRAPs
+        // and blocks boot on the StikDebug/Dolphin.js (brk #0x69) enabler most users
+        // have. Kept in sync with the native migration in ios_main.mm (same V2 key).
+        if !migrated && protocolValue == .universal {
             ARMSX2Bridge.setINIString("ARMSX2iOS/JIT", key: "ScriptProtocol", value: JITScriptProtocol.legacy.rawValue)
-            ARMSX2Bridge.setINIBool("ARMSX2iOS/Migrations", key: "JITScriptProtocolByOSV1", value: true)
-            NSLog("[ARMSX2 iOS Settings] Migrated JIT script protocol to legacy for this iOS version")
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Migrations", key: "JITScriptProtocolByOSV2", value: true)
+            NSLog("[ARMSX2 iOS Settings] Reset JIT script protocol to legacy (StikDebug/brk #0x69)")
             return .legacy
         }
         if !migrated {
-            ARMSX2Bridge.setINIBool("ARMSX2iOS/Migrations", key: "JITScriptProtocolByOSV1", value: true)
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Migrations", key: "JITScriptProtocolByOSV2", value: true)
         }
         return protocolValue
     }

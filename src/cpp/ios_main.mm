@@ -755,7 +755,13 @@ static int ARMSX2GetIOSMajorVersion()
 
 static const char* ARMSX2DefaultJITScriptProtocol()
 {
-    return ARMSX2GetIOSMajorVersion() >= 26 ? "universal" : "legacy";
+    // brk #0x69 (the DolphiniOS / StikDebug "Dolphin.js" handshake) is the JIT
+    // registration path that actually works on iOS sideload setups, including
+    // iOS 26. The "universal" brk #0xf00d protocol needs an enabler almost nobody
+    // has, so it SIGTRAPs and boot fails on a normal StikDebug device. Default to
+    // legacy on every iOS version; users with a universal enabler can opt in from
+    // Settings → Emulator → JIT Script.
+    return "legacy";
 }
 
 static std::string ARMSX2NormalizeJITScriptProtocol(std::string jitProtocol)
@@ -776,13 +782,17 @@ static void ARMSX2MigrateJITScriptProtocolForIOS(SettingsInterface* si, const ch
     const int iosMajor = ARMSX2GetIOSMajorVersion();
     const char* defaultProtocol = ARMSX2DefaultJITScriptProtocol();
     const bool hadProtocol = si->ContainsValue("ARMSX2iOS/JIT", "ScriptProtocol");
-    const bool migrated = si->GetBoolValue("ARMSX2iOS/Migrations", "JITScriptProtocolByOSV1", false);
+    const bool migrated = si->GetBoolValue("ARMSX2iOS/Migrations", "JITScriptProtocolByOSV2", false);
     const std::string currentProtocol = ARMSX2NormalizeJITScriptProtocol(
         si->GetStringValue("ARMSX2iOS/JIT", "ScriptProtocol", defaultProtocol));
 
-    if (!hadProtocol || (!migrated && iosMajor > 0 && iosMajor < 26 && currentProtocol == "universal")) {
+    // Fresh install, or a one-time reset of the old "universal" default that never
+    // worked with the StikDebug / Dolphin.js (brk #0x69) enabler most users have.
+    // The universal brk #0xf00d path SIGTRAPs there and blocks boot entirely, so a
+    // stored "universal" is (almost always) the bad default rather than a choice.
+    if (!hadProtocol || (!migrated && currentProtocol == "universal")) {
         si->SetStringValue("ARMSX2iOS/JIT", "ScriptProtocol", defaultProtocol);
-        si->SetBoolValue("ARMSX2iOS/Migrations", "JITScriptProtocolByOSV1", true);
+        si->SetBoolValue("ARMSX2iOS/Migrations", "JITScriptProtocolByOSV2", true);
         si->Save();
         std::fprintf(stderr,
             "@@JIT_PROTOCOL_MIGRATE@@ reason=%s ios_major=%d had=%d from=%s to=%s\n",
@@ -792,7 +802,7 @@ static void ARMSX2MigrateJITScriptProtocolForIOS(SettingsInterface* si, const ch
     }
 
     if (!migrated) {
-        si->SetBoolValue("ARMSX2iOS/Migrations", "JITScriptProtocolByOSV1", true);
+        si->SetBoolValue("ARMSX2iOS/Migrations", "JITScriptProtocolByOSV2", true);
         si->Save();
     }
 }
