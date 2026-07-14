@@ -8,40 +8,44 @@ struct OverlaySettingsView: View {
 
     var body: some View {
         Form {
-            Section("Performance Overlay") {
-                Picker("Preset", selection: $settings.osdPreset) {
+            Section(settings.localized("Performance Overlay")) {
+                Picker(settings.localized("Preset"), selection: $settings.osdPreset) {
                     ForEach(OsdPreset.allCases, id: \.self) { preset in
-                        Text(preset.label).tag(preset)
+                        Text(settings.localized(preset.label)).tag(preset)
                     }
                 }
                 .pickerStyle(.segmented)
+
+                Picker(settings.localized("Position"), selection: $settings.osdPerformancePosition) {
+                    Text(settings.localized("Hidden")).tag(0)
+                    Text(settings.localized("Top Left")).tag(1)
+                    Text(settings.localized("Top Right")).tag(3)
+                }
             }
 
-            Section {
-                switch settings.osdPreset {
-                case .off:
-                    Text("Overlay is hidden.")
-                        .foregroundStyle(.secondary)
-                case .simple:
-                    Label("FPS", systemImage: "checkmark")
-                    Label("CPU Usage (EE/GS)", systemImage: "checkmark")
-                case .detail:
-                    Label("FPS", systemImage: "checkmark")
-                    Label("Speed %", systemImage: "checkmark")
-                    Label("CPU Usage (EE/GS)", systemImage: "checkmark")
-                    Label("Resolution", systemImage: "checkmark")
-                case .full:
-                    Label("FPS", systemImage: "checkmark")
-                    Label("Speed %", systemImage: "checkmark")
-                    Label("CPU Usage (EE/GS)", systemImage: "checkmark")
-                    Label("Resolution", systemImage: "checkmark")
-                    Label("Frame Times Graph", systemImage: "checkmark")
-                }
-            } header: {
-                Text("Displayed Items")
+            Section(settings.localized("Displayed Items")) {
+                Toggle(settings.localized("Show FPS"), isOn: $settings.osdShowFPS)
+                Toggle(settings.localized("Show VPS"), isOn: $settings.osdShowVPS)
+                Toggle(settings.localized("Show Speed"), isOn: $settings.osdShowSpeed)
+                Toggle(settings.localized("Show CPU"), isOn: $settings.osdShowCPU)
+                Toggle(settings.localized("Show GPU"), isOn: $settings.osdShowGPU)
+                Toggle(settings.localized("Show Resolution"), isOn: $settings.osdShowResolution)
+                Toggle(settings.localized("Show GS Stats"), isOn: $settings.osdShowGSStats)
+                Toggle(settings.localized("Show Indicators"), isOn: $settings.osdShowIndicators)
+                Toggle(settings.localized("Show Settings"), isOn: $settings.osdShowSettings)
+                Toggle(settings.localized("Show Inputs"), isOn: $settings.osdShowInputs)
+                Toggle(settings.localized("Show Frame Times"), isOn: $settings.osdShowFrameTimes)
+                Toggle(settings.localized("Show Version"), isOn: $settings.osdShowVersion)
+                Toggle(settings.localized("Show Hardware Info"), isOn: $settings.osdShowHardwareInfo)
+                Toggle(settings.localized("Show Device Stats"), isOn: $settings.osdShowDeviceStats)
+            }
+
+            Section(settings.localized("Notes")) {
+                Text(settings.localized("Device Stats adds battery, iOS heat state, Low Power Mode, and emulator RAM usage. iOS does not expose exact CPU/GPU temperatures, so Heat is an OS-reported warning level rather than a thermometer reading."))
+                    .foregroundStyle(.secondary)
             }
         }
-        .navigationTitle("Overlay")
+        .navigationTitle(settings.localized("Overlay"))
         .navigationBarTitleDisplayMode(.inline)
     }
 }

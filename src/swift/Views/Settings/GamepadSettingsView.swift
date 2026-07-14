@@ -25,6 +25,18 @@ private let ps2Buttons: [PS2Button] = [
     PS2Button(id: 15, name: "R3"),
 ]
 
+private let multitapModes: [(id: Int, title: String)] = [
+    (0, "Auto (3+ Controllers)"),
+    (1, "Disabled"),
+    (2, "Port 1 Multitap"),
+    (3, "Port 2 Multitap"),
+    (4, "Port 1 + Port 2 Multitap"),
+]
+
+private func multitapModeTitle(_ id: Int) -> String {
+    multitapModes.first(where: { $0.id == id })?.title ?? "Auto"
+}
+
 // SDL_GamepadButton → display name (matches SDL3 enum order)
 private func sdlButtonName(_ idx: Int) -> String {
     switch idx {
@@ -54,28 +66,62 @@ struct GamepadSettingsView: View {
     @State private var capturingIndex: Int? = nil
     @State private var mappingVersion = 0
     @State private var pollTimer: Timer? = nil
+    @State private var statusMessage: String?
 
     var body: some View {
         Form {
+            Section {
+                NavigationLink {
+                    LocalMultiplayerSettingsView()
+                } label: {
+                    Label {
+                        HStack {
+                            Text(settings.localized("Local Multiplayer"))
+                            Spacer()
+                            Text(settings.localized(multitapModeTitle(settings.controllerMultitapMode)))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "person.3")
+                    }
+                }
+            } footer: {
+                Text(settings.localized("Configure multitap for 3-4 local controllers."))
+            }
+
             Section {
                 ForEach(ps2Buttons) { btn in
                     mappingRow(btn)
                 }
             } header: {
-                Text("Button Mapping")
+                Text(settings.localized("Button Mapping"))
             } footer: {
-                Text("Tap a row, then press a button on your controller to assign it. L2/R2 are analog triggers (not remappable).")
+                Text(settings.localized("Tap a row, then press a button on your controller to assign it. L2/R2 are analog triggers (not remappable)."))
             }
 
             Section {
-                Button("Reset to Default") {
-                    iPSX2Bridge.resetButtonMappings()
+                Button {
+                    ARMSX2Bridge.testControllerRumble()
+                    statusMessage = settings.localized("Controller rumble test sent.")
+                } label: {
+                    Label(settings.localized("Test Controller Rumble"), systemImage: "waveform.path")
+                }
+
+                Button(settings.localized("Reset to Default")) {
+                    ARMSX2Bridge.resetButtonMappings()
                     mappingVersion += 1
                 }
                 .foregroundStyle(.red)
+            } header: {
+                Text(settings.localized("Tools"))
+            } footer: {
+                if let statusMessage {
+                    Text(statusMessage)
+                }
             }
         }
-        .navigationTitle("Game Controller")
+        .navigationTitle(settings.localized("Game Controller"))
         .navigationBarTitleDisplayMode(.inline)
         .onDisappear {
             stopCapture()
@@ -85,7 +131,7 @@ struct GamepadSettingsView: View {
     @ViewBuilder
     private func mappingRow(_ btn: PS2Button) -> some View {
         let isCapturing = capturingIndex == btn.id
-        let currentSDL = Int(iPSX2Bridge.getButtonMapping(Int32(btn.id)))
+        let currentSDL = Int(ARMSX2Bridge.getButtonMapping(Int32(btn.id)))
 
         Button {
             if isCapturing {
@@ -97,18 +143,18 @@ struct GamepadSettingsView: View {
             HStack {
                 // Left: assigned controller button (prominent)
                 if isCapturing {
-                    Text("Press a button...")
+                    Text(settings.localized("Press a button..."))
                         .font(.body)
                         .fontWeight(.medium)
                         .foregroundStyle(.orange)
                 } else {
-                    Text(sdlButtonName(currentSDL))
+                    Text(settings.localized(sdlButtonName(currentSDL)))
                         .font(.body)
                         .foregroundStyle(.primary)
                 }
                 Spacer()
                 // Right: PS2 function name (secondary)
-                Text(btn.name)
+                Text(settings.localized(btn.name))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -119,18 +165,14 @@ struct GamepadSettingsView: View {
 
     private func startCapture(for ps2Index: Int) {
         capturingIndex = ps2Index
-        iPSX2Bridge.startButtonCapture()
+        ARMSX2Bridge.startButtonCapture()
         pollTimer?.invalidate()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
-            // The timer is scheduled on the main run loop, so its block fires on
-            // the main thread. Under strict concurrency the block is nonisolated,
-            // so hop back onto the main actor to touch main-actor-isolated state
-            // (stopCapture(), mappingVersion).
-            MainActor.assumeIsolated {
-                iPSX2Bridge.pollGamepadForCapture()
-                let captured = iPSX2Bridge.capturedButton()
-                if captured >= 0 {
-                    iPSX2Bridge.setButtonMapping(Int32(ps2Index), toSDLButton: captured)
+            ARMSX2Bridge.pollGamepadForCapture()
+            let captured = ARMSX2Bridge.capturedButton()
+            if captured >= 0 {
+                ARMSX2Bridge.setButtonMapping(Int32(ps2Index), toSDLButton: captured)
+                Task { @MainActor in
                     stopCapture()
                     mappingVersion += 1
                 }
@@ -142,6 +184,40 @@ struct GamepadSettingsView: View {
         pollTimer?.invalidate()
         pollTimer = nil
         capturingIndex = nil
-        iPSX2Bridge.stopButtonCapture()
+        ARMSX2Bridge.stopButtonCapture()
+    }
+}
+
+struct LocalMultiplayerSettingsView: View {
+    @State private var settings = SettingsStore.shared
+
+    var body: some View {
+        Form {
+            Section {
+                Picker(settings.localized("Multitap Mode"), selection: $settings.controllerMultitapMode) {
+                    ForEach(multitapModes, id: \.id) { mode in
+                        Text(settings.localized(mode.title)).tag(mode.id)
+                    }
+                }
+
+                HStack {
+                    Text(settings.localized("Current Mode"))
+                    Spacer()
+                    Text(settings.localized(multitapModeTitle(settings.controllerMultitapMode)))
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text(settings.localized("Multitap"))
+            } footer: {
+                Text(settings.localized("Auto enables Port 1 multitap when 3 or more controllers are detected before boot. Manual modes take effect on the next boot/reset."))
+            }
+
+            Section(settings.localized("Controller Mapping")) {
+                Text(settings.localized("Disabled maps controllers 1-2 to normal PS2 ports. Port 1 Multitap maps controllers 1-4 to 1A/1B/1C/1D. Port 2 Multitap keeps controller 1 on Port 1 and maps controllers 2-4 to Port 2 multitap slots."))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle(settings.localized("Local Multiplayer"))
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

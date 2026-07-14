@@ -16,10 +16,66 @@
     <string>APPL</string>
     <key>CFBundleDisplayName</key>
     <string>ELORIS-PRISM</string>
+    <key>CFBundleIconFiles</key>
+    <array>
+        <string>icon-60</string>
+        <string>icon-76</string>
+        <string>icon-120</string>
+        <string>icon-152</string>
+        <string>icon-167</string>
+        <string>icon-180</string>
+        <string>icon-1024</string>
+    </array>
+    <key>CFBundleIcons</key>
+    <dict>
+        <key>CFBundlePrimaryIcon</key>
+        <dict>
+            <key>CFBundleIconFiles</key>
+            <array>
+                <string>icon-60</string>
+                <string>icon-120</string>
+                <string>icon-180</string>
+            </array>
+            <key>UIPrerenderedIcon</key>
+            <false/>
+        </dict>
+    </dict>
+    <key>CFBundleIcons~ipad</key>
+    <dict>
+        <key>CFBundlePrimaryIcon</key>
+        <dict>
+            <key>CFBundleIconFiles</key>
+            <array>
+                <string>icon-76</string>
+                <string>icon-152</string>
+                <string>icon-167</string>
+            </array>
+            <key>UIPrerenderedIcon</key>
+            <false/>
+        </dict>
+    </dict>
     <key>CFBundleShortVersionString</key>
-    <string>@IPSX2_VERSION@</string>
+    <string>@ARMSX2_VERSION@</string>
     <key>CFBundleVersion</key>
-    <string>@IPSX2_BUILD_NUMBER@</string>
+    <string>@ARMSX2_BUILD_NUMBER@</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>ELORIS-PRISM</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>armsx2</string>
+                <string>armsx2-ios</string>
+                <string>armsx2ios</string>
+            </array>
+        </dict>
+    </array>
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+        <string>stikdebug</string>
+        <string>stikjit</string>
+    </array>
     <key>LSRequiresIPhoneOS</key>
     <true/>
 
@@ -42,13 +98,12 @@
     <true/>
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
+    <key>LSSupportsGameMode</key>
+    <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>ARMSX2 uses local network access for PS2 online play through DEV9 sockets.</string>
     <key>UILaunchScreen</key>
-    <dict>
-        <key>UIImageName</key>
-        <string>SplashImage</string>
-        <key>UIColorName</key>
-        <string>LaunchBackgroundColor</string>
-    </dict>
+    <dict/>
     <key>UIStatusBarStyle</key>
     <string>UIStatusBarStyleDefault</string>
     <key>UIApplicationSceneManifest</key>
@@ -63,7 +118,7 @@
                     <key>UISceneConfigurationName</key>
                     <string>Default Configuration</string>
                     <key>UISceneDelegateClassName</key>
-                    <string>PCSX2SceneDelegate</string>
+                    <string>ARMSX2SceneDelegate</string>
                 </dict>
             </array>
         </dict>

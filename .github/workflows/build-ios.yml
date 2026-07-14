@@ -76,14 +76,13 @@ jobs:
             -B "$GITHUB_WORKSPACE/build" \
             -G Xcode \
             -DCMAKE_SYSTEM_NAME=iOS \
-            -DiPSX2_REAL_DEVICE=ON \
+            -DARMSX2_REAL_DEVICE=ON \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -DCMAKE_CXX_STANDARD=20 \
             -DCMAKE_CXX_STANDARD_REQUIRED=ON \
-            -DIPSX2_VERSION_PATCH="${GITHUB_RUN_NUMBER}" \
-            -DIPSX2_BUILD_NUMBER="${GITHUB_RUN_NUMBER}" \
+            -DARMSX2_BUNDLE_IDENTIFIER="com.balaj.elorisprism" \
             "$GITHUB_WORKSPACE/src/cpp" 2>&1 | tee cmake_output.txt
           # Extraire erreurs et les mettre dans le Summary public
           echo '## CMake Output' >> $GITHUB_STEP_SUMMARY
@@ -98,8 +97,8 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild \
-            -project "$GITHUB_WORKSPACE/build/iPSX2.xcodeproj" \
-            -scheme iPSX2 \
+            -project "$GITHUB_WORKSPACE/build/ARMSX2iOS.xcodeproj" \
+            -scheme ARMSX2iOS \
             -configuration Release \
             -sdk "$IOS_SDK" \
             -derivedDataPath "$GITHUB_WORKSPACE/build/DerivedData" \
@@ -116,7 +115,7 @@ jobs:
           grep -E '(error:|Error:|FAILED|BUILD FAILED)' build.log | tail -80 >> $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
           # Vérifier que le .app a bien été produit
-          find "$GITHUB_WORKSPACE/build/DerivedData" -name "iPSX2.app" -type d | head -3
+          find "$GITHUB_WORKSPACE/build/DerivedData" -name "ARMSX2iOS.app" -type d | head -3
 
       # ── 7. Packager en .ipa ─────────────────────────────────────────────────
       - name: Package IPA
@@ -124,15 +123,15 @@ jobs:
           # CMake's Xcode generator writes the final .app to build/Release-iphoneos,
           # not under DerivedData (which only holds intermediates). Search the whole
           # build tree so we find it regardless of layout.
-          APP=$(find "$GITHUB_WORKSPACE/build" -name "iPSX2.app" -type d | head -1)
+          APP=$(find "$GITHUB_WORKSPACE/build" -name "ARMSX2iOS.app" -type d | head -1)
           echo "App trouvée : $APP"
           if [[ -z "$APP" ]]; then
-            echo "::error::iPSX2.app not found under build/"
+            echo "::error::ARMSX2iOS.app not found under build/"
             find "$GITHUB_WORKSPACE/build" -name "*.app" -type d || true
             exit 1
           fi
           mkdir -p "$GITHUB_WORKSPACE/Payload"
-          cp -r "$APP" "$GITHUB_WORKSPACE/Payload/iPSX2.app"
+          cp -r "$APP" "$GITHUB_WORKSPACE/Payload/ARMSX2iOS.app"
           cd "$GITHUB_WORKSPACE"
           zip -r iPSX2.ipa Payload/
           ls -lh iPSX2.ipa

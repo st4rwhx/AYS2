@@ -6,54 +6,105 @@ import SwiftUI
 struct GraphicsSettingsView: View {
     @State private var settings = SettingsStore.shared
 
+    private var manualAdvancedHacks: Bool {
+        !settings.enableGameDBHardwareFixes
+    }
+
+    private var skipDrawStartBinding: Binding<Int> {
+        Binding(
+            get: { settings.skipDrawStart },
+            set: { newValue in
+                settings.skipDrawStart = min(max(newValue, SettingsStore.skipDrawRange.lowerBound), SettingsStore.skipDrawRange.upperBound)
+                settings.skipDrawEnd = SettingsStore.normalizedSkipDrawEnd(start: settings.skipDrawStart, end: settings.skipDrawEnd)
+            }
+        )
+    }
+
+    private var skipDrawEndBinding: Binding<Int> {
+        Binding(
+            get: { settings.skipDrawEnd },
+            set: { newValue in
+                settings.skipDrawEnd = SettingsStore.normalizedSkipDrawEnd(start: settings.skipDrawStart, end: newValue)
+            }
+        )
+    }
+
     var body: some View {
         Form {
-            Section("Renderer") {
-                Picker("Renderer", selection: $settings.renderer) {
-                    Text("Metal (Hardware)").tag(17)
-                    Text("Software").tag(13)
-                    Text("Null (No Output)").tag(11)
+            Section(settings.localized("Renderer")) {
+                Picker(settings.localized("Renderer"), selection: $settings.renderer) {
+                    Text(settings.localized("Metal (Hardware)")).tag(17)
+#if !targetEnvironment(macCatalyst)
+                    Text(settings.localized("Software")).tag(13)
+                    Text(settings.localized("Null (No Output)")).tag(11)
+#endif
                 }
-                Text("Metal is recommended. Software is slow but accurate. Null disables rendering (for testing). Requires restart.")
+#if targetEnvironment(macCatalyst)
+                Text(settings.localized("Metal is required for the Mac Catalyst build. Requires restart."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-
-            Section("Upscaling") {
-                Picker("Internal Resolution", selection: $settings.upscaleMultiplier) {
-                    Text("Native (1x)").tag(Float(1.0))
-                    Text("2x — ~HD").tag(Float(2.0))
-                    Text("3x — ~QHD").tag(Float(3.0))
-                    Text("4x — ~4K").tag(Float(4.0))
-                    Text("5x").tag(Float(5.0))
-                    Text("6x").tag(Float(6.0))
-                    Text("8x — ~8K").tag(Float(8.0))
-                }
-                Text("Multiplies the game's NATIVE resolution — which varies per game (e.g. 512×448 or 640×448). There is no fixed 1080p/4K: the image scales up from native by this factor. Higher = sharper but heavier. Requires restart.")
+#else
+                Text(settings.localized("Metal is the supported iOS renderer. Software is slow but useful for debugging. Null disables rendering. Requires restart."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+#endif
+#if !targetEnvironment(macCatalyst)
+                if settings.renderer == 11 {
+                    Text(settings.localized("Null renderer may show no video output or a black screen. It is mainly useful for testing. Switch back to Metal and restart if selected by mistake."))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+#endif
             }
 
-            Section("Filtering") {
-                Picker("Texture Filtering", selection: $settings.textureFiltering) {
-                    Text("Nearest (Pixelated)").tag(0)
-                    Text("Bilinear (Forced)").tag(1)
-                    Text("Bilinear (PS2 Default)").tag(2)
-                    Text("Bilinear (Forced excl. Sprite)").tag(3)
+            Section(settings.localized("Upscaling")) {
+                Picker(settings.localized("Internal Resolution"), selection: $settings.upscaleMultiplier) {
+                    Text(settings.localized("0.25x (Fastest)")).tag(Float(0.25))
+                    Text("0.5x").tag(Float(0.5))
+                    Text("0.75x").tag(Float(0.75))
+                    Text(settings.localized("1x Native (512x448)")).tag(Float(1.0))
+                    Text("2x (1024x896)").tag(Float(2.0))
+                    Text("3x (1536x1344)").tag(Float(3.0))
+                    Text("4x (2048x1792)").tag(Float(4.0))
+                    Text("5x (2560x2240)").tag(Float(5.0))
+                    Text("6x (3072x2688)").tag(Float(6.0))
+                    Text("8x (4096x3584)").tag(Float(8.0))
                 }
+                Text(settings.localized("Lower values can help performance on heavy games. Higher values improve visual quality but reduce performance significantly. Requires restart."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if settings.upscaleMultiplier >= 4.0 {
+                    Text(settings.localized("4x and higher can cause poor performance, heat, stutter, or instability on iPhone and iPad."))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            Section(settings.localized("Filtering")) {
+                Picker(settings.localized("Texture Filtering"), selection: $settings.textureFiltering) {
+                    Text(settings.localized("Nearest (Pixelated)")).tag(0)
+                    Text(settings.localized("Bilinear (Forced)")).tag(1)
+                    Text(settings.localized("Bilinear (PS2 Default)")).tag(2)
+                    Text(settings.localized("Bilinear (Forced excl. Sprite)")).tag(3)
+                }
+
+                Toggle(settings.localized("Hardware Mipmapping"), isOn: $settings.hardwareMipmapping)
+                Text(settings.localized("Emulates PS2 texture mipmaps in the hardware renderer. Leave on by default; turn off only if a game has mipmap shimmer, stripes, or bad texture LOD behavior. Requires reset/relaunch for safest results."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Toggle("FXAA", isOn: $settings.fxaa)
-                Text("Fast anti-aliasing. Smooths edges but may blur textures slightly.")
+                Text(settings.localized("Fast anti-aliasing. Smooths edges but may blur textures slightly."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Toggle("CAS Sharpening", isOn: Binding(
+                Toggle(settings.localized("CAS Sharpening"), isOn: Binding(
                     get: { settings.casMode > 0 },
                     set: { settings.casMode = $0 ? 1 : 0 }
                 ))
                 if settings.casMode > 0 {
                     HStack {
-                        Text("Sharpness")
+                        Text(settings.localized("Sharpness"))
                         Slider(value: Binding(
                             get: { Float(settings.casSharpness) / 100.0 },
                             set: { settings.casSharpness = Int($0 * 100) }
@@ -63,68 +114,224 @@ struct GraphicsSettingsView: View {
                             .frame(width: 40)
                     }
                 }
-                Text("Contrast Adaptive Sharpening via Metal. Sharpens the image after rendering.")
+                Text(settings.localized("Contrast Adaptive Sharpening via Metal. Sharpens the image after rendering."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Section("Display") {
-                Picker("Deinterlace", selection: $settings.interlaceMode) {
-                    Text("Automatic (Default)").tag(0)
-                    Text("Off").tag(1)
-                    Text("Weave (TFF)").tag(2)
-                    Text("Weave (BFF)").tag(3)
-                    Text("Bob (TFF)").tag(4)
-                    Text("Bob (BFF)").tag(5)
-                    Text("Blend (TFF)").tag(6)
-                    Text("Blend (BFF)").tag(7)
-                    Text("Adaptive (TFF)").tag(8)
-                    Text("Adaptive (BFF)").tag(9)
+            Section(settings.localized("Display")) {
+                Picker(settings.localized("Deinterlace"), selection: $settings.interlaceMode) {
+                    Text(settings.localized("None")).tag(0)
+                    Text(settings.localized("Weave (TFF)")).tag(1)
+                    Text(settings.localized("Weave (BFF)")).tag(2)
+                    Text(settings.localized("Bob (TFF)")).tag(3)
+                    Text(settings.localized("Bob (BFF)")).tag(4)
+                    Text(settings.localized("Blend (TFF)")).tag(5)
+                    Text(settings.localized("Blend (BFF)")).tag(6)
+                    Text(settings.localized("Adaptive (Default)")).tag(7)
                 }
 
-                Picker("Aspect Ratio", selection: $settings.aspectRatio) {
-                    Text("Auto 4:3 / 3:2 (Default)").tag(0)
-                    Text("4:3").tag(1)
-                    Text("16:9 (Widescreen)").tag(2)
-                    Text("Stretch to Window").tag(3)
+                Picker(settings.localized("Aspect Ratio"), selection: $settings.aspectRatio) {
+                    Text(settings.localized("Auto 4:3 / 3:2 (Default)")).tag(1)
+                    Text("4:3").tag(2)
+                    Text(settings.localized("16:9 (Widescreen)")).tag(3)
+                    Text("10:7").tag(4)
+                    Text(settings.localized("Stretch to Window")).tag(0)
                 }
             }
 
-            Section("Quality") {
-                Picker("Blending Accuracy", selection: $settings.blendingAccuracy) {
-                    Text("Minimum (Fast)").tag(0)
-                    Text("Basic (Default)").tag(1)
-                    Text("Medium").tag(2)
-                    Text("High").tag(3)
-                    Text("Full (Slow)").tag(4)
-                    Text("Ultra (Very Slow)").tag(5)
+            Section(settings.localized("Quality")) {
+                Picker(settings.localized("Blending Accuracy"), selection: $settings.blendingAccuracy) {
+                    Text(settings.localized("Minimum (Fast)")).tag(0)
+                    Text(settings.localized("Basic (Default)")).tag(1)
+                    Text(settings.localized("Medium")).tag(2)
+                    Text(settings.localized("High")).tag(3)
+                    Text(settings.localized("Full (Slow)")).tag(4)
+                    Text(settings.localized("Ultra (Very Slow)")).tag(5)
                 }
-                Text("Higher accuracy fixes transparency issues but reduces performance.")
+                Text(settings.localized("Higher accuracy fixes transparency issues but reduces performance."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Picker("Dithering", selection: $settings.dithering) {
-                    Text("Off").tag(0)
-                    Text("Unscaled").tag(1)
-                    Text("Scaled (Default)").tag(2)
+                Picker(settings.localized("Dithering"), selection: $settings.dithering) {
+                    Text(settings.localized("Off")).tag(0)
+                    Text(settings.localized("Unscaled")).tag(1)
+                    Text(settings.localized("Scaled (Default)")).tag(2)
                 }
+            }
+
+            Section(settings.localized("Advanced Upscaling Hacks")) {
+                Toggle(settings.localized("Manual Advanced Hacks"), isOn: Binding(
+                    get: { manualAdvancedHacks },
+                    set: { settings.enableGameDBHardwareFixes = !$0 }
+                ))
+                Text(settings.localized("GameDB Graphics Fixes are safest for most games. Manual Advanced Hacks disable those automatic graphics fixes and allow the sprite, texture-offset, and Skipdraw values below. Reset/relaunch may be needed."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker(settings.localized("Trilinear Filtering"), selection: $settings.trilinearFiltering) {
+                    Text(settings.localized("Automatic / Default")).tag(-1)
+                    Text(settings.localized("Off")).tag(0)
+                    Text("PS2").tag(1)
+                    Text(settings.localized("Forced")).tag(2)
+                }
+                if settings.trilinearFiltering != -1 {
+                    Text(settings.localized("Non-automatic trilinear filtering may break textures in some games."))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                Picker(settings.localized("Half-pixel Offset"), selection: $settings.halfPixelOffset) {
+                    Text(settings.localized("Off")).tag(0)
+                    Text(settings.localized("Normal / Vertex")).tag(1)
+                    Text(settings.localized("Special / Texture")).tag(2)
+                    Text(settings.localized("Special / Texture Aggressive")).tag(3)
+                    Text(settings.localized("Align to Native")).tag(4)
+                    Text(settings.localized("Align to Native + Texture Offset")).tag(5)
+                }
+                .disabled(!manualAdvancedHacks)
+
+                Picker(settings.localized("Round Sprite"), selection: $settings.roundSprite) {
+                    Text(settings.localized("Off")).tag(0)
+                    Text(settings.localized("Half")).tag(1)
+                    Text(settings.localized("Full")).tag(2)
+                }
+                .disabled(!manualAdvancedHacks)
+
+                Toggle(settings.localized("Align Sprite"), isOn: $settings.alignSprite)
+                    .disabled(!manualAdvancedHacks)
+                Toggle(settings.localized("Merge Sprite"), isOn: $settings.mergeSprite)
+                    .disabled(!manualAdvancedHacks)
+                Toggle(settings.localized("Wild Arms Offset"), isOn: $settings.wildArmsOffset)
+                    .disabled(!manualAdvancedHacks)
+
+                ClampedIntField(title: settings.localized("Texture Offset X"), value: $settings.textureOffsetX, range: SettingsStore.textureOffsetRange, isEnabled: manualAdvancedHacks)
+                ClampedIntField(title: settings.localized("Texture Offset Y"), value: $settings.textureOffsetY, range: SettingsStore.textureOffsetRange, isEnabled: manualAdvancedHacks)
+                Text(settings.localized("Texture offsets are advanced troubleshooting values. Type a value and clamp to range. Default is 0."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ClampedIntField(title: settings.localized("Skipdraw Start"), value: skipDrawStartBinding, range: SettingsStore.skipDrawRange, isEnabled: manualAdvancedHacks)
+                ClampedIntField(title: settings.localized("Skipdraw End"), value: skipDrawEndBinding, range: SettingsStore.skipDrawRange, isEnabled: manualAdvancedHacks)
+                Text(settings.localized("For Skipdraw 1, use Start 1 and End 1. Changes apply after reset/relaunch."))
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            Section(settings.localized("Texture Replacement")) {
+                Toggle(settings.localized("Load Replacement Textures"), isOn: $settings.loadTextureReplacements)
+                Text(settings.localized("Loads PNG or DDS texture packs from Documents/textures/[Game Serial]/replacements/. Texture packs use app storage and may be large. Requires restart."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Toggle(settings.localized("Async Loading"), isOn: $settings.loadTextureReplacementsAsync)
+                    .disabled(!settings.loadTextureReplacements)
+                Text(settings.localized("Loads replacement textures in the background to reduce boot stalls."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Toggle(settings.localized("Precache Textures"), isOn: $settings.precacheTextureReplacements)
+                    .disabled(!settings.loadTextureReplacements)
+                Text(settings.localized("Loads all replacements when the game starts. Faster in-game, but uses more RAM."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker(settings.localized("Texture Preloading"), selection: $settings.texturePreloading) {
+                    Text(settings.localized("Off")).tag(0)
+                    Text(settings.localized("Partial")).tag(1)
+                    Text(settings.localized("Full")).tag(2)
+                }
+                Text(settings.localized("Core texture preloading mode. Full can improve replacement behavior but may increase memory use."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if settings.loadTextureReplacements && (settings.precacheTextureReplacements || settings.texturePreloading > 0) {
+                    Text(settings.localized("Large texture packs can use a lot of RAM when preload/precache is active and may cause stalls or crashes."))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            Section(settings.localized("Texture Dumping")) {
+                Toggle(settings.localized("Dump Replaceable Textures"), isOn: $settings.dumpReplaceableTextures)
+                Text(settings.localized("Writes discovered textures to Documents/textures/[Game Serial]/dumps/. This can heavily reduce performance and grow app storage quickly."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if settings.dumpReplaceableTextures {
+                    Text(settings.localized("Texture dumping can heavily slow games and create very large dump folders. Turn it off after collecting the textures you need."))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                Toggle(settings.localized("Dump Mipmaps"), isOn: $settings.dumpReplaceableMipmaps)
+                    .disabled(!settings.dumpReplaceableTextures)
+                Toggle(settings.localized("Dump During FMV"), isOn: $settings.dumpTexturesWithFMVActive)
+                    .disabled(!settings.dumpReplaceableTextures)
+                Toggle(settings.localized("Dump Direct Textures"), isOn: $settings.dumpDirectTextures)
+                    .disabled(!settings.dumpReplaceableTextures)
+                Toggle(settings.localized("Dump Palette Textures"), isOn: $settings.dumpPaletteTextures)
+                    .disabled(!settings.dumpReplaceableTextures)
             }
 
             Section("VSync") {
-                Stepper("Queue Size: \(settings.vsyncQueueSize)", value: $settings.vsyncQueueSize, in: 0...3)
-                Text("Frames the GS thread may buffer. PCSX2 default is 2. Higher smooths frame pacing but adds input latency; 0 is lowest latency.")
+                Stepper("\(settings.localized("Queue Size")): \(settings.vsyncQueueSize)", value: $settings.vsyncQueueSize, in: 2...16)
+                Text(settings.localized("Higher values reduce frame drops but increase latency."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if settings.vsyncQueueSize >= 12 {
+                    Text(settings.localized("Large queues can make controls feel delayed and may increase stutter. The default is 8."))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
             }
 
             Section {
-                Button("Reset Graphics to Defaults") {
+                Button(settings.localized("Reset Graphics to Defaults")) {
                     settings.resetGraphicsDefaults()
                 }
                 .foregroundStyle(.red)
             }
         }
-        .navigationTitle("Graphics")
+        .navigationTitle(settings.localized("Graphics"))
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// A typeable integer field for advanced/manual hack values. Text is committed when
+/// editing ends: valid input is clamped to `range`, and invalid input reverts to the
+/// last good value so a bad string can never be written or crash the field.
+struct ClampedIntField: View {
+    let title: String
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+    var isEnabled: Bool = true
+
+    @State private var text: String = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            TextField("0", text: $text)
+                .keyboardType(.numbersAndPunctuation)
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: 110)
+                .focused($focused)
+                .disabled(!isEnabled)
+        }
+        .onAppear { text = String(value) }
+        .onChange(of: value) { _, newValue in
+            if !focused { text = String(newValue) }
+        }
+        .onChange(of: focused) { _, isFocused in
+            if !isFocused { commit() }
+        }
+    }
+
+    private func commit() {
+        if let parsed = Int(text.trimmingCharacters(in: .whitespaces)) {
+            value = min(max(parsed, range.lowerBound), range.upperBound)
+        }
+        text = String(value)
     }
 }

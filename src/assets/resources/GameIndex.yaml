@@ -1620,6 +1620,8 @@ SCAJ-20063:
 SCAJ-20064:
   name: "Nebula - Echo Night"
   region: "NTSC-Unk"
+  gsHWFixes:
+    halfPixelOffset: 4 # Fixes misaligned blur in replays.
 SCAJ-20065:
   name: "EyeToy - Play [with Camera]"
   region: "NTSC-Unk"
@@ -1918,6 +1920,8 @@ SCAJ-20110:
     halfPixelOffset: 2 # Sharpens world in far distances, aligns some bloom better.
     roundSprite: 1 # Fixes font artifacts.
     nativeScaling: 2 # Fixes background DOF blur in battles.
+    cpuSpriteRenderBW: 1 # Fixes water and other sprite errors.
+    cpuSpriteRenderLevel: 2 # Needed for above.
 SCAJ-20111:
   name: "Crash Bandicoot 5"
   region: "NTSC-Unk"
@@ -2704,6 +2708,7 @@ SCAJ-30010:
   gsHWFixes:
     halfPixelOffset: 5 # Corrects misaligned effects.
     autoFlush: 1 # Fixes sun going through walls.
+    nativeScaling: 1 # Fixes menu/post-processing artifacts.
 SCAJ-30011:
   name: "God of War II"
   region: "NTSC-E"
@@ -4261,6 +4266,7 @@ SCED-53431:
   gsHWFixes:
     halfPixelOffset: 5 # Corrects misaligned effects.
     autoFlush: 1 # Fixes sun going through walls.
+    nativeScaling: 1 # Fixes menu/post-processing artifacts.
 SCED-53447:
   name: "Formula One 05 [Press Kit Demo]"
   region: "PAL-E"
@@ -4822,6 +4828,7 @@ SCES-50360:
   name: "Twisted Metal - Black"
   region: "PAL-M5"
   gsHWFixes:
+    minimumBlendingLevel: 4 # Fixes menu text brightness.
     halfPixelOffset: 4 # Fixes misaligned blur during Darkside special.
 SCES-50361:
   name: "Jak and Daxter - The Precursor Legacy"
@@ -5332,6 +5339,7 @@ SCES-51480:
   name: "Twisted Metal - Black Online"
   region: "PAL-M5"
   gsHWFixes:
+    minimumBlendingLevel: 4 # Fixes menu text brightness.
     halfPixelOffset: 4 # Fixes misaligned blur during Darkside special.
 SCES-51513:
   name: "EyeToy - Play"
@@ -5342,6 +5350,7 @@ SCES-51533:
   gsHWFixes:
     halfPixelOffset: 5 # Corrects misaligned effects.
     autoFlush: 1 # Fixes sun going through walls.
+    nativeScaling: 1 # Fixes menu/post-processing artifacts.
 SCES-51578:
   name: "Network Access Disc [v1.03 - v6.00]"
   region: "PAL-M7"
@@ -5930,6 +5939,7 @@ SCES-53133:
   gsHWFixes:
     halfPixelOffset: 5 # Corrects misaligned effects.
     autoFlush: 1 # Fixes sun going through walls.
+    nativeScaling: 1 # Fixes menu/post-processing artifacts.
 SCES-53178:
   name: "SingStar - Pop"
   region: "PAL-E"
@@ -8205,6 +8215,7 @@ SCKA-30002:
   gsHWFixes:
     halfPixelOffset: 5 # Corrects misaligned effects.
     autoFlush: 1 # Fixes sun going through walls.
+    nativeScaling: 1 # Fixes menu/post-processing artifacts.
 SCKA-30003:
   name: "GOD OF WAR 영혼의 반역자 [PlayStation 2 BigHit Series]"
   name-sort: "God of War: Yeonghonui Banyeokja [PlayStation 2 BigHit Series]"
@@ -8213,6 +8224,7 @@ SCKA-30003:
   gsHWFixes:
     halfPixelOffset: 5 # Corrects misaligned effects.
     autoFlush: 1 # Fixes sun going through walls.
+    nativeScaling: 1 # Fixes menu/post-processing artifacts.
 SCKA-30004:
   name: "Gran Turismo 4 [PlayStation 2 BigHit Series]"
   region: "NTSC-K"
@@ -10927,6 +10939,7 @@ SCUS-97101:
   region: "NTSC-U"
   compat: 5
   gsHWFixes:
+    minimumBlendingLevel: 4 # Fixes menu text brightness.
     halfPixelOffset: 4 # Fixes misaligned blur during Darkside special.
 SCUS-97102:
   name: "Gran Turismo 3 - A-Spec"
@@ -11185,6 +11198,7 @@ SCUS-97164:
   name: "Twisted Metal - Black [Demo]"
   region: "NTSC-U"
   gsHWFixes:
+    minimumBlendingLevel: 4 # Fixes menu text brightness.
     halfPixelOffset: 4 # Fixes misaligned blur during Darkside special.
 SCUS-97165:
   name: "Official U.S. PlayStation Magazine Demo Disc 051"
@@ -11250,6 +11264,7 @@ SCUS-97179:
   region: "NTSC-U"
   compat: 5
   gsHWFixes:
+    minimumBlendingLevel: 4 # Fixes menu text brightness.
     halfPixelOffset: 4 # Fixes misaligned blur during Darkside special.
 SCUS-97181:
   name: "Official U.S. PlayStation Magazine Demo Disc 055"
@@ -11294,12 +11309,14 @@ SCUS-97195:
   name: "Twisted Metal - Black Online"
   region: "NTSC-U"
   gsHWFixes:
+    minimumBlendingLevel: 4 # Fixes menu text brightness.
     halfPixelOffset: 4 # Fixes misaligned blur during Darkside special.
 SCUS-97196:
   name: "Twisted Metal - Black Online"
   region: "NTSC-U"
   compat: 5
   gsHWFixes:
+    minimumBlendingLevel: 4 # Fixes menu text brightness.
     halfPixelOffset: 4 # Fixes misaligned blur during Darkside special.
 SCUS-97197:
   name: "War of the Monsters"
@@ -12005,6 +12022,7 @@ SCUS-97399:
   gsHWFixes:
     halfPixelOffset: 5 # Corrects misaligned effects.
     autoFlush: 1 # Fixes sun going through walls.
+    nativeScaling: 1 # Fixes menu/post-processing artifacts.
 SCUS-97400:
   name: "EyeToy - Groove"
   region: "NTSC-U"
@@ -12302,6 +12320,7 @@ SCUS-97467:
   gsHWFixes:
     halfPixelOffset: 5 # Corrects misaligned effects.
     autoFlush: 1 # Fixes sun going through walls.
+    nativeScaling: 1 # Fixes menu/post-processing artifacts.
 SCUS-97468:
   name: "EyeToy - Play 2"
   region: "NTSC-U"
@@ -12913,6 +12932,9 @@ SCUS-97621:
   compat: 5
   clampModes:
     vu1ClampMode: 3 # Fixes missing textures.
+  gsHWFixes:
+    minimumBlendingLevel: 4 # Fixes menu text brightness and smoke effects.
+    halfPixelOffset: 4 # Fixes misaligned blur during Darkside special.
   gameFixes:
     - VUSyncHack # Fixes black doors on vehicles.
   patches:
@@ -14132,6 +14154,8 @@ SLED-53977:
     halfPixelOffset: 2 # Sharpens world in far distances, aligns some bloom better.
     roundSprite: 1 # Fixes font artifacts.
     nativeScaling: 2 # Fixes background DOF blur in battles.
+    cpuSpriteRenderBW: 1 # Fixes water and other sprite errors.
+    cpuSpriteRenderLevel: 2 # Needed for above.
 SLED-53980:
   name: "Urban Chaos - Riot Response [Demo]"
   region: "PAL-E"
@@ -14822,6 +14846,8 @@ SLES-50231:
 SLES-50232:
   name: "Off-Road Wide Open"
   region: "PAL-M5"
+  gameFixes:
+    - SoftwareRendererFMVHack # Fixes FMV lines.
   compat: 5
 SLES-50233:
   name: "Army Men - Air Attack - Blade's Revenge"
@@ -16221,6 +16247,7 @@ SLES-50837:
     textureInsideRT: 1
     halfPixelOffset: 2 # Reduces post misalignment.
     nativeScaling: 2 # Fixes remaining post misalignment.
+    drawBuffering: 1 # Reduces draws and improves performance.
 SLES-50838:
   name: "Indiana Jones und die Legende der Kaisergruft"
   region: "PAL-G"
@@ -20027,6 +20054,8 @@ SLES-52402:
   region: "PAL-M5"
 SLES-52403:
   name: "Formula Challenge"
+  gsHWFixes:
+    roundSprite: 2 # Fixes UI lines.
   region: "PAL-M5"
 SLES-52404:
   name: "MTV Music Generator 3"
@@ -24918,6 +24947,8 @@ SLES-53974:
     halfPixelOffset: 2 # Sharpens world in far distances, aligns some bloom better.
     roundSprite: 1 # Fixes font artifacts.
     nativeScaling: 2 # Fixes background DOF blur in battles.
+    cpuSpriteRenderBW: 1 # Fixes water and other sprite errors.
+    cpuSpriteRenderLevel: 2 # Needed for above.
 SLES-53976:
   name: "Evolution GT"
   region: "PAL-M5"
@@ -35536,6 +35567,8 @@ SLPM-60264:
 SLPM-60265:
   name: "スチームボーイ [体験版]"
   name-sort: "すちーむぼーい [たいけんばん]"
+  gameFixes:
+    - SoftwareRendererFMVHack # Fixes FMV lines.
   name-en: "Steamboy [Trial]"
   region: "NTSC-J"
   gsHWFixes:
@@ -37313,6 +37346,8 @@ SLPM-62164:
 SLPM-62165:
   name: "式神の城"
   name-sort: "しきがみのしろ"
+  gameFixes:
+    - SoftwareRendererFMVHack # Fixes FMV lines.
   name-en: "Shikigami no Shiro [Limited Edition]"
   region: "NTSC-J"
   compat: 5
@@ -37673,6 +37708,7 @@ SLPM-62241:
   name-en: "Harry Potter and the Chamber of Secrets"
   region: "NTSC-C"
   gameFixes:
+    - SoftwareRendererFMVHack # Fixes FMV lines.
     - EETimingHack # Fixes flickering textures.
   gsHWFixes:
     textureInsideRT: 1 # Fixes right side shadow lookup.
@@ -38968,6 +39004,8 @@ SLPM-62490:
     halfPixelOffset: 2 # Sharpens world in far distances, aligns some bloom better.
     roundSprite: 1 # Fixes font artifacts.
     nativeScaling: 2 # Fixes background DOF blur in battles.
+    cpuSpriteRenderBW: 1 # Fixes water and other sprite errors.
+    cpuSpriteRenderLevel: 2 # Needed for above.
 SLPM-62491:
   name: "ロックマン パワーバトルファイターズ"
   name-sort: "ろっくまん ぱわーばとるふぁいたーず"
@@ -41631,7 +41669,9 @@ SLPM-65181:
   clampModes:
     vuClampMode: 2 # White textures.
   gsHWFixes:
-    halfPixelOffset: 1 # Fixes blurriness.
+    drawBuffering: 1 # Reduces draws and improves performance.
+    recommendedBlendingLevel: 3 # Improves road quality.
+    halfPixelOffset: 2 # Fixes depth line and blur.
 SLPM-65183:
   name: "auto modellista モデムパック バージョン"
   name-sort: "おーともでりすた もでむぱっく ばーじょん"
@@ -43571,6 +43611,7 @@ SLPM-65507:
   name-en: "Cool Girl [Standard Edition] [Disc 2 of 2]"
   region: "NTSC-J"
   gsHWFixes:
+    roundSprite: 2 # Fixes UI lines.
     halfPixelOffset: 5 # Fixes post-processing alignment.
     nativeScaling: 2 # Fixes post-processing intensity.
 SLPM-65508:
@@ -43878,6 +43919,8 @@ SLPM-65570:
   name: "フロッガー [コナミ殿堂セレクション]"
   name-sort: "ふろっがー [こなみでんどうせれくしょん]"
   name-en: "Frogger [Konami Palace Collection]"
+  gsHWFixes:
+    halfPixelOffset: 4 # Fixes misaligned blur in replays.
   region: "NTSC-J"
 SLPM-65571:
   name: "新天魔界 Generation of Chaos Ⅳ [限定版」"
@@ -45738,6 +45781,8 @@ SLPM-65888:
     roundSprite: 1 # Fixes font artifacts.
     nativeScaling: 2 # Fixes background DOF blur in battles.
     PCRTCOverscan: 1 # Fixes offscreen image.
+    cpuSpriteRenderBW: 1 # Fixes water and other sprite errors.
+    cpuSpriteRenderLevel: 2 # Needed for above.
 SLPM-65889:
   name: "家族計画～心の絆～"
   name-sort: "かぞくけいかく こころのきずな"
@@ -46488,6 +46533,7 @@ SLPM-66017:
   gsHWFixes:
     halfPixelOffset: 4 # Fixes post-processing alignment.
     roundSprite: 1 # Fixes sprite misaligment.
+    minimumBlendingLevel: 4 # Fixes health bar flickering in tutorial level.
 SLPM-66018:
   name: "サイレントヒル3 [コナミ殿堂セレクション]"
   name-sort: "さいれんとひる3 [こなみでんどうせれくしょん]"
@@ -47465,6 +47511,7 @@ SLPM-66167:
   gsHWFixes:
     halfPixelOffset: 5 # Corrects misaligned effects.
     autoFlush: 1 # Fixes sun going through walls.
+    nativeScaling: 1 # Fixes menu/post-processing artifacts.
 SLPM-66168:
   name: "龍が如く"
   name-sort: "りゅうがごとく"
@@ -48886,6 +48933,7 @@ SLPM-66391:
   gsHWFixes:
     autoFlush: 1 # Reduces post-processing misalignment.
     halfPixelOffset: 5 # Fixes post positioning.
+    minimumBlendingLevel: 4 # Fixes health bar flickering in tutorial level.
     nativeScaling: 2 # Fixes post effects.
 SLPM-66393:
   name: "ファイナルファンタジーⅪ オールインワンパック2006 [プレイオンライン]"
@@ -49487,6 +49535,8 @@ SLPM-66481:
     halfPixelOffset: 2 # Sharpens world in far distances, aligns some bloom better.
     roundSprite: 1 # Fixes font artifacts.
     nativeScaling: 2 # Fixes background DOF blur in battles.
+    cpuSpriteRenderBW: 1 # Fixes water and other sprite errors.
+    cpuSpriteRenderLevel: 2 # Needed for above.
 SLPM-66482:
   name: "ときめきメモリアル Girl's Side 2nd Kiss [リピート生産版]"
   name-sort: "ときめきめもりある がーるずさいど 2nd Kiss [りぴーとせいさんばん]"
@@ -52655,6 +52705,7 @@ SLPM-67010:
   gsHWFixes:
     halfPixelOffset: 5 # Corrects misaligned effects.
     autoFlush: 1 # Fixes sun going through walls.
+    nativeScaling: 1 # Fixes menu/post-processing artifacts.
 SLPM-67011:
   name: "ゴッド・オブ・ウォー [カプコレ]"
   name-sort: "ごっど・おぶ・うぉー [かぷこれ]"
@@ -52663,6 +52714,7 @@ SLPM-67011:
   gsHWFixes:
     halfPixelOffset: 5 # Corrects misaligned effects.
     autoFlush: 1 # Fixes sun going through walls.
+    nativeScaling: 1 # Fixes menu/post-processing artifacts.
 SLPM-67012:
   name: "ゴッド・オブ・ウォー [Best Price"
   name-sort: "ごっど・おぶ・うぉー [Best Price]"
@@ -52671,6 +52723,7 @@ SLPM-67012:
   gsHWFixes:
     halfPixelOffset: 5 # Corrects misaligned effects.
     autoFlush: 1 # Fixes sun going through walls.
+    nativeScaling: 1 # Fixes menu/post-processing artifacts.
 SLPM-67013:
   name: "ゴッド・オブ・ウォーⅡ 終焉への序曲"
   name-sort: "ごっど・おぶ・うぉー2 しゅうえんへのじょきょく"
@@ -53694,6 +53747,8 @@ SLPM-74265:
 SLPM-74266:
   name: "戦国無双2 Empires [PlayStation 2 the Best]"
   name-sort: "せんごくむそう2 Empires [PlayStation 2 the Best]"
+  gsHWFixes:
+    drawBuffering: 1 # Reduces draws and improves performance.
   name-en: "Sengoku Musou 2 - Empires [PlayStation 2 the Best]"
   region: "NTSC-J"
 SLPM-74267:
@@ -65067,6 +65122,8 @@ SLUS-20368:
 SLUS-20369:
   name: "Knockout Kings 2002"
   region: "NTSC-U"
+  gameFixes:
+    - SoftwareRendererFMVHack # Fixes FMV lines.
   compat: 5
 SLUS-20370:
   name: "Kingdom Hearts"
@@ -66119,6 +66176,7 @@ SLUS-20565:
     textureInsideRT: 1 # Fixes half right.
     estimateTextureRegion: 1 # Improves performance.
     gpuPaletteConversion: 1
+    drawBuffering: 1 # Reduces draws and improves performance.
 SLUS-20566:
   name: "Buffy the Vampire Slayer - Chaos Bleeds"
   region: "NTSC-U"
@@ -69016,6 +69074,8 @@ SLUS-21067:
   clampModes:
     eeClampMode: 3 # Fixes menu options freaking out.
 SLUS-21068:
+  gsHWFixes:
+    roundSprite: 2 # Fixes UI lines.
   name: "Vietcong - Purple Haze"
   region: "NTSC-U"
   compat: 5
@@ -69824,6 +69884,8 @@ SLUS-21207:
     halfPixelOffset: 2 # Sharpens world in far distances, aligns some bloom better.
     roundSprite: 1 # Fixes font artifacts.
     nativeScaling: 2 # Fixes background DOF blur in battles.
+    cpuSpriteRenderBW: 1 # Fixes water and other sprite errors.
+    cpuSpriteRenderLevel: 2 # Needed for above.
 SLUS-21208:
   name: "Tony Hawk's American Wasteland"
   region: "NTSC-U"
@@ -71824,6 +71886,7 @@ SLUS-21490:
   region: "NTSC-U"
   compat: 5
   gameFixes:
+    - SoftwareRendererFMVHack # Flickering in FMV.
     - VIFFIFOHack # Needed to load the main game properly.
   gsHWFixes:
     halfPixelOffset: 4 # Fixes bloom misalignment.
@@ -75017,6 +75080,8 @@ SLUS-29157:
     halfPixelOffset: 2 # Sharpens world in far distances, aligns some bloom better.
     roundSprite: 1 # Fixes font artifacts.
     nativeScaling: 2 # Fixes background DOF blur in battles.
+    cpuSpriteRenderBW: 1 # Fixes water and other sprite errors.
+    cpuSpriteRenderLevel: 2 # Needed for above.
 SLUS-29159:
   name: "One Piece - Grand Battle [Demo]"
   region: "NTSC-U"
