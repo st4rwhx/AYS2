@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #pragma once
@@ -12,17 +12,30 @@
 namespace DarwinMisc {
     extern int iPSX2_CRASH_DIAG;
     extern int iPSX2_REC_DIAG;
+    // [V34] Internal flag — no longer env-driven. Set to 1 only by ios_main.mm
+    // JIT entitlement fallback (CS_DEBUGGED check fail). Consumed by Vif_Unpack /
+    // VMManager dVifReset gates to disable newVifDynaRec when JIT unavailable.
     extern int iPSX2_FORCE_EE_INTERP;
     extern int iPSX2_FORCE_JIT_VERIFY;
     extern int iPSX2_CALL_TGT_X9;
     extern int iPSX2_CRASH_PACK;
     extern int iPSX2_WX_TRACE;
-    extern int iPSX2_CALLPROBE;
-    extern int iPSX2_JIT_HLE;        // [P11] JIT modeの HLE enabled/disabled (default=1=enabled, 0=disabled)
-    extern int iPSX2_FORCE_JIT;      // [P11] JIT modeforce (1=force, 0=configに従う; SAFE_ONLY not needed)
-    extern int iPSX2_IOP_CORE_TYPE;  // [P11] IOP CPU select (-1=EEfollow, 0=psxRecforce, 1=psxIntforce)
-    
-    // [iPSX2] Indirect Branch Probe
+	extern int iPSX2_CALLPROBE;
+	extern int iPSX2_JIT_HLE;        // [P11] JIT modeの HLE enabled/disabled (default=1=enabled, 0=disabled)
+
+	// [ARMSX2 iOS] Compatibility Lab flags ported from unsigned29/iPSX2.
+	// Names intentionally stay source-compatible with that patch series.
+	extern int iPSX2_BISECT_COP1_EVERYTHING_ONLY;
+	extern int iPSX2_BISECT_COP1_EVERYTHING_PLUS_LOADSTORE;
+	extern int iPSX2_BISECT_COP1_EVERYTHING_PLUS_MMI;
+	extern int iPSX2_BISECT_COP1_EVERYTHING_PLUS_COP2_VU;
+	extern int iPSX2_BISECT_COP1_EVERYTHING_PLUS_MULTDIV;
+	extern int iPSX2_BISECT_COP1_EVERYTHING_PLUS_SHIFTS;
+	extern int iPSX2_BISECT_COP1_EVERYTHING_PLUS_MOVES;
+	extern int iPSX2_BISECT_COP1_EVERYTHING_PLUS_INTEGER_ALU;
+	extern int iPSX2_BISECT_COP1_EVERYTHING_PLUS_BRANCHES;
+
+	// [iPSX2] Indirect Branch Probe
     // extern volatile u64 g_last_indirect_target; // Deprecated
     // extern volatile u64 g_last_indirect_site;   // Deprecated
     

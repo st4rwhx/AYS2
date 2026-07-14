@@ -1,7 +1,27 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "cam-jpeg.h"
+
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#else
+#define TARGET_OS_IPHONE 0
+#endif
+
+#if TARGET_OS_IPHONE
+
+bool CompressCamJPEG(std::vector<u8>* buffer, const u8* image, u32 width, u32 height, int quality)
+{
+	return false;
+}
+
+bool DecompressCamJPEG(std::vector<u8>* buffer, u32* width, u32* height, const u8* data, size_t data_size)
+{
+	return false;
+}
+
+#else
 
 #include "common/Console.h"
 
@@ -163,3 +183,5 @@ bool DecompressCamJPEG(std::vector<u8>* buffer, u32* width, u32* height, const u
 	jpeg_destroy_decompress(&info);
 	return result;
 }
+
+#endif

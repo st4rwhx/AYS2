@@ -1,13 +1,12 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
-#include <sys/time.h> // [CLIFF_DIAG]
 #include "GS.h"
 #include "Gif_Unit.h"
 #include "MTGS.h"
 #include "MTVU.h"
 #include "Host.h"
-#include "IconsFontAwesome5.h"
+#include "IconsFontAwesome.h"
 #include "VMManager.h"
 
 #include "common/FPControl.h"
@@ -150,6 +149,11 @@ void MTGS::ShutdownThread()
 void MTGS::ThreadEntryPoint()
 {
 	Threading::SetNameOfCurrentThread("GS");
+
+	// GS can hit SMC write traps when executing InitAndReadFIFO
+	// As racey as it sounds, it should be safe, since InitAndReadFIFO is requested and immediately waited for,
+	// so the EE thread shouldn't be touching any of its codegen structures while it happens.
+	PageFaultHandler::InstallSecondaryThread();
 
 	// Explicitly set rounding mode to default (nearest, FTZ off).
 	// Otherwise it appears to get inherited from the EE thread on Linux.
@@ -452,14 +456,7 @@ void MTGS::MainLoop()
 					u32 size = tag.data[1];
 					if (offset != ~0u)
 					{
-						// [CLIFF_DIAG] Time GSgifTransfer
-						struct timeval tv0, tv1;
-						gettimeofday(&tv0, nullptr);
 						GSgifTransfer((u8*)&path.buffer[offset], size / 16);
-						gettimeofday(&tv1, nullptr);
-						uint32_t dt = (uint32_t)((tv1.tv_sec - tv0.tv_sec) * 1000000 + (tv1.tv_usec - tv0.tv_usec));
-						CliffDiag::gsXferUs.fetch_add(dt, std::memory_order_relaxed);
-						CliffDiag::gsXferCalls.fetch_add(1, std::memory_order_relaxed);
 					}
 					path.readAmount.fetch_sub(size, std::memory_order_acq_rel);
 					break;
@@ -959,7 +956,7 @@ void MTGS::ApplySettings()
 		WaitGS(false, false, false);
 }
 
-void MTGS::ResizeDisplayWindow(int width, int height, float scale)
+void MTGS::ResizeDisplayWindow(u32 width, u32 height, float scale)
 {
 	pxAssertRel(IsOpen(), "MTGS is running");
 	RunOnGSThread([width, height, scale]() {
@@ -1006,7 +1003,7 @@ void MTGS::SetSoftwareRendering(bool software, GSInterlaceMode interlace, bool d
 
 	if (display_message)
 	{
-		Host::AddIconOSDMessage("SwitchRenderer", ICON_FA_MAGIC, software ?
+		Host::AddIconOSDMessage("SwitchRenderer", ICON_FA_WAND_MAGIC_SPARKLES, software ?
 			TRANSLATE_STR("GS", "Switching to Software Renderer...") : TRANSLATE_STR("GS", "Switching to Hardware Renderer..."),
 			Host::OSD_QUICK_DURATION);
 	}

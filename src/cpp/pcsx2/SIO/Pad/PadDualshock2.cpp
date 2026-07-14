@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "SIO/Pad/PadDualshock2.h"
@@ -11,10 +11,6 @@
 #include "Host.h"
 
 #include "IconsPromptFont.h"
-
-#if defined(__ANDROID__)
-extern void AndroidUpdatePadVibration(u32 pad_index, float large_intensity, float small_intensity);
-#endif
 
 static const InputBindingInfo s_bindings[] = {
 	// clang-format off
@@ -85,7 +81,7 @@ static const SettingInfo s_settings[] = {
 };
 
 const Pad::ControllerInfo PadDualshock2::ControllerInfo = {Pad::ControllerType::DualShock2, "DualShock2",
-	TRANSLATE_NOOP("Pad", "DualShock 2"), ICON_PF_GAMEPAD_ALT, s_bindings, s_settings, Pad::VibrationCapabilities::LargeSmallMotors};
+	TRANSLATE_NOOP("Pad", "DualShock 2"), ICON_PF_DUALSHOCK2, s_bindings, s_settings, Pad::VibrationCapabilities::LargeSmallMotors};
 
 void PadDualshock2::ConfigLog()
 {
@@ -216,7 +212,6 @@ u8 PadDualshock2::Poll(u8 commandByte)
 			this->vibrationMotors[0] = commandByte;
 			return (buttons >> 8) & 0xff;
 		case 4:
-		{
 			this->vibrationMotors[1] = commandByte;
 
 			// Apply the vibration mapping to the motors
@@ -248,14 +243,12 @@ u8 PadDualshock2::Poll(u8 commandByte)
 			}
 
 			// Order is reversed here - SetPadVibrationIntensity takes large motor first, then small. PS2 orders small motor first, large motor second.
-			const float large_intensity = std::min(static_cast<float>(largeMotor) * GetVibrationScale(1) * (1.0f / 255.0f), 1.0f);
-			// Small motor on the PS2 is either on full power or zero power, it has no variable speed. If the game supplies any value here at all,
-			// the pad in turn supplies full power to the motor, or no power at all if zero.
-			const float small_intensity = std::min(static_cast<float>((smallMotor ? 0xff : 0)) * GetVibrationScale(0) * (1.0f / 255.0f), 1.0f);
-			InputManager::SetPadVibrationIntensity(this->unifiedSlot, large_intensity, small_intensity);
-#if defined(__ANDROID__)
-			AndroidUpdatePadVibration(this->unifiedSlot, large_intensity, small_intensity);
-#endif
+			InputManager::SetPadVibrationIntensity(this->unifiedSlot,
+				std::min(static_cast<float>(largeMotor) * GetVibrationScale(1) * (1.0f / 255.0f), 1.0f),
+				// Small motor on the PS2 is either on full power or zero power, it has no variable speed. If the game supplies any value here at all,
+				// the pad in turn supplies full power to the motor, or no power at all if zero.
+				std::min(static_cast<float>((smallMotor ? 0xff : 0)) * GetVibrationScale(0) * (1.0f / 255.0f), 1.0f)
+			);
 
 			// PS1 mode: If the controller is still in digital mode, it is time to stop acknowledging.
 			if (this->currentMode == Pad::Mode::DIGITAL)
@@ -264,7 +257,6 @@ u8 PadDualshock2::Poll(u8 commandByte)
 			}
 
 			return buttons & 0xff;
-		}
 		case 5:
 			return GetPressure(Inputs::PAD_R_RIGHT);
 		case 6:
@@ -859,6 +851,16 @@ u8 PadDualshock2::GetPressure(u32 index) const
 		default:
 			return this->rawInputs[index];
 	}
+}
+
+bool PadDualshock2::IsAnalogLightEnabled() const
+{
+	return this->analogLight;
+}
+
+bool PadDualshock2::IsAnalogLocked() const
+{
+	return this->analogLocked;
 }
 
 bool PadDualshock2::Freeze(StateWrapper& sw)

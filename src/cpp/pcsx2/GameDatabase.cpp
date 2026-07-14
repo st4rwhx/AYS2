@@ -1,10 +1,10 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "GameDatabase.h"
 #include "GS/GS.h"
 #include "Host.h"
-#include "IconsFontAwesome5.h"
+#include "IconsFontAwesome.h"
 #include "vtlb.h"
 
 #include "common/Console.h"
@@ -12,17 +12,22 @@
 #include "common/Error.h"
 #include "common/FileSystem.h"
 #include "common/Path.h"
+#include "common/SettingsInterface.h"
 #include "common/StringUtil.h"
 #include "common/Timer.h"
+#include "common/YAML.h"
 
 #include <sstream>
-#include "ryml_std.hpp"
-#include "ryml.hpp"
 #include "fmt/format.h"
 #include "fmt/ranges.h"
 #include <fstream>
+#include <cstdio>
 #include <mutex>
 #include <optional>
+
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 namespace GameDatabaseSchema
 {
@@ -33,7 +38,7 @@ namespace GameDatabaseSchema
 
 namespace GameDatabase
 {
-	static void parseAndInsert(const std::string_view serial, const c4::yml::NodeRef& node);
+	static void parseAndInsert(const std::string_view serial, const ryml::NodeRef& node);
 	static void initDatabase();
 } // namespace GameDatabase
 
@@ -84,7 +89,7 @@ const char* GameDatabaseSchema::GameEntry::compatAsString() const
 	}
 }
 
-void GameDatabase::parseAndInsert(const std::string_view serial, const c4::yml::NodeRef& node)
+void GameDatabase::parseAndInsert(const std::string_view serial, const ryml::NodeRef& node)
 {
 	GameDatabaseSchema::GameEntry gameEntry;
 	if (node.has_child("name"))
@@ -357,8 +362,7 @@ static const char* s_round_modes[static_cast<u32>(FPRoundMode::MaxCount)] = {
 	"Nearest",
 	"NegativeInfinity",
 	"PositiveInfinity",
-	"Chop"
-};
+	"Chop"};
 
 static const char* s_gs_hw_fix_names[] = {
 	"autoFlush",
@@ -368,19 +372,21 @@ static const char* s_gs_hw_fix_names[] = {
 	"preloadFrameData",
 	"disablePartialInvalidation",
 	"textureInsideRT",
+	"limit24BitDepth",
 	"alignSprite",
 	"mergeSprite",
 	"mipmap",
+	"accurateAlphaTest",
 	"forceEvenSpritePosition",
 	"bilinearUpscale",
 	"nativePaletteDraw",
 	"estimateTextureRegion",
+	"drawBuffering",
 	"PCRTCOffsets",
 	"PCRTCOverscan",
 	"trilinearFiltering",
 	"skipDrawStart",
 	"skipDrawEnd",
-	"halfBottomOverride",
 	"halfPixelOffset",
 	"roundSprite",
 	"nativeScaling",
@@ -437,6 +443,329 @@ bool GameDatabaseSchema::isUserHackHWFix(GSHWFixId id)
 			return true;
 	}
 }
+
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+static bool IsIOSBurnoutRevengeGame(const std::string& name)
+{
+	return name.find("Burnout Revenge") != std::string::npos;
+}
+
+static bool IsIOSBurnout3Game(const std::string& name)
+{
+	return name.find("Burnout 3") != std::string::npos;
+}
+
+static bool IsIOSBurnoutMetalCallbackGame(const std::string& name)
+{
+	return IsIOSBurnoutRevengeGame(name) || IsIOSBurnout3Game(name);
+}
+
+static bool IsIOSBlackGame(const std::string& name)
+{
+	return name == "Black";
+}
+
+static bool IsIOSSonicUnleashedGame(const std::string& name)
+{
+	return name == "Sonic Unleashed";
+}
+
+// Midnight Club 3 (DUB Edition + DUB Edition Remix). Its GameDB entry uses the
+// GSC_MidnightClub3 skip-count callback to drop broken bloom draws. The callback
+// only ever *skips* draws (no extra barriers or copies), which makes it one of
+// the safest callback classes for Metal — and without it the light blooms render
+// wrongly on iOS while desktop PCSX2 looks correct (reported on SLUS-21355).
+static bool IsIOSMidnightClub3Game(const std::string& name)
+{
+	return name.rfind("Midnight Club 3", 0) == 0;
+}
+
+static std::string GetIOSCompatibilityLabProfileForGSPolicy()
+{
+	SettingsInterface* si = Host::GetSettingsInterface();
+	if (!si)
+		return "unknown";
+
+	std::string profile = si->GetStringValue("ARMSX2/JITBisect", "Profile", "off");
+	if (!profile.empty() && !StringUtil::compareNoCase(profile, "off") && !StringUtil::compareNoCase(profile, "custom"))
+		return profile;
+
+	static constexpr const char* flag_keys[] = {
+		"COP1EverythingOnly",
+		"COP1EverythingPlusLoadStore",
+		"COP1EverythingPlusMMI",
+		"COP1EverythingPlusCOP2VU",
+		"COP1EverythingPlusMultDiv",
+		"COP1EverythingPlusShifts",
+		"COP1EverythingPlusMoves",
+		"COP1EverythingPlusIntegerALU",
+		"COP1EverythingPlusBranches",
+	};
+
+	int active_flags = 0;
+	for (const char* key : flag_keys)
+		active_flags += si->GetBoolValue("ARMSX2/JITBisect", key, false) ? 1 : 0;
+
+	if (active_flags == 0)
+		return "off";
+
+	return (active_flags == 1) ? "single-flag" : "custom";
+}
+
+static void ClearIOSMetalCompatLabOffGSHWFixes(Pcsx2Config::GSOptions& config)
+{
+	auto clear_int = [](auto& field, auto default_value, const char* name) {
+		if (field != default_value)
+		{
+			Console.Warning("iOS Metal CompatLabOff: cleared manual GS HW fix %s", name);
+			field = default_value;
+		}
+	};
+
+#define CLEAR_IOS_METAL_BOOL(field, name) \
+	do \
+	{ \
+		if (config.field) \
+		{ \
+			Console.Warning("iOS Metal CompatLabOff: cleared manual GS HW fix %s", name); \
+			config.field = false; \
+		} \
+	} while (false)
+
+	clear_int(config.UserHacks_AutoFlush, GSHWAutoFlushLevel::Disabled, "autoFlush");
+	CLEAR_IOS_METAL_BOOL(UserHacks_CPUFBConversion, "cpuFramebufferConversion");
+	CLEAR_IOS_METAL_BOOL(UserHacks_ReadTCOnClose, "readTCOnClose");
+	CLEAR_IOS_METAL_BOOL(UserHacks_DisableDepthSupport, "disableDepthSupport");
+	CLEAR_IOS_METAL_BOOL(PreloadFrameWithGSData, "preloadFrameData");
+	CLEAR_IOS_METAL_BOOL(UserHacks_DisablePartialInvalidation, "disablePartialInvalidation");
+	clear_int(config.UserHacks_TextureInsideRt, GSTextureInRtMode::Disabled, "textureInsideRT");
+	CLEAR_IOS_METAL_BOOL(UserHacks_AlignSpriteX, "alignSprite");
+	CLEAR_IOS_METAL_BOOL(UserHacks_MergePPSprite, "mergeSprite");
+	CLEAR_IOS_METAL_BOOL(UserHacks_ForceEvenSpritePosition, "forceEvenSpritePosition");
+	clear_int(config.UserHacks_BilinearHack, GSBilinearDirtyMode::Automatic, "bilinearUpscale");
+	CLEAR_IOS_METAL_BOOL(UserHacks_NativePaletteDraw, "nativePaletteDraw");
+	CLEAR_IOS_METAL_BOOL(UserHacks_EstimateTextureRegion, "estimateTextureRegion");
+	clear_int(config.SkipDrawStart, 0, "skipDrawStart");
+	clear_int(config.SkipDrawEnd, 0, "skipDrawEnd");
+	clear_int(config.UserHacks_HalfPixelOffset, GSHalfPixelOffset::Off, "halfPixelOffset");
+	clear_int(config.UserHacks_RoundSprite, static_cast<s8>(0), "roundSprite");
+	clear_int(config.UserHacks_NativeScaling, GSNativeScaling::Off, "nativeScaling");
+	clear_int(config.UserHacks_TCOffsetX, static_cast<s32>(0), "tcOffsetX");
+	clear_int(config.UserHacks_TCOffsetY, static_cast<s32>(0), "tcOffsetY");
+	clear_int(config.UserHacks_CPUSpriteRenderBW, static_cast<u8>(0), "cpuSpriteRenderBW");
+	clear_int(config.UserHacks_CPUSpriteRenderLevel, static_cast<u8>(0), "cpuSpriteRenderLevel");
+	clear_int(config.UserHacks_CPUCLUTRender, static_cast<u8>(0), "cpuCLUTRender");
+	clear_int(config.UserHacks_GPUTargetCLUTMode, GSGPUTargetCLUTMode::Disabled, "gpuTargetCLUT");
+	clear_int(config.GetSkipCountFunctionId, static_cast<s16>(-1), "getSkipCount");
+	clear_int(config.BeforeDrawFunctionId, static_cast<s16>(-1), "beforeDraw");
+	clear_int(config.MoveHandlerFunctionId, static_cast<s16>(-1), "moveHandler");
+	config.ManualUserHacks = false;
+
+#undef CLEAR_IOS_METAL_BOOL
+}
+
+static bool ShouldBlockIOSMetalGSHardwareFixes(const Pcsx2Config::GSOptions& config)
+{
+	if (config.Renderer != GSRendererType::Metal)
+		return false;
+
+	// ARMSX2 iOS exposes GameDB Core Fixes and Graphics Fixes separately. When either
+	// compatibility path is off, do not allow GameDB/manual hardware hacks to survive
+	// the ELF CRC settings reload and break strict Metal rendering.
+	const std::string compat_profile = GetIOSCompatibilityLabProfileForGSPolicy();
+	return StringUtil::compareNoCase(compat_profile, "off") || !EmuConfig.EnableGameFixes || config.ManualUserHacks;
+}
+
+static bool IsIOSMetalHighRiskAutoGSHWFix(GameDatabaseSchema::GSHWFixId id)
+{
+	switch (id)
+	{
+		case GameDatabaseSchema::GSHWFixId::GetSkipCount:
+		case GameDatabaseSchema::GSHWFixId::BeforeDraw:
+		case GameDatabaseSchema::GSHWFixId::MoveHandler:
+			return true;
+		default:
+			return false;
+	}
+}
+
+static bool IsIOSMetalAllowedAutoGSHWCallback(const GameDatabaseSchema::GameEntry& entry, GameDatabaseSchema::GSHWFixId id, int value)
+{
+	switch (id)
+	{
+		case GameDatabaseSchema::GSHWFixId::GetSkipCount:
+		{
+			static const s16 burnout_games = GSLookupGetSkipCountFunctionId("GSC_BurnoutGames");
+			static const s16 burnout_sky = GSLookupGetSkipCountFunctionId("GSC_BlackAndBurnoutSky");
+			static const s16 midnight_club3 = GSLookupGetSkipCountFunctionId("GSC_MidnightClub3");
+			return (IsIOSBurnoutMetalCallbackGame(entry.name) && value == burnout_games) ||
+				(IsIOSBurnoutMetalCallbackGame(entry.name) && value == burnout_sky) ||
+				(IsIOSMidnightClub3Game(entry.name) && value == midnight_club3);
+		}
+
+		case GameDatabaseSchema::GSHWFixId::BeforeDraw:
+		{
+			static const s16 burnout_games = GSLookupBeforeDrawFunctionId("OI_BurnoutGames");
+			static const s16 sonic_unleashed = GSLookupBeforeDrawFunctionId("OI_SonicUnleashed");
+			return ((IsIOSBurnoutMetalCallbackGame(entry.name) || IsIOSBlackGame(entry.name)) && value == burnout_games) ||
+				(IsIOSSonicUnleashedGame(entry.name) && value == sonic_unleashed);
+		}
+
+		default:
+			return false;
+	}
+}
+
+static bool IsIOSMetalAllowedCompatLabOffGSHWFix(const GameDatabaseSchema::GameEntry& entry, GameDatabaseSchema::GSHWFixId id, int value)
+{
+	if (!IsIOSMetalHighRiskAutoGSHWFix(id))
+		return true;
+
+	switch (id)
+	{
+		case GameDatabaseSchema::GSHWFixId::GetSkipCount:
+		{
+			static const s16 burnout_games = GSLookupGetSkipCountFunctionId("GSC_BurnoutGames");
+			static const s16 burnout_sky = GSLookupGetSkipCountFunctionId("GSC_BlackAndBurnoutSky");
+			static const s16 midnight_club3 = GSLookupGetSkipCountFunctionId("GSC_MidnightClub3");
+			return (IsIOSBurnoutMetalCallbackGame(entry.name) && value == burnout_games) ||
+				(IsIOSBurnoutMetalCallbackGame(entry.name) && value == burnout_sky) ||
+				(IsIOSMidnightClub3Game(entry.name) && value == midnight_club3);
+		}
+
+		case GameDatabaseSchema::GSHWFixId::BeforeDraw:
+		{
+			static const s16 burnout_games = GSLookupBeforeDrawFunctionId("OI_BurnoutGames");
+			static const s16 sonic_unleashed = GSLookupBeforeDrawFunctionId("OI_SonicUnleashed");
+			return ((IsIOSBurnoutMetalCallbackGame(entry.name) || IsIOSBlackGame(entry.name)) && value == burnout_games) ||
+				(IsIOSSonicUnleashedGame(entry.name) && value == sonic_unleashed);
+		}
+
+		default:
+			return false;
+	}
+}
+
+static void ClearIOSMetalHighRiskCallbacks(Pcsx2Config::GSOptions& config, const char* reason)
+{
+	auto clear_callback = [reason](auto& field, auto default_value, const char* name) {
+		if (field != default_value)
+		{
+			Console.Warning("@@IOS_METAL_GS_CALLBACK_CLEAR@@ fix=%s old=%d reason=%s",
+				name, static_cast<int>(field), reason);
+			field = default_value;
+		}
+	};
+
+	clear_callback(config.GetSkipCountFunctionId, static_cast<s16>(-1), "getSkipCount");
+	clear_callback(config.BeforeDrawFunctionId, static_cast<s16>(-1), "beforeDraw");
+	clear_callback(config.MoveHandlerFunctionId, static_cast<s16>(-1), "moveHandler");
+}
+
+static const char* IOSBool(bool value)
+{
+	return value ? "on" : "off";
+}
+
+static std::string FormatIOSGameFixList(const GameDatabaseSchema::GameEntry& entry)
+{
+	std::string out;
+	for (const GamefixId fix : entry.gameFixes)
+	{
+		fmt::format_to(std::back_inserter(out), "{}{}",
+			out.empty() ? "" : ",", Pcsx2Config::GamefixOptions::GetGameFixName(fix));
+	}
+	return out.empty() ? "none" : out;
+}
+
+static std::string FormatIOSSpeedHackList(const GameDatabaseSchema::GameEntry& entry)
+{
+	std::string out;
+	for (const auto& [hack, value] : entry.speedHacks)
+	{
+		fmt::format_to(std::back_inserter(out), "{}{}={}",
+			out.empty() ? "" : ",", Pcsx2Config::SpeedhackOptions::GetSpeedHackName(hack), value);
+	}
+	return out.empty() ? "none" : out;
+}
+
+static std::string FormatIOSGSHWFixList(const GameDatabaseSchema::GameEntry& entry)
+{
+	std::string out;
+	for (const auto& [id, value] : entry.gsHWFixes)
+	{
+		fmt::format_to(std::back_inserter(out), "{}{}={}",
+			out.empty() ? "" : ",", GameDatabaseSchema::getHWFixName(id), value);
+	}
+	return out.empty() ? "none" : out;
+}
+
+static void LogIOSGameFixSnapshot(
+	const GameDatabaseSchema::GameEntry& entry, const Pcsx2Config::GSOptions& gs_config, const char* stage)
+{
+#ifdef PCSX2_ARM64_DYNAREC
+	const int use_arm64_dynarec = EmuConfig.Cpu.UseArm64Dynarec ? 1 : 0;
+#else
+	const int use_arm64_dynarec = -1;
+#endif
+
+	Console.WriteLn("@@IOS_GAMEFIX_SNAPSHOT@@ stage=%s game=\"%s\" region=\"%s\" compat=\"%s\" renderer=%s gamedb_entries=%zu",
+		stage, entry.name.c_str(), entry.region.c_str(), entry.compatAsString(),
+		Pcsx2Config::GSOptions::GetRendererName(gs_config.Renderer), GameDatabase::entryCount());
+	Console.WriteLn("@@IOS_GAMEFIX_CPU@@ UseArm64Dynarec=%d EE=%s IOP=%s VU0=%s VU1=%s Fastmem=%s EECache=%s EERound=%u EEDivRound=%u VU0Round=%u VU1Round=%u EEClamp=%u VUClamp=%u",
+		use_arm64_dynarec, IOSBool(EmuConfig.Cpu.Recompiler.EnableEE),
+		IOSBool(EmuConfig.Cpu.Recompiler.EnableIOP), IOSBool(EmuConfig.Cpu.Recompiler.EnableVU0),
+		IOSBool(EmuConfig.Cpu.Recompiler.EnableVU1), IOSBool(EmuConfig.Cpu.Recompiler.EnableFastmem),
+		IOSBool(EmuConfig.Cpu.Recompiler.EnableEECache), static_cast<unsigned>(EmuConfig.Cpu.FPUFPCR.GetRoundMode()),
+		static_cast<unsigned>(EmuConfig.Cpu.FPUDivFPCR.GetRoundMode()), static_cast<unsigned>(EmuConfig.Cpu.VU0FPCR.GetRoundMode()),
+		static_cast<unsigned>(EmuConfig.Cpu.VU1FPCR.GetRoundMode()), EmuConfig.Cpu.Recompiler.GetEEClampMode(),
+		EmuConfig.Cpu.Recompiler.GetVUClampMode());
+	Console.WriteLn("@@IOS_GAMEFIX_SPEED@@ nominal=%.3f turbo=%.3f slomo=%.3f ntsc=%.3f pal=%.3f mtvu=%s mvuFlag=%s instantVU1=%s eeCycleRate=%d eeCycleSkip=%u vsyncQueue=%d",
+		EmuConfig.EmulationSpeed.NominalScalar, EmuConfig.EmulationSpeed.TurboScalar, EmuConfig.EmulationSpeed.SlomoScalar,
+		gs_config.FramerateNTSC, gs_config.FrameratePAL, IOSBool(EmuConfig.Speedhacks.vuThread),
+		IOSBool(EmuConfig.Speedhacks.vuFlagHack), IOSBool(EmuConfig.Speedhacks.vu1Instant),
+		static_cast<int>(EmuConfig.Speedhacks.EECycleRate), static_cast<unsigned>(EmuConfig.Speedhacks.EECycleSkip),
+		gs_config.VsyncQueueSize);
+	Console.WriteLn("@@IOS_GAMEFIX_PATCHES@@ GameFixes=%s PNACH=%s Cheats=%s Widescreen=%s NoInterlace=%s RetroAchievements=%s",
+		IOSBool(EmuConfig.EnableGameFixes), IOSBool(EmuConfig.EnablePatches), IOSBool(EmuConfig.EnableCheats),
+		IOSBool(EmuConfig.EnableWideScreenPatches), IOSBool(EmuConfig.EnableNoInterlacingPatches),
+		IOSBool(EmuConfig.Achievements.Enabled));
+	Console.WriteLn("@@IOS_GAMEFIX_GS@@ upscale=%.2f manualUserHacks=%s autoFlush=%d textureInsideRT=%d halfPixelOffset=%d nativeScaling=%d alignSprite=%s cpuSpriteBW=%u cpuSpriteLevel=%u cpuCLUT=%u gpuTargetCLUT=%d skipStart=%d skipEnd=%d getSkipCount=%d beforeDraw=%d moveHandler=%d texLoad=%s texDump=%s",
+		gs_config.UpscaleMultiplier, IOSBool(gs_config.ManualUserHacks), static_cast<int>(gs_config.UserHacks_AutoFlush),
+		static_cast<int>(gs_config.UserHacks_TextureInsideRt), static_cast<int>(gs_config.UserHacks_HalfPixelOffset),
+		static_cast<int>(gs_config.UserHacks_NativeScaling), IOSBool(gs_config.UserHacks_AlignSpriteX),
+		static_cast<unsigned>(gs_config.UserHacks_CPUSpriteRenderBW), static_cast<unsigned>(gs_config.UserHacks_CPUSpriteRenderLevel),
+		static_cast<unsigned>(gs_config.UserHacks_CPUCLUTRender), static_cast<int>(gs_config.UserHacks_GPUTargetCLUTMode),
+		gs_config.SkipDrawStart, gs_config.SkipDrawEnd, static_cast<int>(gs_config.GetSkipCountFunctionId),
+		static_cast<int>(gs_config.BeforeDrawFunctionId), static_cast<int>(gs_config.MoveHandlerFunctionId),
+		IOSBool(gs_config.LoadTextureReplacements), IOSBool(gs_config.DumpReplaceableTextures));
+	Console.WriteLn("@@IOS_GAMEDB_REQUESTS@@ gamefixes=\"%s\" speedhacks=\"%s\" gs_hw=\"%s\" patches=%zu dyna_patches=%zu",
+		FormatIOSGameFixList(entry).c_str(), FormatIOSSpeedHackList(entry).c_str(),
+		FormatIOSGSHWFixList(entry).c_str(), entry.patches.size(), entry.dynaPatches.size());
+
+	const std::string gamefixes = FormatIOSGameFixList(entry);
+	const std::string speedhacks = FormatIOSSpeedHackList(entry);
+	const std::string gs_hw_fixes = FormatIOSGSHWFixList(entry);
+	std::fprintf(stderr,
+		"@@IOS_GAMEFIX_SNAPSHOT_STDERR@@ stage=%s game=\"%s\" region=\"%s\" compat=\"%s\" renderer=%s gamedb_entries=%zu enableGameFixes=%d manualUserHacks=%d upscale=%.2f\n",
+		stage, entry.name.c_str(), entry.region.c_str(), entry.compatAsString(),
+		Pcsx2Config::GSOptions::GetRendererName(gs_config.Renderer), GameDatabase::entryCount(),
+		EmuConfig.EnableGameFixes ? 1 : 0, gs_config.ManualUserHacks ? 1 : 0, gs_config.UpscaleMultiplier);
+	std::fprintf(stderr,
+		"@@IOS_GAMEFIX_GS_STDERR@@ autoFlush=%d textureInsideRT=%d halfPixelOffset=%d nativeScaling=%d alignSprite=%d cpuSpriteBW=%u cpuSpriteLevel=%u cpuCLUT=%u gpuTargetCLUT=%d skipStart=%d skipEnd=%d getSkipCount=%d beforeDraw=%d moveHandler=%d\n",
+		static_cast<int>(gs_config.UserHacks_AutoFlush), static_cast<int>(gs_config.UserHacks_TextureInsideRt),
+		static_cast<int>(gs_config.UserHacks_HalfPixelOffset), static_cast<int>(gs_config.UserHacks_NativeScaling),
+		gs_config.UserHacks_AlignSpriteX ? 1 : 0, static_cast<unsigned>(gs_config.UserHacks_CPUSpriteRenderBW),
+		static_cast<unsigned>(gs_config.UserHacks_CPUSpriteRenderLevel), static_cast<unsigned>(gs_config.UserHacks_CPUCLUTRender),
+		static_cast<int>(gs_config.UserHacks_GPUTargetCLUTMode), gs_config.SkipDrawStart, gs_config.SkipDrawEnd,
+		static_cast<int>(gs_config.GetSkipCountFunctionId), static_cast<int>(gs_config.BeforeDrawFunctionId),
+		static_cast<int>(gs_config.MoveHandlerFunctionId));
+	std::fprintf(stderr,
+		"@@IOS_GAMEDB_REQUESTS_STDERR@@ gamefixes=\"%s\" speedhacks=\"%s\" gs_hw=\"%s\" patches=%zu dyna_patches=%zu\n",
+		gamefixes.c_str(), speedhacks.c_str(), gs_hw_fixes.c_str(), entry.patches.size(), entry.dynaPatches.size());
+	std::fflush(stderr);
+}
+#endif
 
 void GameDatabaseSchema::GameEntry::applyGameFixes(Pcsx2Config& config, bool applyAuto) const
 {
@@ -597,6 +926,9 @@ bool GameDatabaseSchema::GameEntry::configMatchesHWFix(const Pcsx2Config::GSOpti
 		case GSHWFixId::TextureInsideRT:
 			return (static_cast<int>(config.UserHacks_TextureInsideRt) == value);
 
+		case GSHWFixId::Limit24BitDepth:
+			return (static_cast<int>(config.UserHacks_Limit24BitDepth) == value);
+
 		case GSHWFixId::AlignSprite:
 			return (config.UpscaleMultiplier <= 1.0f || static_cast<int>(config.UserHacks_AlignSpriteX) == value);
 
@@ -615,6 +947,9 @@ bool GameDatabaseSchema::GameEntry::configMatchesHWFix(const Pcsx2Config::GSOpti
 		case GSHWFixId::EstimateTextureRegion:
 			return (static_cast<int>(config.UserHacks_EstimateTextureRegion) == value);
 
+		case GSHWFixId::DrawBuffering:
+			return (static_cast<int>(config.UserHacks_DrawBuffering) == value);
+
 		case GSHWFixId::PCRTCOffsets:
 			return (static_cast<int>(config.PCRTCOffsets) == value);
 
@@ -623,6 +958,9 @@ bool GameDatabaseSchema::GameEntry::configMatchesHWFix(const Pcsx2Config::GSOpti
 
 		case GSHWFixId::Mipmap:
 			return (static_cast<int>(config.HWMipmap) == value);
+
+		case GSHWFixId::AccurateAlphaTest:
+			return (static_cast<int>(config.HWAccurateAlphaTest) == value);
 
 		case GSHWFixId::TrilinearFiltering:
 			return (config.TriFilter == TriFiltering::Automatic || static_cast<int>(config.TriFilter) == value);
@@ -689,16 +1027,71 @@ bool GameDatabaseSchema::GameEntry::configMatchesHWFix(const Pcsx2Config::GSOpti
 void GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions& config) const
 {
 	std::string disabled_fixes;
+	bool apply_auto_fixes = !config.ManualUserHacks;
+
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+	const bool block_ios_metal_gs_fixes = ShouldBlockIOSMetalGSHardwareFixes(config);
+	if (block_ios_metal_gs_fixes)
+	{
+		const std::string compat_profile = GetIOSCompatibilityLabProfileForGSPolicy();
+		Console.Warning("@@IOS_METAL_GS_POLICY@@ compat_lab=%s game=\"%s\" renderer=%s enable_game_fixes=%d manual_user_hacks=%d action=sanitize_high_risk_callbacks",
+			compat_profile.c_str(), name.c_str(), Pcsx2Config::GSOptions::GetRendererName(config.Renderer),
+			EmuConfig.EnableGameFixes ? 1 : 0, config.ManualUserHacks ? 1 : 0);
+		Console.Warning("iOS Metal CompatLabOff: allowing GameDB GS HW fixes; high-risk callbacks require the iOS Metal allowlist");
+		ClearIOSMetalCompatLabOffGSHWFixes(config);
+		apply_auto_fixes = false;
+	}
+
+	if (!block_ios_metal_gs_fixes && config.Renderer == GSRendererType::Metal && apply_auto_fixes)
+		ClearIOSMetalHighRiskCallbacks(config, "pre-auto-apply");
+#else
+	constexpr bool block_ios_metal_gs_fixes = false;
+#endif
 
 	// Only apply GS HW fixes if the user hasn't manually enabled HW fixes.
-	const bool apply_auto_fixes = !config.ManualUserHacks;
 	const bool is_sw_renderer = EmuConfig.GS.Renderer == GSRendererType::SW;
-	if (!apply_auto_fixes)
+	if (!apply_auto_fixes && !block_ios_metal_gs_fixes)
 		Console.Warning("GameDB: Manual GS hardware renderer fixes are enabled, not using automatic hardware renderer fixes from GameDB.");
 
 	for (const auto& [id, value] : gsHWFixes)
 	{
-		if (isUserHackHWFix(id) && !apply_auto_fixes)
+		bool force_apply_ios_metal_fix = false;
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+		if (block_ios_metal_gs_fixes)
+		{
+			if (IsIOSMetalAllowedCompatLabOffGSHWFix(*this, id, value))
+			{
+				Console.Warning("@@IOS_METAL_GS_FIX_ALLOW@@ game=\"%s\" fix=%s requested=%d reason=%s",
+					name.c_str(), getHWFixName(id), value,
+					IsIOSMetalHighRiskAutoGSHWFix(id) ? "callback_allowlist" : "safe_gamedb_fix");
+				force_apply_ios_metal_fix = true;
+			}
+			else
+			{
+				Console.Warning("@@IOS_METAL_GS_SKIP@@ game=\"%s\" fix=%s requested=%d reason=callback_fix_not_safe_on_metal",
+					name.c_str(), getHWFixName(id), value);
+				continue;
+			}
+		}
+
+		if (!block_ios_metal_gs_fixes && config.Renderer == GSRendererType::Metal && apply_auto_fixes && IsIOSMetalHighRiskAutoGSHWFix(id))
+		{
+			if (IsIOSMetalAllowedAutoGSHWCallback(*this, id, value))
+			{
+				Console.Warning("@@IOS_METAL_GS_CALLBACK_ALLOW@@ game=\"%s\" fix=%s requested=%d reason=ios_metal_callback_allowlist",
+					name.c_str(), getHWFixName(id), value);
+			}
+			else
+			{
+				Console.Warning("@@IOS_METAL_GS_SKIP@@ game=\"%s\" fix=%s requested=%d reason=callback_fix_not_safe_on_metal",
+					name.c_str(), getHWFixName(id), value);
+				ClearIOSMetalHighRiskCallbacks(config, getHWFixName(id));
+				continue;
+			}
+		}
+#endif
+
+		if (isUserHackHWFix(id) && !apply_auto_fixes && !force_apply_ios_metal_fix)
 		{
 			if (configMatchesHWFix(config, id, value))
 				continue;
@@ -708,12 +1101,26 @@ void GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions&
 			continue;
 		}
 
+		int applied_log_value = value;
+
 		switch (id)
 		{
 			case GSHWFixId::AutoFlush:
 			{
-				if (value >= 0 && value <= static_cast<int>(GSHWAutoFlushLevel::Enabled))
-					config.UserHacks_AutoFlush = static_cast<GSHWAutoFlushLevel>(value);
+				int applied_value = value;
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+				if (IsIOSBurnoutRevengeGame(name) && applied_value == static_cast<int>(GSHWAutoFlushLevel::Enabled))
+				{
+					Console.Warning("@@IOS_BURNOUT_AUTOFLUSH_CLAMP@@ game=\"%s\" requested=%d applied=%d reason=metal_glow_probe",
+						name.c_str(), applied_value, static_cast<int>(GSHWAutoFlushLevel::SpritesOnly));
+					applied_value = static_cast<int>(GSHWAutoFlushLevel::SpritesOnly);
+				}
+#endif
+				if (applied_value >= 0 && applied_value <= static_cast<int>(GSHWAutoFlushLevel::Enabled))
+				{
+					config.UserHacks_AutoFlush = static_cast<GSHWAutoFlushLevel>(applied_value);
+					applied_log_value = applied_value;
+				}
 			}
 			break;
 
@@ -744,6 +1151,13 @@ void GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions&
 			}
 			break;
 
+			case GSHWFixId::Limit24BitDepth:
+			{
+				if (value >= 0 && value <= static_cast<int>(GSLimit24BitDepth::PrioritizeLower))
+					config.UserHacks_Limit24BitDepth = static_cast<GSLimit24BitDepth>(value);
+			}
+			break;
+
 			case GSHWFixId::AlignSprite:
 				config.UserHacks_AlignSpriteX = (value > 0);
 				break;
@@ -771,6 +1185,10 @@ void GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions&
 				config.UserHacks_EstimateTextureRegion = (value > 0);
 				break;
 
+			case GSHWFixId::DrawBuffering:
+				config.UserHacks_DrawBuffering = (value > 0);
+				break;
+
 			case GSHWFixId::PCRTCOffsets:
 				config.PCRTCOffsets = (value > 0);
 				break;
@@ -781,6 +1199,10 @@ void GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions&
 
 			case GSHWFixId::Mipmap:
 				config.HWMipmap = (value > 0);
+				break;
+
+			case GSHWFixId::AccurateAlphaTest:
+				config.HWAccurateAlphaTest = (value > 0);
 				break;
 
 			case GSHWFixId::TrilinearFiltering:
@@ -815,8 +1237,20 @@ void GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions&
 				break;
 
 			case GSHWFixId::NativeScaling:
-				config.UserHacks_NativeScaling = static_cast<GSNativeScaling>(value);
-				break;
+			{
+				int applied_value = value;
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+				if (applied_value >= static_cast<int>(GSNativeScaling::Aggressive))
+				{
+					Console.Warning("@@IOS_GAMEDB_GS_CLAMP@@ game=\"%s\" fix=nativeScaling requested=%d applied=%d",
+						name.c_str(), applied_value, static_cast<int>(GSNativeScaling::Normal));
+					applied_value = static_cast<int>(GSNativeScaling::Normal);
+				}
+#endif
+				if (applied_value >= 0 && applied_value < static_cast<int>(GSNativeScaling::MaxCount))
+					config.UserHacks_NativeScaling = static_cast<GSNativeScaling>(applied_value);
+			}
+			break;
 
 			case GSHWFixId::TexturePreloading:
 			{
@@ -882,18 +1316,54 @@ void GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions&
 
 			case GSHWFixId::RecommendedBlendingLevel:
 			{
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+				// On iOS, honor the GameDB blending recommendation automatically
+				// (upstream only shows an OSD hint the user has to act on). Games
+				// like Silent Hill 2 (recommends Full) render their core effects —
+				// the flashlight darkness mask, menu transparency — wrong at the
+				// Basic default, and iOS users rarely dig into per-game settings.
+				// Capped at Full (never Maximum), only raises the level, and never
+				// when the user runs manual hardware hacks (their blending choice
+				// wins). Applies in BOTH iOS policy modes — auto-apply and the
+				// compat-lab-off "blocked" mode (this case is only reached there
+				// when allowlisted as a safe non-callback fix); the Metal renderer
+				// has full texture-barrier support so all levels are functional.
+				if (!is_sw_renderer && !config.ManualUserHacks &&
+					value > 0 && value <= static_cast<int>(AccBlendLevel::Maximum) &&
+					static_cast<int>(config.AccurateBlendingUnit) < value)
+				{
+					const AccBlendLevel bumped =
+						static_cast<AccBlendLevel>(std::min(value, static_cast<int>(AccBlendLevel::Full)));
+					if (config.AccurateBlendingUnit < bumped)
+					{
+						Console.Warning("@@IOS_BLEND_BUMP@@ game=\"%s\" old=%d recommended=%d applied=%d",
+							name.c_str(), static_cast<int>(config.AccurateBlendingUnit), value,
+							static_cast<int>(bumped));
+						config.AccurateBlendingUnit = bumped;
+					}
+					break;
+				}
+#endif
 				if (!is_sw_renderer && value >= 0 && value <= static_cast<int>(AccBlendLevel::Maximum) && static_cast<int>(EmuConfig.GS.AccurateBlendingUnit) < value)
 				{
+					static constexpr std::array<const char*, static_cast<u8>(AccBlendLevel::MaxCount)> s_blending_option_names = {{
+						TRANSLATE_NOOP("GameDatabase", "Minimum"),
+						TRANSLATE_NOOP("GameDatabase", "Basic"),
+						TRANSLATE_NOOP("GameDatabase", "Medium"),
+						TRANSLATE_NOOP("GameDatabase", "High"),
+						TRANSLATE_NOOP("GameDatabase", "Full"),
+						TRANSLATE_NOOP("GameDatabase", "Maximum"),
+					}};
+
 					Host::AddKeyedOSDMessage("HWBlendingWarning",
 						fmt::format(TRANSLATE_FS("GameDatabase",
 										"{0} Current Blending Accuracy is {1}.\n"
 										"Recommended Blending Accuracy for this game is {2}.\n"
 										"You can adjust the blending level in Game Properties to improve\n"
 										"graphical quality, but this will increase system requirements."),
-							ICON_FA_PAINT_BRUSH,
-							Pcsx2Config::GSOptions::BlendingLevelNames[static_cast<int>(
-								EmuConfig.GS.AccurateBlendingUnit)],
-							Pcsx2Config::GSOptions::BlendingLevelNames[value]),
+							ICON_FA_PAINTBRUSH,
+							s_blending_option_names[static_cast<u8>(EmuConfig.GS.AccurateBlendingUnit)],
+							s_blending_option_names[static_cast<u8>(value)]),
 						Host::OSD_WARNING_DURATION);
 				}
 				else
@@ -919,7 +1389,11 @@ void GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions&
 				break;
 		}
 
-		Console.WriteLn("GameDB: Enabled GS Hardware Fix: %s to [mode=%d]", getHWFixName(id), value);
+		if (applied_log_value != value)
+			Console.WriteLn("GameDB: Enabled GS Hardware Fix: %s requested [mode=%d] applied [mode=%d]",
+				getHWFixName(id), value, applied_log_value);
+		else
+			Console.WriteLn("GameDB: Enabled GS Hardware Fix: %s to [mode=%d]", getHWFixName(id), value);
 	}
 
 	// fixup skipdraw range just in case the db has a bad range (but the linter should catch this)
@@ -928,38 +1402,47 @@ void GameDatabaseSchema::GameEntry::applyGSHardwareFixes(Pcsx2Config::GSOptions&
 	if (!is_sw_renderer && !disabled_fixes.empty())
 	{
 		Host::AddKeyedOSDMessage("HWFixesWarning",
-			fmt::format(ICON_FA_MAGIC " {}\n{}",
+			fmt::format(ICON_FA_WAND_MAGIC_SPARKLES " {}\n{}",
 				TRANSLATE_SV("GameDatabase", "Manual GS hardware renderer fixes are enabled, automatic fixes were not applied:"),
-					disabled_fixes),
+				disabled_fixes),
 			Host::OSD_ERROR_DURATION);
 	}
 	else
 	{
 		Host::RemoveKeyedOSDMessage("HWFixesWarning");
 	}
+
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+	if (config.Renderer == GSRendererType::Metal)
+		LogIOSGameFixSnapshot(*this, config,
+			block_ios_metal_gs_fixes ? "blocked-ios-metal" : (apply_auto_fixes ? "applied-ios-metal" : "manual-ios-metal"));
+#endif
 }
 
 void GameDatabase::initDatabase()
 {
-	ryml::Callbacks rymlCallbacks = ryml::get_callbacks();
-	rymlCallbacks.m_error = [](const char* msg, size_t msg_len, ryml::Location loc, void* userdata) {
-		Console.Error(fmt::format("[GameDB YAML] Parsing error at {}:{} (bufpos={}): {}",
-			loc.line, loc.col, loc.offset, std::string_view(msg, msg_len)));
-	};
-	ryml::set_callbacks(rymlCallbacks);
-	c4::set_error_callback([](const char* msg, size_t msg_size) {
-		Console.Error(fmt::format("[GameDB YAML] Internal Parsing error: {}", std::string_view(msg, msg_size)));
-	});
+	const std::string path(Path::Combine(EmuFolders::Resources, GAMEDB_YAML_FILE_NAME));
+	const std::string name(GAMEDB_YAML_FILE_NAME);
 
-	auto buf = FileSystem::ReadFileToString(Path::Combine(EmuFolders::Resources, GAMEDB_YAML_FILE_NAME).c_str());
-	if (!buf.has_value())
+	const std::optional<std::string> buffer = FileSystem::ReadFileToString(path.c_str());
+	if (!buffer.has_value())
 	{
 		Console.Error("GameDB: Unable to open GameDB file, file does not exist.");
 		return;
 	}
 
-	ryml::Tree tree = ryml::parse_in_arena(c4::to_csubstr(buf.value()));
-	ryml::NodeRef root = tree.rootref();
+	const ryml::csubstr yaml = ryml::to_csubstr(*buffer);
+
+	Error error;
+	std::optional<ryml::Tree> tree = ParseYAMLFromString(yaml, ryml::to_csubstr(name), &error);
+	if (!tree.has_value())
+	{
+		Console.ErrorFmt("GameDB: Failed to parse game database file {}:", path);
+		Console.Error(error.GetDescription());
+		return;
+	}
+
+	ryml::NodeRef root = tree->rootref();
 
 	for (const ryml::NodeRef& n : root.children())
 	{
@@ -971,7 +1454,7 @@ void GameDatabase::initDatabase()
 		// However, YAML's keys are as expected case-sensitive, so we have to explicitly do our own duplicate checking
 		if (s_game_db.count(serial) == 1)
 		{
-			Console.Error(fmt::format("GameDB: Duplicate serial '{}' found in GameDB. Skipping, Serials are case-insensitive!", serial));
+			Console.ErrorFmt("GameDB: Duplicate serial '{}' found in GameDB. Skipping, Serials are case-insensitive!", serial);
 			continue;
 		}
 
@@ -980,8 +1463,6 @@ void GameDatabase::initDatabase()
 			parseAndInsert(serial, n);
 		}
 	}
-
-	ryml::reset_callbacks();
 }
 
 void GameDatabase::ensureLoaded()
@@ -992,6 +1473,12 @@ void GameDatabase::ensureLoaded()
 		initDatabase();
 		Console.WriteLn("GameDB: %zu games on record (loaded in %.2fms)", s_game_db.size(), timer.GetTimeMilliseconds());
 	});
+}
+
+size_t GameDatabase::entryCount()
+{
+	GameDatabase::ensureLoaded();
+	return s_game_db.size();
 }
 
 const GameDatabaseSchema::GameEntry* GameDatabase::findGame(const std::string_view serial)
@@ -1049,7 +1536,7 @@ static constexpr char HASHDB_YAML_FILE_NAME[] = "RedumpDatabase.yaml";
 std::unordered_map<GameDatabase::TrackHash, u32, TrackHashHasher> s_track_hash_to_entry_map;
 std::vector<GameDatabase::HashDatabaseEntry> s_hash_database;
 
-static bool parseHashDatabaseEntry(const c4::yml::NodeRef& node)
+static bool parseHashDatabaseEntry(const ryml::NodeRef& node)
 {
 	if (!node.has_child("name") || !node.has_child("hashes"))
 	{
@@ -1069,7 +1556,7 @@ static bool parseHashDatabaseEntry(const c4::yml::NodeRef& node)
 	{
 		if (!n.is_map() || !n.has_child("size") || !n.has_child("md5"))
 		{
-			Console.Error(fmt::format("[HashDatabase] Incomplete hash definition in {}", entry.name));
+			Console.ErrorFmt("[HashDatabase] Incomplete hash definition in {}", entry.name);
 			return false;
 		}
 
@@ -1080,12 +1567,12 @@ static bool parseHashDatabaseEntry(const c4::yml::NodeRef& node)
 
 		if (!th.parseHash(md5))
 		{
-			Console.Error(fmt::format("[HashDatabase] Failed to parse hash in {}: '{}'", entry.name, md5));
+			Console.ErrorFmt("[HashDatabase] Failed to parse hash in {}: '{}'", entry.name, md5);
 			return false;
 		}
 
 		if (entry.tracks.empty() && s_track_hash_to_entry_map.find(th) != s_track_hash_to_entry_map.end())
-			Console.Warning(fmt::format("[HashDatabase] Duplicate first track hash in {}", entry.name));
+			Console.WarningFmt("[HashDatabase] Duplicate first track hash in {}", entry.name);
 
 		entry.tracks.push_back(th);
 		s_track_hash_to_entry_map.emplace(th, index);
@@ -1100,27 +1587,30 @@ bool GameDatabase::loadHashDatabase()
 	if (!s_hash_database.empty())
 		return true;
 
-	ryml::Callbacks rymlCallbacks = ryml::get_callbacks();
-	rymlCallbacks.m_error = [](const char* msg, size_t msg_len, ryml::Location loc, void*) {
-		Console.Error(fmt::format(
-			"[HashDatabase YAML] Parsing error at {}:{} (bufpos={}): {}", loc.line, loc.col, loc.offset, msg));
-	};
-	ryml::set_callbacks(rymlCallbacks);
-	c4::set_error_callback([](const char* msg, size_t msg_size) {
-		Console.Error(fmt::format("[HashDatabase YAML] Internal Parsing error: {}", std::string_view(msg, msg_size)));
-	});
-
 	Common::Timer load_timer;
 
-	auto buf = FileSystem::ReadFileToString(Path::Combine(EmuFolders::Resources, HASHDB_YAML_FILE_NAME).c_str());
-	if (!buf.has_value())
+	const std::string path(Path::Combine(EmuFolders::Resources, HASHDB_YAML_FILE_NAME));
+	const std::string name(HASHDB_YAML_FILE_NAME);
+
+	std::optional<std::string> buffer = FileSystem::ReadFileToString(path.c_str());
+	if (!buffer.has_value())
 	{
-		Console.Error("GameDB: Unable to open hash database file, file does not exist.");
+		Console.Error("[HashDatabase] Unable to open hash database file, file does not exist.");
 		return false;
 	}
 
-	ryml::Tree tree = ryml::parse_in_arena(c4::to_csubstr(buf.value()));
-	ryml::NodeRef root = tree.rootref();
+	ryml::csubstr yaml = ryml::to_csubstr(*buffer);
+
+	Error error;
+	std::optional<ryml::Tree> tree = ParseYAMLFromString(yaml, ryml::to_csubstr(name), &error);
+	if (!tree.has_value())
+	{
+		Console.ErrorFmt("[HashDatabase] Failed to parse hash database file {}:", path);
+		Console.Error(error.GetDescription());
+		return false;
+	}
+
+	ryml::NodeRef root = tree->rootref();
 
 	bool okay = true;
 	for (const ryml::NodeRef& n : root.children())
@@ -1132,7 +1622,6 @@ bool GameDatabase::loadHashDatabase()
 		}
 	}
 
-	ryml::reset_callbacks();
 	if (!okay)
 	{
 		s_track_hash_to_entry_map.clear();

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #pragma once
@@ -14,13 +14,13 @@ void unload_pcap();
 class PCAPAdapter : public NetAdapter
 {
 private:
-//	pcap_t* hpcap = nullptr;
-//
-//	bool switched;
-//	bool blocking;
-//
-//	PacketReader::IP::IP_Address ps2IP{};
-//	PacketReader::MAC_Address hostMAC;
+	pcap_t* hpcap = nullptr;
+
+	bool switched;
+	bool blocking;
+
+	PacketReader::IP::IP_Address ps2IP{};
+	PacketReader::MAC_Address hostMAC;
 
 public:
 	PCAPAdapter();
@@ -38,6 +38,9 @@ public:
 private:
 	bool InitPCAP(const std::string& adapter, bool promiscuous);
 	bool SetMACSwitchedFilter(PacketReader::MAC_Address mac);
+
+	bool RecvPCAPPacket(NetPacket* pkt);
+	bool SendPCAPPacket(const NetPacket* pkt);
 
 	void SetMACBridgedRecv(NetPacket* pkt);
 	void SetMACBridgedSend(NetPacket* pkt);

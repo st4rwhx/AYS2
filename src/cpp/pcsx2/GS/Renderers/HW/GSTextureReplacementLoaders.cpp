@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "common/BitUtils.h"
@@ -11,8 +11,13 @@
 #include "GS/Renderers/HW/GSTextureReplacements.h"
 
 #include <csetjmp>
+#include <limits>
 #if !TARGET_OS_IPHONE
 #include <png.h>
+#else
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreGraphics/CoreGraphics.h>
+#include <ImageIO/ImageIO.h>
 #endif
 
 struct LoaderDefinition
@@ -25,9 +30,7 @@ static bool PNGLoader(const std::string& filename, GSTextureReplacements::Replac
 static bool DDSLoader(const std::string& filename, GSTextureReplacements::ReplacementTexture* tex, bool only_base_image);
 
 static constexpr LoaderDefinition s_loaders[] = {
-#if !TARGET_OS_IPHONE
 	{"png", PNGLoader},
-#endif
 	{"dds", DDSLoader},
 };
 
@@ -156,7 +159,86 @@ bool PNGLoader(const std::string& filename, GSTextureReplacements::ReplacementTe
     // ... (existing code)
 }
 #else
-bool PNGLoader(const std::string& filename, GSTextureReplacements::ReplacementTexture* tex, bool only_base_image) { return false; }
+static void UnpremultiplyAlpha(u32 width, u32 height, std::vector<u8>& data, u32 pitch)
+{
+	for (u32 row = 0; row < height; row++)
+	{
+		u8* pixel = data.data() + (static_cast<size_t>(row) * pitch);
+
+		for (u32 col = 0; col < width; col++)
+		{
+			const u8 alpha = pixel[3];
+			if (alpha != 0 && alpha != 255)
+			{
+				for (u32 channel = 0; channel < 3; channel++)
+				{
+					const u32 straight = (static_cast<u32>(pixel[channel]) * 255u + (alpha / 2u)) / alpha;
+					pixel[channel] = static_cast<u8>((straight > 255u) ? 255u : straight);
+				}
+			}
+
+			pixel += sizeof(u32);
+		}
+	}
+}
+
+bool PNGLoader(const std::string& filename, GSTextureReplacements::ReplacementTexture* tex, bool only_base_image)
+{
+	if (filename.empty())
+		return false;
+
+	CFURLRef url = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault,
+		reinterpret_cast<const UInt8*>(filename.c_str()), filename.length(), false);
+	if (!url)
+		return false;
+
+	CGImageSourceRef source = CGImageSourceCreateWithURL(url, nullptr);
+	CFRelease(url);
+	if (!source)
+		return false;
+
+	CGImageRef image = CGImageSourceCreateImageAtIndex(source, 0, nullptr);
+	CFRelease(source);
+	if (!image)
+		return false;
+
+	const size_t width = CGImageGetWidth(image);
+	const size_t height = CGImageGetHeight(image);
+	if (width == 0 || height == 0 || width > std::numeric_limits<u32>::max() || height > std::numeric_limits<u32>::max())
+	{
+		CGImageRelease(image);
+		return false;
+	}
+
+	const size_t bytes_per_row = width * sizeof(u32);
+	std::vector<u8> data(bytes_per_row * height);
+	CGColorSpaceRef color_space = CGColorSpaceCreateDeviceRGB();
+	const CGBitmapInfo bitmap_info = static_cast<CGBitmapInfo>(kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast);
+	CGContextRef context = CGBitmapContextCreate(data.data(), width, height, 8, bytes_per_row, color_space, bitmap_info);
+	if (color_space)
+		CGColorSpaceRelease(color_space);
+	if (!context)
+	{
+		CGImageRelease(image);
+		return false;
+	}
+
+	CGContextDrawImage(context, CGRectMake(0, 0, static_cast<CGFloat>(width), static_cast<CGFloat>(height)), image);
+	CGContextRelease(context);
+	CGImageRelease(image);
+
+	// CoreGraphics requires premultiplied alpha for this context; texture
+	// replacement rendering expects straight RGBA.
+	UnpremultiplyAlpha(static_cast<u32>(width), static_cast<u32>(height), data, static_cast<u32>(bytes_per_row));
+
+	tex->width = static_cast<u32>(width);
+	tex->height = static_cast<u32>(height);
+	tex->format = GSTexture::Format::Color;
+	tex->pitch = static_cast<u32>(bytes_per_row);
+	tex->data = std::move(data);
+	tex->mips.clear();
+	return true;
+}
 #endif
 
 #if !TARGET_OS_IPHONE
@@ -165,7 +247,73 @@ bool GSTextureReplacements::SavePNGImage(const std::string& filename, u32 width,
     // ... (existing code)
 }
 #else
-bool GSTextureReplacements::SavePNGImage(const std::string& filename, u32 width, u32 height, const u8* buffer, u32 pitch) { return false; }
+bool GSTextureReplacements::SavePNGImage(const std::string& filename, u32 width, u32 height, const u8* buffer, u32 pitch)
+{
+	if (filename.empty() || width == 0 || height == 0 || !buffer)
+		return false;
+
+	const size_t bytes_per_row = static_cast<size_t>(width) * sizeof(u32);
+	const size_t total_bytes = bytes_per_row * height;
+	const u8* data_ptr = buffer;
+	std::vector<u8> compact_data;
+
+	if (pitch != bytes_per_row)
+	{
+		compact_data.resize(total_bytes);
+		for (u32 y = 0; y < height; y++)
+			std::memcpy(compact_data.data() + (static_cast<size_t>(y) * bytes_per_row), buffer + (static_cast<size_t>(y) * pitch), bytes_per_row);
+		data_ptr = compact_data.data();
+	}
+
+	CGColorSpaceRef color_space = CGColorSpaceCreateDeviceRGB();
+	if (!color_space)
+		return false;
+
+	CFDataRef data = CFDataCreate(kCFAllocatorDefault, data_ptr, total_bytes);
+	if (!data)
+	{
+		CGColorSpaceRelease(color_space);
+		return false;
+	}
+
+	CGDataProviderRef provider = CGDataProviderCreateWithCFData(data);
+	CFRelease(data);
+	if (!provider)
+	{
+		CGColorSpaceRelease(color_space);
+		return false;
+	}
+
+	const CGBitmapInfo bitmap_info = static_cast<CGBitmapInfo>(kCGBitmapByteOrder32Big | kCGImageAlphaLast);
+	CGImageRef image = CGImageCreate(width, height, 8, 32, bytes_per_row, color_space, bitmap_info,
+		provider, nullptr, false, kCGRenderingIntentDefault);
+	CGDataProviderRelease(provider);
+	CGColorSpaceRelease(color_space);
+	if (!image)
+		return false;
+
+	CFURLRef url = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault,
+		reinterpret_cast<const UInt8*>(filename.c_str()), filename.length(), false);
+	if (!url)
+	{
+		CGImageRelease(image);
+		return false;
+	}
+
+	CGImageDestinationRef destination = CGImageDestinationCreateWithURL(url, CFSTR("public.png"), 1, nullptr);
+	CFRelease(url);
+	if (!destination)
+	{
+		CGImageRelease(image);
+		return false;
+	}
+
+	CGImageDestinationAddImage(destination, image, nullptr);
+	const bool success = CGImageDestinationFinalize(destination);
+	CFRelease(destination);
+	CGImageRelease(image);
+	return success;
+}
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -285,10 +433,8 @@ constexpr DDS_PIXELFORMAT DDSPF_R8G8B8 = {
 
 static bool DDSPixelFormatMatches(const DDS_PIXELFORMAT& pf1, const DDS_PIXELFORMAT& pf2)
 {
-	return std::tie(pf1.dwSize, pf1.dwFlags, pf1.dwFourCC, pf1.dwRGBBitCount, pf1.dwRBitMask,
-			   pf1.dwGBitMask, pf1.dwGBitMask, pf1.dwBBitMask, pf1.dwABitMask) ==
-		   std::tie(pf2.dwSize, pf2.dwFlags, pf2.dwFourCC, pf2.dwRGBBitCount, pf2.dwRBitMask,
-			   pf2.dwGBitMask, pf2.dwGBitMask, pf2.dwBBitMask, pf2.dwABitMask);
+	return std::tie(pf1.dwSize, pf1.dwFlags, pf1.dwFourCC, pf1.dwRGBBitCount, pf1.dwRBitMask, pf1.dwGBitMask, pf1.dwGBitMask, pf1.dwBBitMask, pf1.dwABitMask) ==
+	       std::tie(pf2.dwSize, pf2.dwFlags, pf2.dwFourCC, pf2.dwRGBBitCount, pf2.dwRBitMask, pf2.dwGBitMask, pf2.dwGBitMask, pf2.dwBBitMask, pf2.dwABitMask);
 }
 
 struct DDSLoadInfo

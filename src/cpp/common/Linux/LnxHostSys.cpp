@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "common/Assertions.h"
@@ -11,27 +11,28 @@
 #include <cstdio>
 #include <csignal>
 #include <cerrno>
+#include <cstdlib>
 #include <fcntl.h>
+#include <limits.h>
 #include <mutex>
 #include <sys/mman.h>
-#include <ucontext.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <libkern/OSCacheControl.h>
+#include <TargetConditionals.h>
+#endif
+#ifndef __APPLE__
+#include <ucontext.h>
+#endif
 
 #include "fmt/format.h"
 
-#if defined(__ANDROID__)
-#include <dlfcn.h>
-#include <linux/ashmem.h>
+#ifndef ARMSX2_ENABLE_MEMORY_MAP_DIAGNOSTICS
+#define ARMSX2_ENABLE_MEMORY_MAP_DIAGNOSTICS 0
 #endif
 
 #if defined(__FreeBSD__)
 #include "cpuinfo.h"
-#endif
-
-// FreeBSD does not have MAP_FIXED_NOREPLACE, but does have MAP_EXCL.
-// MAP_FIXED combined with MAP_EXCL behaves like MAP_FIXED_NOREPLACE.
-#if defined(__FreeBSD__) && !defined(MAP_FIXED_NOREPLACE)
-#define MAP_FIXED_NOREPLACE (MAP_FIXED | MAP_EXCL)
 #endif
 
 static __ri uint LinuxProt(const PageProtectionMode& mode)
@@ -46,34 +47,6 @@ static __ri uint LinuxProt(const PageProtectionMode& mode)
 		lnxmode |= PROT_EXEC | PROT_READ;
 
 	return lnxmode;
-}
-
-void* HostSys::Mmap(void* base, size_t size, const PageProtectionMode& mode)
-{
-	pxAssertMsg((size & (__pagesize - 1)) == 0, "Size is page aligned");
-
-	if (mode.IsNone())
-		return nullptr;
-
-	const u32 prot = LinuxProt(mode);
-
-	u32 flags = MAP_PRIVATE | MAP_ANONYMOUS;
-	if (base)
-		flags |= MAP_FIXED_NOREPLACE;
-
-	void* res = mmap(base, size, prot, flags, -1, 0);
-	if (res == MAP_FAILED)
-		return nullptr;
-
-	return res;
-}
-
-void HostSys::Munmap(void* base, size_t size)
-{
-	if (!base)
-		return;
-
-	munmap((void*)base, size);
 }
 
 void HostSys::MemProtect(void* baseaddr, size_t size, const PageProtectionMode& mode)
@@ -93,50 +66,78 @@ std::string HostSys::GetFileMappingName(const char* prefix)
 #if defined(__FreeBSD__)
 	// FreeBSD's shm_open(3) requires name to be absolute
 	return fmt::format("/tmp/{}_{}", prefix, pid);
-#elif __ANDROID__
-    return "pcsx2";
 #else
 	return fmt::format("{}_{}", prefix, pid);
 #endif
 }
 
+#if defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+static int CreateIOSFileBackedSharedMemory(const char* name, size_t size, int shm_errno)
+{
+	const char* tmpdir = std::getenv("TMPDIR");
+	if (!tmpdir || tmpdir[0] == '\0')
+		tmpdir = "/tmp";
+
+	for (int attempt = 0; attempt < 16; attempt++)
+	{
+		char path[PATH_MAX];
+		const int written = std::snprintf(path, sizeof(path), "%s/armsx2_%s_%u_%d.mem",
+			tmpdir, name, static_cast<unsigned>(getpid()), attempt);
+		if (written <= 0 || static_cast<size_t>(written) >= sizeof(path))
+			break;
+
+		const int fd = open(path, O_RDWR | O_CREAT | O_EXCL, 0600);
+		if (fd < 0)
+		{
+			if (errno == EEXIST)
+				continue;
+
+			std::fprintf(stderr,
+				"@@IOS_SHM_FILE_FALLBACK_FAIL@@ shm_open_errno=%d open_errno=%d path=\"%s\" size=%zu\n",
+				shm_errno, errno, path, size);
+			return -1;
+		}
+
+		if (fcntl(fd, F_SETFD, FD_CLOEXEC) != 0)
+			std::fprintf(stderr, "@@IOS_SHM_CLOEXEC_FAIL@@ errno=%d fd=%d\n", errno, fd);
+
+		if (ftruncate(fd, static_cast<off_t>(size)) < 0)
+		{
+			const int truncate_errno = errno;
+			unlink(path);
+			close(fd);
+			std::fprintf(stderr,
+				"@@IOS_SHM_FILE_FALLBACK_FAIL@@ shm_open_errno=%d ftruncate_errno=%d path=\"%s\" size=%zu\n",
+				shm_errno, truncate_errno, path, size);
+			return -1;
+		}
+
+		const int unlink_errno = (unlink(path) != 0) ? errno : 0;
+		std::fprintf(stderr,
+			"@@IOS_SHM_FILE_FALLBACK@@ shm_open_errno=%d fd=%d size=%zu path=\"%s\" unlink_errno=%d\n",
+			shm_errno, fd, size, path, unlink_errno);
+		return fd;
+	}
+
+	std::fprintf(stderr,
+		"@@IOS_SHM_FILE_FALLBACK_FAIL@@ shm_open_errno=%d reason=path_exhausted size=%zu\n",
+		shm_errno, size);
+	return -1;
+}
+#endif
+
 void* HostSys::CreateSharedMemory(const char* name, size_t size)
 {
-#if defined(__ANDROID__)
-    // ASharedMemory path - works on API >= 26 and falls through on API < 26:
-
-    // We can't call ASharedMemory_create the normal way without increasing the
-    // minimum version requirement to API 26, so we use dlopen/dlsym instead
-    static void* libandroid = dlopen("libandroid.so", RTLD_LAZY | RTLD_LOCAL);
-    static auto shared_memory_create =
-            reinterpret_cast<int (*)(const char*, size_t)>(dlsym(libandroid, "ASharedMemory_create"));
-    int fd = -1;
-    if (shared_memory_create)
-        fd = shared_memory_create(name, size);
-
-    // /dev/ashmem path - works on API < 29:
-    if (fd < 0)
-    {
-        fd = open("/dev/ashmem", O_RDWR);
-        if (fd < 0)
-            return nullptr;
-    }
-
-    // We don't really care if we can't set the name, it is optional
-    ioctl(fd, ASHMEM_SET_NAME, name);
-
-    int ret = ioctl(fd, ASHMEM_SET_SIZE, size);
-    if (ret < 0)
-    {
-        close(fd);
-        std::fprintf(stderr, "Ashmem returned error: 0x%08x\n", ret);
-        return nullptr;
-    }
-#else
 	const int fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR, 0600);
 	if (fd < 0)
 	{
-		std::fprintf(stderr, "shm_open failed: %d\n", errno);
+		const int shm_errno = errno;
+#if defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+		const int file_fd = CreateIOSFileBackedSharedMemory(name, size, shm_errno);
+		if (file_fd >= 0)
+			return reinterpret_cast<void*>(static_cast<intptr_t>(file_fd));
+#endif
+		std::fprintf(stderr, "shm_open failed: %d\n", shm_errno);
 		return nullptr;
 	}
 
@@ -147,9 +148,9 @@ void* HostSys::CreateSharedMemory(const char* name, size_t size)
 	if (ftruncate(fd, static_cast<off_t>(size)) < 0)
 	{
 		std::fprintf(stderr, "ftruncate(%zu) failed: %d\n", size, errno);
+		close(fd);
 		return nullptr;
 	}
-#endif
 
 	return reinterpret_cast<void*>(static_cast<intptr_t>(fd));
 }
@@ -159,23 +160,7 @@ void HostSys::DestroySharedMemory(void* ptr)
 	close(static_cast<int>(reinterpret_cast<intptr_t>(ptr)));
 }
 
-void* HostSys::MapSharedMemory(void* handle, size_t offset, void* baseaddr, size_t size, const PageProtectionMode& mode)
-{
-	const uint lnxmode = LinuxProt(mode);
-
-	const int flags = (baseaddr != nullptr) ? (MAP_SHARED | MAP_FIXED_NOREPLACE) : MAP_SHARED;
-	void* ptr = mmap(baseaddr, size, lnxmode, flags, static_cast<int>(reinterpret_cast<intptr_t>(handle)), static_cast<off_t>(offset));
-	if (ptr == MAP_FAILED)
-		return nullptr;
-
-	return ptr;
-}
-
-void HostSys::UnmapSharedMemory(void* baseaddr, size_t size)
-{
-	if (munmap(baseaddr, size) != 0)
-		pxFailRel("Failed to unmap shared memory");
-}
+#ifndef __APPLE__
 
 size_t HostSys::GetRuntimePageSize()
 {
@@ -222,6 +207,8 @@ size_t HostSys::GetRuntimeCacheLineSize()
 #endif
 }
 
+#endif
+
 SharedMemoryMappingArea::SharedMemoryMappingArea(u8* base_ptr, size_t size, size_t num_pages)
 	: m_base_ptr(base_ptr)
 	, m_size(size)
@@ -238,13 +225,34 @@ SharedMemoryMappingArea::~SharedMemoryMappingArea()
 }
 
 
-std::unique_ptr<SharedMemoryMappingArea> SharedMemoryMappingArea::Create(size_t size)
+std::unique_ptr<SharedMemoryMappingArea> SharedMemoryMappingArea::Create(size_t size, bool jit)
 {
 	pxAssertRel(Common::IsAlignedPow2(size, __pagesize), "Size is page aligned");
 
-	void* alloc = mmap(nullptr, size, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+	uint flags = MAP_ANONYMOUS | MAP_PRIVATE;
+	uint prot = PROT_NONE;
+#ifdef __APPLE__
+	if (jit) {
+		flags |= MAP_JIT;
+#if TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+		// iOS rejects PROT_NONE MAP_JIT reservations on the LiveContainer/JIT path.
+		// Code memory must be born as an actual JIT mapping; callers can mprotect it
+		// afterward, but we never fall back to a non-MAP_JIT executable region.
+		prot = PROT_READ | PROT_WRITE | PROT_EXEC;
+#endif
+	}
+#endif
+	void* alloc = mmap(nullptr, size, prot, flags, -1, 0);
 	if (alloc == MAP_FAILED)
+	{
+		const int map_jit_errno = errno;
+		std::fprintf(stderr, "@@SMA_CREATE_FAIL@@ size=%zu jit=%d flags=0x%x prot=0x%x err=%d\n",
+			size, static_cast<int>(jit), flags, prot, map_jit_errno);
 		return nullptr;
+	}
+
+	std::fprintf(stderr, "@@SMA_CREATE_OK@@ base=%p size=%zu jit=%d flags=0x%x prot=0x%x\n",
+		alloc, size, static_cast<int>(jit), flags, prot);
 
 	return std::unique_ptr<SharedMemoryMappingArea>(new SharedMemoryMappingArea(static_cast<u8*>(alloc), size, size / __pagesize));
 }
@@ -253,20 +261,46 @@ u8* SharedMemoryMappingArea::Map(void* file_handle, size_t file_offset, void* ma
 {
 	pxAssert(static_cast<u8*>(map_base) >= m_base_ptr && static_cast<u8*>(map_base) < (m_base_ptr + m_size));
 
-	// MAP_FIXED is okay here, since we've reserved the entire region, and *want* to overwrite the mapping.
 	const uint lnxmode = LinuxProt(mode);
-	void* const ptr = mmap(map_base, map_size, lnxmode, MAP_SHARED | MAP_FIXED,
-		static_cast<int>(reinterpret_cast<intptr_t>(file_handle)), static_cast<off_t>(file_offset));
-	if (ptr == MAP_FAILED) {
-        Console.Error("Explicit mmap failed: base=%p size=%zu off=%zu errno=%d (%s)", map_base, map_size, file_offset, errno, strerror(errno));
-		return nullptr;
-    }
+#if ARMSX2_ENABLE_MEMORY_MAP_DIAGNOSTICS
+	std::fprintf(stderr, "@@SMA_MAP_BEGIN@@ file=%d offset=%zu base=%p size=%zu prot=0x%x\n",
+		file_handle ? 1 : 0, file_offset, map_base, map_size, lnxmode);
+#endif
+	if (file_handle)
+	{
+		const int fd = static_cast<int>(reinterpret_cast<intptr_t>(file_handle));
+		// MAP_FIXED is okay here, since we've reserved the entire region, and *want* to overwrite the mapping.
+		void* const ptr = mmap(map_base, map_size, lnxmode, MAP_SHARED | MAP_FIXED, fd, static_cast<off_t>(file_offset));
+		if (ptr == MAP_FAILED)
+		{
+			std::fprintf(stderr, "@@SMA_MAP_FAIL@@ file=1 offset=%zu base=%p size=%zu prot=0x%x err=%d\n",
+				file_offset, map_base, map_size, lnxmode, errno);
+			return nullptr;
+		}
+	}
+	else
+	{
+		// macOS doesn't seem to allow MAP_JIT with MAP_FIXED
+		// So we do the MAP_JIT in the allocation, and just mprotect here
+		// Note that this will only work the first time for a given region
+		if (mprotect(map_base, map_size, lnxmode) < 0)
+		{
+			const int mprotect_errno = errno;
+			std::fprintf(stderr, "@@SMA_MAP_FAIL@@ file=0 offset=%zu base=%p size=%zu prot=0x%x err=%d\n",
+				file_offset, map_base, map_size, lnxmode, mprotect_errno);
+			return nullptr;
+		}
+	}
 
 	m_num_mappings++;
-	return static_cast<u8*>(ptr);
+#if ARMSX2_ENABLE_MEMORY_MAP_DIAGNOSTICS
+	std::fprintf(stderr, "@@SMA_MAP_OK@@ file=%d base=%p size=%zu prot=0x%x mappings=%zu\n",
+		file_handle ? 1 : 0, map_base, map_size, lnxmode, m_num_mappings);
+#endif
+	return static_cast<u8*>(map_base);
 }
 
-bool SharedMemoryMappingArea::Unmap(void* map_base, size_t map_size)
+bool SharedMemoryMappingArea::Unmap(void* map_base, size_t map_size, bool is_file)
 {
 	pxAssert(static_cast<u8*>(map_base) >= m_base_ptr && static_cast<u8*>(map_base) < (m_base_ptr + m_size));
 
@@ -277,6 +311,21 @@ bool SharedMemoryMappingArea::Unmap(void* map_base, size_t map_size)
 	return true;
 }
 
+#ifdef ARCH_ARM64
+
+void HostSys::FlushInstructionCache(void* address, u32 size)
+{
+#ifdef __APPLE__
+	sys_icache_invalidate(address, size);
+#else
+	__builtin___clear_cache(reinterpret_cast<char*>(address), reinterpret_cast<char*>(address) + size);
+#endif
+}
+
+#endif
+
+#ifndef __APPLE__ // These are done in DarwinMisc
+
 namespace PageFaultHandler
 {
 	static std::recursive_mutex s_exception_handler_mutex;
@@ -284,14 +333,7 @@ namespace PageFaultHandler
 	static bool s_installed = false;
 } // namespace PageFaultHandler
 
-#ifdef _M_ARM64
-
-void HostSys::FlushInstructionCache(void* address, u32 size)
-{
-    char* start = static_cast<char*>(address);
-    char* end = start + size;
-    __builtin___clear_cache(start, end);
-}
+#ifdef ARCH_ARM64
 
 [[maybe_unused]] static bool IsStoreInstruction(const void* ptr)
 {
@@ -328,7 +370,7 @@ void HostSys::FlushInstructionCache(void* address, u32 size)
 	}
 }
 
-#endif // _M_ARM64
+#endif // ARCH_ARM64
 
 namespace PageFaultHandler
 {
@@ -337,24 +379,24 @@ namespace PageFaultHandler
 
 void PageFaultHandler::SignalHandler(int sig, siginfo_t* info, void* ctx)
 {
-#if defined(__linux__) || defined(__ANDROID__)
+#if defined(__linux__)
 	void* const exception_address = reinterpret_cast<void*>(info->si_addr);
 
-#if defined(_M_X86)
+#if defined(ARCH_X86)
 	void* const exception_pc = reinterpret_cast<void*>(static_cast<ucontext_t*>(ctx)->uc_mcontext.gregs[REG_RIP]);
 	const bool is_write = (static_cast<ucontext_t*>(ctx)->uc_mcontext.gregs[REG_ERR] & 2) != 0;
-#elif defined(_M_ARM64)
+#elif defined(ARCH_ARM64)
 	void* const exception_pc = reinterpret_cast<void*>(static_cast<ucontext_t*>(ctx)->uc_mcontext.pc);
 	const bool is_write = IsStoreInstruction(exception_pc);
 #endif
 
 #elif defined(__FreeBSD__)
 
-#if defined(_M_X86)
+#if defined(ARCH_X86)
 	void* const exception_address = reinterpret_cast<void*>(static_cast<ucontext_t*>(ctx)->uc_mcontext.mc_addr);
 	void* const exception_pc = reinterpret_cast<void*>(static_cast<ucontext_t*>(ctx)->uc_mcontext.mc_rip);
 	const bool is_write = (static_cast<ucontext_t*>(ctx)->uc_mcontext.mc_err & 2) != 0;
-#elif defined(_M_ARM64)
+#elif defined(ARCH_ARM64)
 	void* const exception_address = reinterpret_cast<void*>(static_cast<ucontext_t*>(ctx)->uc_mcontext->__es.__far);
 	void* const exception_pc = reinterpret_cast<void*>(static_cast<ucontext_t*>(ctx)->uc_mcontext->__ss.__pc);
 	const bool is_write = IsStoreInstruction(exception_pc);
@@ -387,10 +429,7 @@ void PageFaultHandler::SignalHandler(int sig, siginfo_t* info, void* ctx)
 bool PageFaultHandler::Install(Error* error)
 {
 	std::unique_lock lock(s_exception_handler_mutex);
-//	pxAssertRel(!s_installed, "Page fault handler has already been installed.");
-    if(s_installed) {
-        return true;
-    }
+	pxAssertRel(!s_installed, "Page fault handler has already been installed.");
 
 	struct sigaction sa;
 
@@ -404,7 +443,7 @@ bool PageFaultHandler::Install(Error* error)
 		return false;
 	}
 
-#ifdef _M_ARM64
+#ifdef ARCH_ARM64
 	// We can get SIGBUS on ARM64.
 	if (sigaction(SIGBUS, &sa, nullptr) != 0)
 	{
@@ -416,3 +455,7 @@ bool PageFaultHandler::Install(Error* error)
 	s_installed = true;
 	return true;
 }
+
+bool PageFaultHandler::InstallSecondaryThread() { return true; }
+
+#endif // __APPLE__

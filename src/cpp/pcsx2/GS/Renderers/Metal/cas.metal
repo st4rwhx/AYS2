@@ -1,11 +1,11 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #define A_GPU 1
 #define A_MSL 1
 #define A_HALF 1
 
-#include "../../../../bin/resources/shaders/common/ffx_a.h"
+#include "shaders/common/ffx_a.h"
 
 struct CASTextureF
 {
@@ -35,7 +35,7 @@ A_STATIC AH3 CasLoadH(CASTextureH tex, ASW2 coord)
 
 A_STATIC void CasInputH(inoutAH2 r, inoutAH2 g, inoutAH2 b){}
 
-#include "../../../../bin/resources/shaders/common/ffx_cas.h"
+#include "shaders/common/ffx_cas.h"
 
 #include "GSMTLShaderCommon.h"
 

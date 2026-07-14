@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "GSMTLDeviceInfo.h"
@@ -7,46 +7,34 @@
 #include "common/Path.h"
 
 #ifdef __APPLE__
+#include <TargetConditionals.h>
 
 static id<MTLLibrary> loadMainLibrary(id<MTLDevice> dev, NSString* name)
 {
-    NSString* path = [[NSBundle mainBundle] pathForResource:name ofType:@"metallib"];
-    NSError *error = nil;
-    id<MTLLibrary> lib = path ? [dev newLibraryWithFile:path error:&error] : nil;
-    if (lib) {
-        Console.WriteLn("Debug: Metal Library '%s' loaded successfully.", [name UTF8String]);
-    } else {
-        Console.Error("Debug: Failed to load Metal Library '%s'. Path: %s", [name UTF8String], path ? [path UTF8String] : "null");
-        if (error) {
-            Console.Error("Debug: Metal Error: %s", [[error localizedDescription] UTF8String]);
-        }
-    }
-    return lib;
+	NSString* path = [[NSBundle mainBundle] pathForResource:name ofType:@"metallib"];
+	if (!path)
+	{
+		std::string ssname = std::string([name UTF8String]) + ".metallib";
+		std::string sspath = Path::Combine(EmuFolders::Resources, ssname);
+		path = [[NSString alloc] initWithBytes:sspath.data() length:sspath.length() encoding:NSUTF8StringEncoding];
+	}
+	return path ? [dev newLibraryWithFile:path error:nullptr] : nullptr;
 }
 
 static MRCOwned<id<MTLLibrary>> loadMainLibrary(id<MTLDevice> dev)
 {
-    Console.WriteLn("Debug: loadMainLibrary called.");
-    if (@available(macOS 11.0, iOS 14.0, *)) {
-        Console.WriteLn("Debug: Trying Metal23");
-        if (id<MTLLibrary> lib = loadMainLibrary(dev, @"Metal23")) return MRCTransfer(lib);
-    }
-    if (@available(macOS 10.15, iOS 13.0, *)) {
-        Console.WriteLn("Debug: Trying Metal22");
-        if (id<MTLLibrary> lib = loadMainLibrary(dev, @"Metal22")) return MRCTransfer(lib);
-    }
-    if (@available(macOS 10.14, iOS 12.0, *)) {
-        Console.WriteLn("Debug: Trying Metal21");
-        if (id<MTLLibrary> lib = loadMainLibrary(dev, @"Metal21")) return MRCTransfer(lib);
-    }
-    Console.WriteLn("Debug: Trying default");
-    if (id<MTLLibrary> lib = loadMainLibrary(dev, @"default")) return MRCTransfer(lib);
-
-    Console.WriteLn("Debug: Trying newDefaultLibrary");
-    NSString *bundlePath = [[NSBundle mainBundle] pathForResource:@"default" ofType:@"metallib"];
-    Console.WriteLn("Debug: default.metallib path: %s", bundlePath ? [bundlePath UTF8String] : "null");
-
-    return MRCTransfer([dev newDefaultLibrary]);
+	if (@available(macOS 11.0, iOS 14.0, *))
+		if (id<MTLLibrary> lib = loadMainLibrary(dev, @"Metal23"))
+			return MRCTransfer(lib);
+	if (@available(macOS 10.15, iOS 13.0, *))
+		if (id<MTLLibrary> lib = loadMainLibrary(dev, @"Metal22"))
+			return MRCTransfer(lib);
+	if (@available(macOS 10.14, iOS 12.0, *))
+		if (id<MTLLibrary> lib = loadMainLibrary(dev, @"Metal21"))
+			return MRCTransfer(lib);
+	if (id<MTLLibrary> lib = loadMainLibrary(dev, @"default"))
+		return MRCTransfer(lib);
+	return MRCTransfer([dev newDefaultLibrary]);
 }
 
 static GSMTLDevice::MetalVersion detectLibraryVersion(id<MTLLibrary> lib)
@@ -68,7 +56,7 @@ static bool detectPrimIDSupport(id<MTLDevice> dev, id<MTLLibrary> lib)
 	[desc setVertexFunction:MRCTransfer([lib newFunctionWithName:@"fs_triangle"])];
 	[desc setFragmentFunction:MRCTransfer([lib newFunctionWithName:@"primid_test"])];
 	[[desc colorAttachments][0] setPixelFormat:MTLPixelFormatR8Uint];
-	NSError* err = nil;
+	NSError* err;
 	[[dev newRenderPipelineStateWithDescriptor:desc error:&err] release];
 	return !err;
 }
@@ -160,7 +148,7 @@ GSMTLDevice::GSMTLDevice(MRCOwned<id<MTLDevice>> dev)
 
 	if (@available(macOS 11.0, iOS 13.0, *))
 		if ([dev supportsFamily:MTLGPUFamilyApple1])
-			features.framebuffer_fetch = true;
+			features.framebuffer_fetch = features.memoryless_textures = true;
 
 	if (@available(macOS 10.15, iOS 13.0, *))
 		if ([dev supportsFamily:MTLGPUFamilyMac2] || [dev supportsFamily:MTLGPUFamilyApple1])
@@ -177,20 +165,48 @@ GSMTLDevice::GSMTLDevice(MRCOwned<id<MTLDevice>> dev)
 	if (features.primid && !detectPrimIDSupport(dev, shaders))
 		features.primid = false;
 
-	if (!features.framebuffer_fetch && features.shader_version >= MetalVersion::Metal23)
+	features.depth_feedback = false;
+
+	NSString* name = [dev name];
+	if ([name containsString:@"Intel"])
 	{
-		switch (detectIntelGPU(dev, shaders))
+		if (!features.framebuffer_fetch && features.shader_version >= MetalVersion::Metal23)
 		{
-			case DetectionResult::HaswellOrNotIntel:
-				break;
-			case DetectionResult::Broadwell:
-				features.primid = false; // Broken
-				break;
-			case DetectionResult::Skylake:
-				features.primid = false; // Broken
-				features.framebuffer_fetch = true;
-				break;
+			switch (detectIntelGPU(dev, shaders))
+			{
+				case DetectionResult::HaswellOrNotIntel:
+					// Older Intel GPUs seem to be fine with depth feedback
+					features.depth_feedback = true;
+					break;
+				case DetectionResult::Broadwell:
+					features.primid = false; // Broken
+					break;
+				case DetectionResult::Skylake:
+					features.primid = false; // Broken
+					features.framebuffer_fetch = true;
+					break;
+			}
 		}
+	}
+	else if ([name containsString:@"AMD"])
+	{
+		// RDNA+ seems to work fine with depth feedback
+		if (@available(macOS 13, iOS 16, *))
+			if ([dev supportsFamily:MTLGPUFamilyMetal3])
+				features.depth_feedback = true;
+	}
+	else if ([name containsString:@"NVIDIA"])
+	{
+		// macOS only supports Kepler, which seems to work fine with depth feedback
+		features.depth_feedback = true;
+	}
+	else if ([name containsString:@"Apple"])
+	{
+		// No special settings
+	}
+	else
+	{
+		Console.Warning("Unrecognized GPU vendor %s", [name UTF8String]);
 	}
 
 	if (features.framebuffer_fetch && GSConfig.DisableFramebufferFetch)
@@ -204,22 +220,26 @@ GSMTLDevice::GSMTLDevice(MRCOwned<id<MTLDevice>> dev)
 	else
 		features.slow_color_compression = [[dev name] containsString:@"AMD"] || [[dev name] isEqualToString:@"Intel HD Graphics 4000"];
 
-	features.max_texsize = 8192;
-	// Simulator claims to support it but might fail on pipeline creation with "reading from rendertarget not supported"
-#if TARGET_OS_SIMULATOR
-	features.framebuffer_fetch = false;
-#else
-	features.framebuffer_fetch = [dev supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily1_v1];
-#endif
-#if !TARGET_OS_IPHONE
-	if ([dev supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v1])
-		features.max_texsize = 16384;
-#endif
-	if (@available(macOS 10.15, iOS 13.0, *))
-		if ([dev supportsFamily:MTLGPUFamilyApple3])
-			features.max_texsize = 16384;
+	features.max_texsize = GetMaxTextureSize(dev);
 
 	this->dev = std::move(dev);
+}
+
+u32 GSMTLDevice::GetMaxTextureSize(id<MTLDevice> dev)
+{
+	if (@available(macOS 10.15, iOS 13.0, *))
+	{
+		MTLGPUFamily apple10 = static_cast<MTLGPUFamily>(1010); // Avoid relying on latest SDK, define ourselves
+		if ([dev supportsFamily:apple10])
+			return 32768;
+		if ([dev supportsFamily:MTLGPUFamilyApple3])
+			return 16384;
+	}
+#if !TARGET_OS_IPHONE
+	if ([dev supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v1])
+		return 16384;
+#endif
+	return 8192;
 }
 
 const char* to_string(GSMTLDevice::MetalVersion ver)
@@ -231,8 +251,6 @@ const char* to_string(GSMTLDevice::MetalVersion ver)
 		case GSMTLDevice::MetalVersion::Metal22: return "Metal 2.2";
 		case GSMTLDevice::MetalVersion::Metal23: return "Metal 2.3";
 	}
-	return "Unknown";
 }
 
 #endif // __APPLE__
-
