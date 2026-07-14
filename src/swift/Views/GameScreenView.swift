@@ -363,38 +363,26 @@ struct GameScreenView: View {
         showPauseMenu = false
     }
 
-    /// The in-game pause menu, shown as a proper grouped panel (like Settings)
-    /// instead of a cramped scrolling dropdown.
+    private static let pauseTileBlue = Color(red: 0.153, green: 0.427, blue: 1.0)
+
+    /// The in-game pause menu, styled like the ELORIS-PRISM Settings hub: grouped
+    /// blue tiles instead of a plain list.
     private var pauseMenuPanel: some View {
         NavigationStack {
-            List {
-                Section(settings.localized("Display")) {
-                    Button {
-                        cycleOsdPreset()
-                    } label: {
-                        Label(settings.localized("OSD"), systemImage: "speedometer")
-                    }
-                    Toggle(isOn: $userVirtualPadVisible) {
-                        Label(settings.localized("Virtual Pad"), systemImage: "gamecontroller")
-                    }
-                    controllerSkinMenu
-                    if virtualPadHiddenByController {
-                        Text(settings.localized("Hidden while controller is connected"))
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    Toggle(isOn: Binding(
-                        get: { fullScreen },
-                        set: { newValue in
-                            fullScreen = newValue
-                            ARMSX2Bridge.setFullScreen(newValue)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    pauseGroup(settings.localized("Display")) {
+                        pauseActionTile(settings.localized("OSD"), "speedometer") { cycleOsdPreset() }
+                        pauseToggleTile(settings.localized("Virtual Pad"), "gamecontroller", isOn: userVirtualPadVisible) {
+                            userVirtualPadVisible.toggle()
                         }
-                    )) {
-                        Label(settings.localized("Full Screen"), systemImage: "arrow.up.left.and.arrow.down.right")
-                    }
-                    Toggle(isOn: Binding(
-                        get: { menuButtonHidden || settings.hideMenuButton },
-                        set: { newValue in
+                        pauseSubmenuTile(settings.localized("Controller Skin"), "paintpalette") { controllerSkinItems }
+                        pauseToggleTile(settings.localized("Full Screen"), "arrow.up.left.and.arrow.down.right", isOn: fullScreen) {
+                            fullScreen.toggle()
+                            ARMSX2Bridge.setFullScreen(fullScreen)
+                        }
+                        pauseToggleTile(settings.localized("Hide Menu"), "eye.slash", isOn: menuButtonHidden || settings.hideMenuButton) {
+                            let newValue = !(menuButtonHidden || settings.hideMenuButton)
                             settings.hideMenuButton = newValue
                             menuButtonHidden = newValue
                             if newValue {
@@ -402,82 +390,70 @@ struct GameScreenView: View {
                                 presentStatusMessage(settings.localized("Double-tap empty gameplay space to show the menu button again."))
                             }
                         }
-                    )) {
-                        Label(settings.localized("Hide Menu Button"), systemImage: "eye.slash")
+                        pauseActionTile(settings.localized("Edit Layout"), "square.resize") {
+                            openPausePanel("pad_layout") { showPadLayoutEditor = true }
+                        }
                     }
-                    Button {
-                        openPausePanel("pad_layout") { showPadLayoutEditor = true }
-                    } label: {
-                        Label(settings.localized("Edit Virtual Pad Layout"), systemImage: "square.resize")
-                    }
-                }
 
-                Section(settings.localized("Game")) {
-                    Button {
-                        openPausePanel("compatibility_lab") {
-                            refreshCompatibilityState()
-                            showCompatibilityLab = true
+                    pauseGroup(settings.localized("Game")) {
+                        pauseActionTile(settings.localized("Compatibility Lab"), "wand.and.stars") {
+                            openPausePanel("compatibility_lab") {
+                                refreshCompatibilityState()
+                                showCompatibilityLab = true
+                            }
                         }
-                    } label: {
-                        Label(settings.localized("Compatibility Lab"), systemImage: "wand.and.stars")
-                    }
-                    if gameMenuAvailable {
-                        Button {
-                            openPausePanel("per_game_settings") { openPerGameSettingsForCurrentGame() }
-                        } label: {
-                            Label(settings.localized("Per-Game Settings"), systemImage: "slider.horizontal.3")
+                        if gameMenuAvailable {
+                            pauseActionTile(settings.localized("Per-Game Settings"), "slider.horizontal.3") {
+                                openPausePanel("per_game_settings") { openPerGameSettingsForCurrentGame() }
+                            }
                         }
-                    }
-                    if vmMenuAvailable {
-                        Button {
-                            openPausePanel("speed_control") { showSpeedControl = true }
-                        } label: {
-                            Label(settings.localized("Speed / Fast Forward"), systemImage: "forward.fill")
+                        if vmMenuAvailable {
+                            pauseActionTile(settings.localized("Speed / Fast Forward"), "forward.fill") {
+                                openPausePanel("speed_control") { showSpeedControl = true }
+                            }
+                            pauseActionTile(settings.localized("Reset ROM"), "arrow.counterclockwise.circle") {
+                                openPausePanel("reset_rom") { showResetConfirmation = true }
+                            }
                         }
-                        Button {
-                            openPausePanel("reset_rom") { showResetConfirmation = true }
-                        } label: {
-                            Label(settings.localized("Reset ROM"), systemImage: "arrow.counterclockwise.circle")
+                        if gameMenuAvailable || vmMenuAvailable {
+                            pauseActionTile(settings.localized("Save / Load States"), "square.stack.3d.up.fill") {
+                                openPausePanel("save_states") { showSaveStates = true }
+                            }
                         }
-                    }
-                    if gameMenuAvailable || vmMenuAvailable {
-                        Button {
-                            openPausePanel("save_states") { showSaveStates = true }
-                        } label: {
-                            Label(settings.localized("Save / Load States"), systemImage: "square.stack.3d.up.fill")
+                        if vmMenuAvailable {
+                            pauseSubmenuTile(settings.localized("Change Disc"), "opticaldisc") { discSwapItems }
                         }
-                    }
-                    if vmMenuAvailable {
-                        discSwapMenu
-                    }
-                    if gameMenuAvailable {
-                        Button {
-                            openPausePanel("retroachievements") { showRetroAchievements = true }
-                        } label: {
-                            Label(settings.localized("RetroAchievements"), systemImage: "trophy.fill")
-                        }
-                        Button {
-                            openPausePanel("pnach_import") { showPNACHImporter = true }
-                        } label: {
-                            Label(settings.localized("Import PNACH / 60 FPS Patch"), systemImage: "wand.and.stars")
-                        }
-                        Button(role: .destructive) {
-                            showPauseMenu = false
-                            clearCurrentGameCache()
-                        } label: {
-                            Label(settings.localized("Clear Current Game Cache"), systemImage: "trash.slash")
+                        if gameMenuAvailable {
+                            pauseActionTile(settings.localized("RetroAchievements"), "trophy.fill") {
+                                openPausePanel("retroachievements") { showRetroAchievements = true }
+                            }
+                            pauseActionTile(settings.localized("Import PNACH / 60 FPS Patch"), "wand.and.stars") {
+                                openPausePanel("pnach_import") { showPNACHImporter = true }
+                            }
+                            pauseActionTile(settings.localized("Clear Game Cache"), "trash.slash", tint: .red) {
+                                showPauseMenu = false
+                                clearCurrentGameCache()
+                            }
                         }
                     }
-                }
 
-                Section {
-                    Button(role: .destructive) {
+                    Button {
                         showPauseMenu = false
                         appState.returnToMenu()
                     } label: {
                         Label(settings.localized("Back to Menu"), systemImage: "list.bullet")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                            .background(
+                                LinearGradient(colors: [.red, .red.opacity(0.8)], startPoint: .top, endPoint: .bottom),
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            )
                     }
+                    .buttonStyle(.plain)
                 }
+                .padding(16)
             }
             .navigationTitle(settings.localized("Paused"))
             .navigationBarTitleDisplayMode(.inline)
@@ -487,8 +463,112 @@ struct GameScreenView: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+    }
+
+    @ViewBuilder
+    private func pauseGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title.uppercased())
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                content()
+            }
+        }
+    }
+
+    private func pauseTileSurface(_ title: String, _ icon: String, tint: Color, isOn: Bool?) -> some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(LinearGradient(colors: [tint, tint.opacity(0.72)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            Image(systemName: icon)
+                .font(.system(size: 42, weight: .regular))
+                .foregroundStyle(.white.opacity(0.16))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(8)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Image(systemName: icon).font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                    Spacer()
+                    if let isOn {
+                        Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white.opacity(isOn ? 1 : 0.55))
+                    }
+                }
+                Spacer(minLength: 6)
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+        }
+        .frame(height: 96)
+    }
+
+    private func pauseActionTile(_ title: String, _ icon: String, tint: Color = GameScreenView.pauseTileBlue, action: @escaping () -> Void) -> some View {
+        Button(action: action) { pauseTileSurface(title, icon, tint: tint, isOn: nil) }
+            .buttonStyle(.plain)
+    }
+
+    private func pauseToggleTile(_ title: String, _ icon: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            pauseTileSurface(title, icon, tint: isOn ? GameScreenView.pauseTileBlue : Color(.systemGray3), isOn: isOn)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func pauseSubmenuTile<M: View>(_ title: String, _ icon: String, @ViewBuilder menu: () -> M) -> some View {
+        Menu { menu() } label: {
+            pauseTileSurface(title, icon, tint: GameScreenView.pauseTileBlue, isOn: nil)
+        }
+    }
+
+    @ViewBuilder
+    private var controllerSkinItems: some View {
+        ForEach(skinLibrary.allDescriptors) { skin in
+            Button {
+                skinLibrary.selectSkin(id: skin.id)
+                settings.virtualPadSkin = skin.virtualPadSkin
+                presentStatusMessage("\(settings.localized("Controller Skin")): \(settings.localized(skin.displayName))")
+            } label: {
+                Label(settings.localized(skin.displayName), systemImage: skinLibrary.selectedSkinID == skin.id ? "checkmark" : "circle")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var discSwapItems: some View {
+        Button { ejectDisc() } label: {
+            Label(settings.localized("Eject Disc"), systemImage: "eject")
+        }
+        let discs = availableDiscSwapNames
+        if discs.isEmpty {
+            Text(settings.localized("No disc images found"))
+        } else {
+            Menu {
+                ForEach(discs, id: \.self) { discName in
+                    Button { changeDisc(to: discName) } label: {
+                        Label(discName, systemImage: "opticaldisc")
+                    }
+                }
+            } label: {
+                Label(settings.localized("Insert Disc (No Reboot)"), systemImage: "tray.and.arrow.down")
+            }
+            Menu {
+                ForEach(discs, id: \.self) { discName in
+                    Button { restartWithDisc(discName) } label: {
+                        Label(discName, systemImage: "arrow.clockwise.circle")
+                    }
+                }
+            } label: {
+                Label(settings.localized("Restart With Disc"), systemImage: "arrow.clockwise.circle")
+            }
+        }
     }
 
     private var controllerSkinMenu: some View {
