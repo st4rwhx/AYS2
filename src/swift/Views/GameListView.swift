@@ -176,7 +176,7 @@ struct GameListView: View {
                     Group {
                         if games.isEmpty && appState.runningGameName == nil {
                             emptyState
-                        } else if libraryLayout == "grid" && geo.size.width > geo.size.height && landscapeCoverFlowEnabled {
+                        } else if libraryLayout == "grid" && landscapeCoverFlowEnabled {
                             coverFlowLibrary(containerSize: geo.size)
                         } else if libraryLayout == "grid" {
                             gridLibrary
@@ -213,7 +213,7 @@ struct GameListView: View {
 
                         if libraryLayout == "grid" {
                             Toggle(isOn: $landscapeCoverFlowEnabled) {
-                                Label(settings.localized("Landscape Cover Flow"), systemImage: "rectangle.landscape.rotate")
+                                Label(settings.localized("Cover Flow"), systemImage: "square.stack.3d.up")
                             }
                         }
                     } label: {
