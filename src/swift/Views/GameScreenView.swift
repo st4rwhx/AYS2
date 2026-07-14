@@ -187,7 +187,11 @@ struct GameScreenView: View {
             .preference(key: GameScreenSizePreferenceKey.self, value: geo.size)
         }
         .onPreferenceChange(GameScreenSizePreferenceKey.self) { _ in
-            syncFullscreenStateFromWindow()
+            // On newer iOS SDKs the onPreferenceChange action closure is @Sendable /
+            // nonisolated, so hop to the main actor before touching main-actor state.
+            Task { @MainActor in
+                syncFullscreenStateFromWindow()
+            }
         }
         .sheet(isPresented: $showSaveStates) {
             SaveStatesPanel { message, isImportant in
