@@ -458,7 +458,7 @@ struct GameScreenView: View {
                 Label(settings.localized("Back to Menu"), systemImage: "list.bullet")
             }
         } label: {
-            Image(systemName: "ellipsis.circle.fill")
+            Image(systemName: "pause.circle.fill")
                 .font(.title3)
                 .foregroundStyle(.white.opacity(0.5))
                 .padding(6)

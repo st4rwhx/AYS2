@@ -1,16 +1,27 @@
-// DashboardView.swift — ELORIS-PRISM console-style home (NXE shell).
+// DashboardView.swift — ELORIS-PRISM console-style home (NXE dashboard).
 // SPDX-License-Identifier: GPL-3.0+
 //
-// The ELORIS-PRISM identity layer: a light NXE field, a horizontal top nav
-// (logo · bumpers · tabs), PlayStation-blue accent and a tiled Settings hub.
-// The sections host the full ARMSX2 feature views (games, BIOS, help, settings)
-// unchanged, so no emulator functionality is lost — only the shell is ours.
+// The ELORIS-PRISM identity layer: a light/dark NXE field, a horizontal top nav
+// (logo · bumpers · tabs), PlayStation-blue accent, a swipeable row of full 3D
+// covers, and a tiled Settings hub. Games boot straight from the carousel; the
+// full ARMSX2 library (cover downloads, disc management) is one tap away.
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum DashSection: String, CaseIterable, Identifiable {
     case games = "Games", bios = "BIOS", settings = "Settings", help = "Help"
     var id: String { rawValue }
+}
+
+/// One indexed game shown in the carousel, resolved against the ARMSX2 library.
+struct DashGame: Identifiable {
+    let id: String
+    let name: String
+    let bootName: String
+    let coverURL: URL?
+    let coverSignature: String?
+    let isFavorite: Bool
 }
 
 struct DashboardView: View {
@@ -31,7 +42,7 @@ struct DashboardView: View {
     @ViewBuilder
     private var content: some View {
         switch section {
-        case .games:    GameListView()
+        case .games:    GamesCarouselView()
         case .bios:     BIOSListView()
         case .settings: SettingsGridView()
         case .help:     HelpView()
@@ -43,6 +54,14 @@ struct DashboardView: View {
 
 struct TopNav: View {
     @Binding var section: DashSection
+
+    private func step(_ delta: Int) {
+        let all = DashSection.allCases
+        guard let idx = all.firstIndex(of: section) else { return }
+        let next = (idx + delta + all.count) % all.count
+        section = all[next]
+        SoundManager.shared.play(.nav)
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -58,7 +77,9 @@ struct TopNav: View {
                         .rotationEffect(.degrees(45))
                 )
 
-            BumperPill(text: "LB")
+            // LB bumper — steps to the previous tab (matches a controller's L1).
+            Button { step(-1) } label: { BumperPill(text: "LB") }
+                .buttonStyle(.plain)
 
             // Section tabs with the active PlayStation-blue underline.
             ScrollView(.horizontal, showsIndicators: false) {
@@ -83,11 +104,303 @@ struct TopNav: View {
                 .padding(.horizontal, 2)
             }
 
-            BumperPill(text: "RB")
+            // RB bumper — steps to the next tab (matches a controller's R1).
+            Button { step(1) } label: { BumperPill(text: "RB") }
+                .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .padding(.bottom, 4)
+    }
+}
+
+// MARK: - Games as a horizontal cover carousel
+
+struct GamesCarouselView: View {
+    @State private var appState = AppState.shared
+    @State private var settings = SettingsStore.shared
+    @State private var games: [DashGame] = []
+    @State private var showImporter = false
+    @State private var showLibrary = false
+    @State private var showRestartAlert = false
+    @State private var pendingGame: DashGame?
+    @State private var actionTitle = ""
+    @State private var actionMessage = ""
+    @State private var showActionAlert = false
+
+    private var indexedText: String {
+        "\(settings.localized("Indexed")) \(games.count) \(settings.localized(games.count == 1 ? "game" : "games"))"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            if games.isEmpty {
+                emptyState
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 18) {
+                        ForEach(games) { game in
+                            coverItem(game)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                    .padding(.bottom, 16)
+                }
+                .frame(maxHeight: .infinity, alignment: .center)
+            }
+            Spacer(minLength: 0)
+            HintBar(hints: [
+                .init(button: .triangle, label: settings.localized("add game")),
+                .init(button: .cross, label: settings.localized("select")),
+                .init(button: .circle, label: settings.localized("back")),
+            ])
+        }
+        .fileImporter(isPresented: $showImporter,
+                      allowedContentTypes: [.data, .item],
+                      allowsMultipleSelection: true) { result in
+            handleImport(result)
+        }
+        .sheet(isPresented: $showLibrary) {
+            NavigationStack { GameListView() }
+        }
+        .alert(actionTitle, isPresented: $showActionAlert) {
+            Button(settings.localized("OK")) {}
+        } message: {
+            Text(actionMessage)
+        }
+        .alert(settings.localized("Restart VM?"), isPresented: $showRestartAlert) {
+            Button(settings.localized("Cancel"), role: .cancel) {}
+            Button(settings.localized("Restart"), role: .destructive) {
+                if let pendingGame { appState.shutdownAndBoot(isoName: pendingGame.bootName) }
+            }
+        } message: {
+            Text("\(settings.localized("A game is running. Shut it down and start")) \(pendingGame?.name ?? "")?")
+        }
+        .onAppear { loadGames() }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center) {
+            RetroLabel(text: indexedText)
+            Spacer()
+            Button { showLibrary = true } label: {
+                Image(systemName: "square.grid.2x2").foregroundStyle(Retro.mut)
+            }
+            Button { loadGames() } label: {
+                Image(systemName: "arrow.clockwise").foregroundStyle(Retro.mut)
+            }
+            Button { showImporter = true } label: {
+                Label(settings.localized("Import"), systemImage: "plus")
+            }
+            .buttonStyle(RetroButtonStyle())
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+    }
+
+    private func coverItem(_ game: DashGame) -> some View {
+        let isRunning = game.bootName == appState.runningGameName
+        return Button {
+            selectGame(game)
+        } label: {
+            VStack(spacing: 8) {
+                CleanCover(game: game, width: 168)
+                    .overlay(alignment: .topTrailing) {
+                        Menu {
+                            Button {
+                                toggleFavorite(game)
+                            } label: {
+                                Label(game.isFavorite ? settings.localized("Remove Favorite") : settings.localized("Add Favorite"),
+                                      systemImage: game.isFavorite ? "star.slash" : "star")
+                            }
+                            Button {
+                                showLibrary = true
+                            } label: {
+                                Label(settings.localized("Manage in Library"), systemImage: "square.grid.2x2")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Retro.ink)
+                                .frame(width: 24, height: 24)
+                                .background(RoundedRectangle(cornerRadius: 6).fill(Retro.panel.opacity(0.92)))
+                                .padding(7)
+                        }
+                    }
+                    .overlay(alignment: .topLeading) {
+                        if game.isFavorite {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.yellow)
+                                .padding(6)
+                                .background(RoundedRectangle(cornerRadius: 6).fill(Retro.panel.opacity(0.92)))
+                                .padding(7)
+                        }
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        if isRunning {
+                            Text(settings.localized("RUNNING"))
+                                .font(.system(size: 9, weight: .heavy)).tracking(1)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 7).padding(.vertical, 3)
+                                .background(Capsule().fill(Color(red: 0.30, green: 0.68, blue: 0.31)))
+                                .padding(7)
+                        }
+                    }
+                Text(displayName(game.name))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Retro.ink)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .frame(width: 168)
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(width: 168)
+    }
+
+    /// Drops the disc-image extension for a cleaner title under the cover.
+    private func displayName(_ name: String) -> String {
+        let lower = name.lowercased()
+        for ext in [".iso", ".bin", ".chd", ".img", ".elf", ".cso", ".zso", ".gz"] where lower.hasSuffix(ext) {
+            return String(name.dropLast(ext.count))
+        }
+        return name
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Image(systemName: "square.stack.3d.up.slash")
+                .font(.system(size: 54, weight: .thin))
+                .foregroundStyle(Retro.line2)
+            Text(settings.localized("No games yet"))
+                .font(.title2.weight(.bold)).foregroundStyle(Retro.ink)
+            Text(settings.localized("Import a PS2 disc image — ISO, BIN, CHD or IMG."))
+                .font(.subheadline).foregroundStyle(Retro.mut)
+                .multilineTextAlignment(.center)
+            Button { showImporter = true } label: {
+                Label(settings.localized("Import a game"), systemImage: "plus")
+            }
+            .buttonStyle(RetroButtonStyle())
+            .padding(.top, 4)
+            Spacer()
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 30)
+    }
+
+    // MARK: - Data / actions
+
+    private func selectGame(_ game: DashGame) {
+        if game.bootName == appState.runningGameName {
+            appState.returnToGame()
+            return
+        }
+        guard ARMSX2Bridge.hasBIOS() else {
+            actionTitle = settings.localized("BIOS Required")
+            actionMessage = settings.localized("Import a valid PS2 BIOS before starting games.")
+            showActionAlert = true
+            return
+        }
+        guard ARMSX2Bridge.canResolveISO(game.bootName) else {
+            loadGames()
+            return
+        }
+        if appState.runningGameName != nil {
+            pendingGame = game
+            showRestartAlert = true
+        } else {
+            appState.bootGame(isoName: game.bootName)
+        }
+    }
+
+    private func loadGames() {
+        let coverStore = CoverStore.shared
+        games = ARMSX2Bridge.availableISOEntries().compactMap { raw -> DashGame? in
+            guard let name = raw["name"] as? String, let path = raw["path"] as? String else { return nil }
+            let external = (raw["external"] as? NSNumber)?.boolValue ?? (raw["external"] as? Bool ?? false)
+            let bootName = external ? path : name
+            let fileURL = URL(fileURLWithPath: path)
+            let metadata = ARMSX2Bridge.gameMetadata(forISO: bootName)
+            let coverURL = coverStore.coverURL(forGameName: name, gamePath: fileURL, metadata: metadata)
+            let signature = CoverThumbnailCache.signature(for: coverURL)
+            return DashGame(
+                id: external ? path : fileURL.path,
+                name: name,
+                bootName: bootName,
+                coverURL: coverURL,
+                coverSignature: signature,
+                isFavorite: ARMSX2Bridge.isFavorite(bootName)
+            )
+        }
+        .sorted { a, b in
+            if a.isFavorite != b.isFavorite { return a.isFavorite }
+            return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        }
+    }
+
+    private func toggleFavorite(_ game: DashGame) {
+        ARMSX2Bridge.setFavorite(game.bootName, favorite: !game.isFavorite)
+        loadGames()
+    }
+
+    private func handleImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            for url in urls { _ = FileImportHandler.shared.handleURL(url) }
+            loadGames()
+        case .failure(let error):
+            actionTitle = settings.localized("Import")
+            actionMessage = "\(settings.localized("Import failed:")) \(error.localizedDescription)"
+            showActionAlert = true
+        }
+    }
+}
+
+/// A game's cover art shown whole and uncropped at true PS2 case proportions —
+/// the full artwork with a soft drop shadow so it reads as a physical 3D box.
+struct CleanCover: View {
+    let game: DashGame
+    var width: CGFloat = 168
+
+    @State private var image: UIImage?
+
+    private var height: CGFloat { width * Retro.coverRatio }
+
+    var body: some View {
+        ZStack {
+            Retro.panel2
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                LinearGradient(colors: [Retro.panel, Retro.panel2], startPoint: .top, endPoint: .bottom)
+                Text(game.name)
+                    .font(.system(size: width * 0.11, weight: .semibold))
+                    .foregroundStyle(Retro.mut)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(4)
+                    .padding(10)
+            }
+        }
+        .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .strokeBorder(Retro.line2, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.28), radius: 12, x: 0, y: 10)
+        .task(id: game.coverURL) {
+            image = nil
+            guard let url = game.coverURL else { return }
+            let data = await Task.detached { try? Data(contentsOf: url) }.value
+            if let data { image = UIImage(data: data) }
+        }
     }
 }
 
@@ -138,7 +451,6 @@ struct SettingsTile<Destination: View>: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(LinearGradient(colors: [Retro.accent, Retro.accentDeep],
                                          startPoint: .topLeading, endPoint: .bottomTrailing))
-                // Big translucent icon, bottom-right.
                 Image(systemName: systemImage)
                     .font(.system(size: 58, weight: .regular))
                     .foregroundStyle(.white.opacity(0.20))
