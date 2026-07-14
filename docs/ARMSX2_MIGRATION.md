@@ -35,9 +35,17 @@ mismatches = cascade of breakage).
 4. Keep JIT entitlements (StikDebug flow).
 
 ### Phases (each: CI-green by me → device-test by user before relying on it)
-- **P1 – Baseline**: import ARMSX2 2.4.1 tree (root core + `platforms/ios`), set
-  bundle id `com.balaj.elorisprism`, app name ELORIS-PRISM. Get CI to build an
-  unsigned IPA. (Their build verbatim first — prove it compiles green in our CI.)
+- **P1 – Baseline**: import ARMSX2 iOSv2.3.0 clean core, set bundle id
+  `com.balaj.elorisprism`, app name ELORIS-PRISM. Get CI to build an unsigned IPA.
+  ✅ **DONE — CI GREEN on `7ea136d` (2026-07-14), 18.2 MB IPA produced.**
+  Bundle id `com.balaj.elorisprism` + name ELORIS-PRISM verified in the built
+  product (CI `-DARMSX2_BUNDLE_IDENTIFIER`, CMake `XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER`,
+  Info.plist `CFBundleIdentifier=$(PRODUCT_BUNDLE_IDENTIFIER)`, `CFBundleDisplayName=ELORIS-PRISM`).
+  Fixes it took: cmake modules, discord-rpc(iOS), 3rdparty/include sync,
+  imgui 1.91.9b→1.92.8, rcheevos v11.5.0→v12.3.0, TARGET_OS_IPHONE via both PCHs,
+  Swift onPreferenceChange main-actor hop. Core `pcsx2/`+`common/` proven
+  byte-identical to iOSv2.3.0 except the two intentional PCH lines; all other
+  3rdparty diffs audited and confirmed benign. NEXT: device-test by user.
 - **P2 – Branding**: our icon (IMG_4570), splash (prism), LaunchBackgroundColor,
   display name. Verify bundle id + data-dir compatibility on device.
 - **P3 – SideStore/CI**: fold our `build-ios.yml` niceties (version pin
