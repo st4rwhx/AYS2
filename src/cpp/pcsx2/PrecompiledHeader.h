@@ -8,6 +8,14 @@
 #	pragma warning(disable:4250) //'class' inherits 'method' via dominance
 #endif
 
+// Ensure Apple's TARGET_OS_* macros (e.g. TARGET_OS_IPHONE) are defined for every
+// translation unit that relies on them via the precompiled header. Some sources
+// (GSPng.cpp, SaveState.cpp, Image.cpp, ...) branch on TARGET_OS_IPHONE without
+// including TargetConditionals.h themselves, and would otherwise treat it as 0.
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+
 #include "common/Pcsx2Defs.h"
 #include "common/VectorIntrin.h"
 
