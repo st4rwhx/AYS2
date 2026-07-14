@@ -53,6 +53,20 @@ Last known-good installable build = run #101 (`6465644`). The migration lands on
 the same branch but the user only installs a build after it goes CI-green AND they
 device-test it. Any red/staged commit is never the "ship" build.
 
-## Open questions for the user
-- P4: adopt ARMSX2's frontend (recolor) vs re-port our custom dashboard?
-- Confirm the app data dir path matches so an in-place update keeps their games.
+## Decisions locked
+- **P4 (UI): keep OUR DashboardView/RetroKit as the top-level menu**, layered over
+  ARMSX2's frontend + bridge. We ADOPT all their machinery (core, settings stores,
+  skins/patches/covers, native bridge) but our NXE PlayStation-blue dashboard is
+  the front door, wired to their EmulatorBridge/AppState.
+- **Base: a recent ARMSX2 release tag (latest `v2.5.x`, e.g. v2.5.103), NOT
+  master** (master HEAD is mid monorepo-refactor / unstable). Pin the exact commit
+  for reproducibility.
+- **Data-dir compatibility CONFIRMED**: ARMSX2 uses the same EmuFolders subdirs
+  (`bios`, `sstates`, `memcards`) → same-bundle-id update keeps games/BIOS/saves.
+  (Re-verify the `iso`/games dir in P2.)
+
+## Practical note
+Full tree migration is a large, multi-build effort; CI (compile) verified by the
+assistant, runtime verified on-device by the user. Build #101 (`6465644`) stays the
+installable build until the migrated tree is CI-green AND device-tested. Disk in a
+single session is limited — the ARMSX2 base may need a shallow/pinned checkout.
