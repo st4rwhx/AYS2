@@ -36,6 +36,11 @@ struct DashboardView: View {
                 content
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            CommunityBar()
+                .padding(.trailing, 16)
+                .padding(.bottom, 22)
+        }
         .tint(Retro.accent)
     }
 

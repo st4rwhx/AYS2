@@ -23,6 +23,7 @@ struct RootView: View {
     @State private var settings = SettingsStore.shared
     @State private var fileImporter = FileImportHandler.shared
     @State private var showBootSplash = true
+    @State private var showCommunityWelcome = false
 
     var body: some View {
         ZStack {
@@ -39,6 +40,12 @@ struct RootView: View {
                 BootSplashView {
                     withAnimation(.easeOut(duration: 0.2)) {
                         showBootSplash = false
+                    }
+                    // Warm Discord / GitHub-star invite, once the splash clears.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        if appState.currentScreen == .menu {
+                            showCommunityWelcome = true
+                        }
                     }
                 }
                 .transition(.opacity)
@@ -63,6 +70,9 @@ struct RootView: View {
             Button(settings.localized("OK")) {}
         } message: {
             Text(fileImporter.lastImportMessage ?? "")
+        }
+        .sheet(isPresented: $showCommunityWelcome) {
+            CommunityWelcomeView()
         }
     }
 }

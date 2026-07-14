@@ -138,6 +138,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	set(SWIFT_SOURCES
 		${CMAKE_SOURCE_DIR}/../swift/Views/RootView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/DashboardView.swift
+		${CMAKE_SOURCE_DIR}/../swift/Views/CommunityView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/RetroKit.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/TermsOfUseView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/SoundManager.swift
