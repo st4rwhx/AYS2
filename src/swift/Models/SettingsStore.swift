@@ -3,6 +3,7 @@
 
 import Foundation
 import SwiftUI
+import UIKit
 
 /// [P51] OSD preset levels
 enum OsdPreset: Int, CaseIterable {
@@ -59,6 +60,30 @@ enum JITScriptProtocol: String, CaseIterable, Identifiable {
             return .legacy
         default:
             return .universal
+        }
+    }
+}
+
+/// App-wide appearance choice. `.system` follows the device; the others force
+/// light or dark across the whole app (NXE chrome + ARMSX2 views).
+enum AppColorScheme: String, CaseIterable, Identifiable {
+    case system, light, dark
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .system: return "System"
+        case .light:  return "Light"
+        case .dark:   return "Dark"
+        }
+    }
+
+    /// UIKit interface style to apply on the window.
+    var interfaceStyle: UIUserInterfaceStyle {
+        switch self {
+        case .system: return .unspecified
+        case .light:  return .light
+        case .dark:   return .dark
         }
     }
 }
@@ -595,6 +620,13 @@ final class SettingsStore: @unchecked Sendable {
         }
     }
     var libraryBackgroundRevision = 0
+    /// App-wide appearance preference. Drives the window's interface style so both
+    /// our NXE chrome and the underlying ARMSX2 views flip together.
+    var appColorScheme: AppColorScheme {
+        didSet {
+            UserDefaults.standard.set(appColorScheme.rawValue, forKey: "ARMSX2iOSAppColorScheme")
+        }
+    }
     var libraryBackgroundDim: Double {
         didSet {
             let clamped = Self.clampedLibraryBackgroundDim(libraryBackgroundDim)
@@ -787,6 +819,7 @@ final class SettingsStore: @unchecked Sendable {
         libraryLandscapeBackgroundPath = UserDefaults.standard.string(forKey: "ARMSX2iOSLibraryLandscapeBackgroundPath") ?? ""
         let savedDim = UserDefaults.standard.object(forKey: "ARMSX2iOSLibraryBackgroundDim") as? Double
         libraryBackgroundDim = Self.clampedLibraryBackgroundDim(savedDim ?? 0.35)
+        appColorScheme = AppColorScheme(rawValue: UserDefaults.standard.string(forKey: "ARMSX2iOSAppColorScheme") ?? "") ?? .system
         normalizeDEV9Settings()
         VPadSkinLibraryStore.shared.adoptLegacySelection(virtualPadSkin)
         ARMSX2Bridge.setINIString("EmuCore/GS", key: "AspectRatio", value: Self.aspectRatioName(for: aspectRatio))

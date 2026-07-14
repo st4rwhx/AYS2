@@ -4,6 +4,20 @@
 import SwiftUI
 import UIKit
 
+/// Applies the chosen appearance to every window. Driving the UIKit interface
+/// style (rather than only SwiftUI's preferredColorScheme) makes BOTH our NXE
+/// chrome (adaptive Retro colors) and the underlying ARMSX2 system-coloured
+/// views flip together, so light/dark is consistent across the whole app.
+@MainActor
+private func applyAppColorScheme(_ scheme: AppColorScheme) {
+    let style = scheme.interfaceStyle
+    for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+        for window in scene.windows {
+            window.overrideUserInterfaceStyle = style
+        }
+    }
+}
+
 struct RootView: View {
     @State private var appState = AppState.shared
     @State private var settings = SettingsStore.shared
@@ -34,7 +48,11 @@ struct RootView: View {
         .environment(\.layoutDirection, settings.localizedLayoutDirection)
         .statusBarHidden(showBootSplash)
         .onAppear {
+            applyAppColorScheme(settings.appColorScheme)
             StikDebugLauncher.autoOpenIfNeeded(reason: "app launch")
+        }
+        .onChange(of: settings.appColorScheme) { _, newValue in
+            applyAppColorScheme(newValue)
         }
         .onOpenURL { url in
             if !ARMSX2DeepLinkHandler.handle(url) {

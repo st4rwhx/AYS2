@@ -22,6 +22,18 @@ struct AppearanceSettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                Picker(settings.localized("Theme"), selection: $settings.appColorScheme) {
+                    ForEach(AppColorScheme.allCases) { scheme in
+                        Text(settings.localized(scheme.label)).tag(scheme)
+                    }
+                }
+            } header: {
+                Text(settings.localized("Appearance"))
+            } footer: {
+                Text(settings.localized("Choose Light, Dark, or follow the system. Applies across the whole app."))
+            }
+
             Section(settings.localized("Library Background")) {
                 Text(settings.localized("Use a custom image behind your game library."))
                     .font(.caption)

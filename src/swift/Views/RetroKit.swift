@@ -7,23 +7,36 @@
 // Native SwiftUI — no third-party code.
 
 import SwiftUI
+import UIKit
+
+/// Builds a Color that adapts to the active light/dark interface style, so the
+/// whole NXE design system flips together with the app's appearance setting.
+private func dyn(
+    _ light: (Double, Double, Double),
+    _ dark: (Double, Double, Double)
+) -> Color {
+    Color(uiColor: UIColor { tc in
+        let c = tc.userInterfaceStyle == .dark ? dark : light
+        return UIColor(red: c.0, green: c.1, blue: c.2, alpha: 1)
+    })
+}
 
 enum Retro {
-    // Light NXE base — airy, near-white with a faint cool tint.
-    static let bg     = Color(red: 0.929, green: 0.941, blue: 0.961) // #EDF0F5
-    static let bg2    = Color(red: 0.882, green: 0.902, blue: 0.937) // #E1E6EF (left band)
-    static let panel  = Color.white
-    static let panel2 = Color(red: 0.957, green: 0.965, blue: 0.980) // #F4F6FA
-    static let line   = Color(red: 0.827, green: 0.847, blue: 0.886) // #D3D8E2
-    static let line2  = Color(red: 0.737, green: 0.765, blue: 0.816) // #BCC3D0
+    // NXE base — airy near-white in light, deep near-black in dark.
+    static let bg     = dyn((0.929, 0.941, 0.961), (0.055, 0.063, 0.075)) // #EDF0F5 / #0E1013
+    static let bg2    = dyn((0.882, 0.902, 0.937), (0.082, 0.090, 0.110)) // #E1E6EF / #15171C
+    static let panel  = dyn((1.000, 1.000, 1.000), (0.106, 0.114, 0.141)) // white  / #1B1D24
+    static let panel2 = dyn((0.957, 0.965, 0.980), (0.141, 0.153, 0.196)) // #F4F6FA / #242732
+    static let line   = dyn((0.827, 0.847, 0.886), (0.165, 0.176, 0.212)) // #D3D8E2 / #2A2D36
+    static let line2  = dyn((0.737, 0.765, 0.816), (0.227, 0.243, 0.290)) // #BCC3D0 / #3A3E4A
 
-    // Ink on light.
-    static let ink    = Color(red: 0.106, green: 0.114, blue: 0.141) // #1B1D24
-    static let mut    = Color(red: 0.353, green: 0.376, blue: 0.439) // #5A6070
-    static let faint  = Color(red: 0.541, green: 0.565, blue: 0.627) // #8A90A0
+    // Ink — dark on light, near-white on dark.
+    static let ink    = dyn((0.106, 0.114, 0.141), (0.941, 0.945, 0.961)) // #1B1D24 / #F0F1F5
+    static let mut    = dyn((0.353, 0.376, 0.439), (0.604, 0.631, 0.698)) // #5A6070 / #9AA1B2
+    static let faint  = dyn((0.541, 0.565, 0.627), (0.420, 0.447, 0.502)) // #8A90A0 / #6B7280
 
-    /// PlayStation blue accent (the console-dashboard tile colour).
-    static let accent     = Color(red: 0.153, green: 0.427, blue: 1.0)  // #2769FF
+    /// PlayStation blue accent (works on both light and dark fields).
+    static let accent     = Color(red: 0.153, green: 0.427, blue: 1.0)   // #2769FF
     static let accentDeep = Color(red: 0.102, green: 0.310, blue: 0.800) // #1A4FCC
 
     static let mono = Font.system(.footnote, design: .monospaced)

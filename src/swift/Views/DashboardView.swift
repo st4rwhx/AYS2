@@ -25,7 +25,6 @@ struct DashboardView: View {
                 content
             }
         }
-        .preferredColorScheme(.light)   // NXE dashboard is always light
         .tint(Retro.accent)
     }
 
@@ -111,6 +110,8 @@ struct SettingsGridView: View {
                                  systemImage: "gamecontroller") { GamepadSettingsView() }
                     SettingsTile(title: "Virtual Pad", subtitle: "Touch · Layout · Scale",
                                  systemImage: "hand.draw") { VirtualPadSettingsView() }
+                    SettingsTile(title: "Appearance", subtitle: "Theme · Background",
+                                 systemImage: "circle.lefthalf.filled") { AppearanceSettingsView() }
                     SettingsTile(title: "System", subtitle: "Sounds · About · Version",
                                  systemImage: "gearshape") { SystemSettingsView() }
                 }
