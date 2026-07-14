@@ -16,7 +16,7 @@ struct RootView: View {
             case .menu:
                 Color(uiColor: .systemGroupedBackground)
                     .ignoresSafeArea()
-                MenuTabView()
+                DashboardView()
             case .playing:
                 GameScreenView()
             }
