@@ -58,9 +58,27 @@ device-test it. Any red/staged commit is never the "ship" build.
   ARMSX2's frontend + bridge. We ADOPT all their machinery (core, settings stores,
   skins/patches/covers, native bridge) but our NXE PlayStation-blue dashboard is
   the front door, wired to their EmulatorBridge/AppState.
-- **Base: a recent ARMSX2 release tag (latest `v2.5.x`, e.g. v2.5.103), NOT
-  master** (master HEAD is mid monorepo-refactor / unstable). Pin the exact commit
-  for reproducibility.
+- **Base: `iOSv2.3.0`** (ARMSX2's latest SHIPPING iOS release, 2026-06-20;
+  commit will be pinned). NOT master, NOT the `v2.5.x` tags.
+  - `v2.5.x` tags = desktop/core only, NO iOS app.
+  - master = mid monorepo-refactor, iOS CI marked non-blocking (may be red);
+    its "clean" core (vtlb 1605) is the DESKTOP core WITHOUT the iOS-necessary
+    fastmem workarounds — not what ships on iPhone.
+  - `iOSv2.3.0` = same layout as our fork (`app/src/main/{cpp,swift}`, vendored
+    core + 3rdparty), proven buildable/shipped, and is ~5 weeks newer than our
+    2026-05-14 fork base.
+
+## CORRECTION to the diagnosis (verified against iOSv2.3.0, the RIGHT upstream)
+- **Fastmem is NOT our divergence.** Our `vtlb.cpp` (2389) ≈ ARMSX2 iOS release
+  (2369). The dual-map/TXM fastmem workarounds are ARMSX2's iOS *standard*
+  (needed on real devices). The earlier "clean 1605" was master's DESKTOP core.
+- **Our real bloat vs the iOS release**: `Counters.cpp` 7179 vs 1073 (×6.7),
+  `iR5900.cpp` 7135 vs 2738 (×2.6), `recVTLB.cpp` 2253 vs 1072 (×2.1),
+  `DarwinMisc.cpp` 2172 vs 1265 (×1.7). These are our own debug probes +
+  per-address hacks, added AFTER forking instead of tracking ARMSX2's fixes.
+- So the migration to iOSv2.3.0 removes OUR ~9000 lines of accumulated
+  hand-debugging and picks up 5 weeks of their upstream fixes, while keeping the
+  same (correct) iOS fastmem approach.
 - **Data-dir compatibility CONFIRMED**: ARMSX2 uses the same EmuFolders subdirs
   (`bios`, `sstates`, `memcards`) → same-bundle-id update keeps games/BIOS/saves.
   (Re-verify the `iso`/games dir in P2.)
