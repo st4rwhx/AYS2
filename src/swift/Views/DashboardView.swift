@@ -82,8 +82,8 @@ struct TopNav: View {
                         .rotationEffect(.degrees(45))
                 )
 
-            // LB bumper — steps to the previous tab (matches a controller's L1).
-            Button { step(-1) } label: { BumperPill(text: "LB") }
+            // L1 bumper — steps to the previous tab (matches a controller's L1).
+            Button { step(-1) } label: { BumperPill(text: "L1") }
                 .buttonStyle(.plain)
 
             // Section tabs with the active PlayStation-blue underline.
@@ -109,8 +109,8 @@ struct TopNav: View {
                 .padding(.horizontal, 2)
             }
 
-            // RB bumper — steps to the next tab (matches a controller's R1).
-            Button { step(1) } label: { BumperPill(text: "RB") }
+            // R1 bumper — steps to the next tab (matches a controller's R1).
+            Button { step(1) } label: { BumperPill(text: "R1") }
                 .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
