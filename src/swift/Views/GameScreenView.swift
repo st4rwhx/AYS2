@@ -103,6 +103,8 @@ struct GameScreenView: View {
     @State private var showRetroAchievements = false
     @State private var showPadLayoutEditor = false
     @State private var showResetConfirmation = false
+    @State private var showPauseMenu = false
+    @State private var pendingPauseAction: (() -> Void)?
     @State private var runtimePerGameSettingsEntry: ISOEntry?
     @State private var runtimePerGameSettings: [String: Any]?
     @State private var runtimePadLayoutIdentity: PadLayoutGameIdentity?
@@ -200,6 +202,14 @@ struct GameScreenView: View {
                     displayDuration: isImportant ? Self.importantStatusDisplayDuration : Self.briefStatusDisplayDuration
                 )
             }
+        }
+        .sheet(isPresented: $showPauseMenu, onDismiss: {
+            if let action = pendingPauseAction {
+                pendingPauseAction = nil
+                action()
+            }
+        }) {
+            pauseMenuPanel
         }
         .sheet(isPresented: $showSpeedControl) {
             SpeedControlPanel(settings: settings)
@@ -332,131 +342,9 @@ struct GameScreenView: View {
     }
 
     private func menuButton() -> some View {
-        Menu {
-            Button {
-                cycleOsdPreset()
-            } label: {
-                Label(settings.localized("OSD"), systemImage: "speedometer")
-            }
-            Toggle(isOn: $userVirtualPadVisible) {
-                Label(settings.localized("Virtual Pad"), systemImage: "gamecontroller")
-            }
-            controllerSkinMenu
-            if virtualPadHiddenByController {
-                Text(settings.localized("Hidden while controller is connected"))
-            }
-            Toggle(isOn: Binding(
-                get: { fullScreen },
-                set: { newValue in
-                    fullScreen = newValue
-                    ARMSX2Bridge.setFullScreen(newValue)
-                }
-            )) {
-                Label(settings.localized("Full Screen"), systemImage: "arrow.up.left.and.arrow.down.right")
-            }
-            Toggle(isOn: Binding(
-                get: { menuButtonHidden || settings.hideMenuButton },
-                set: { newValue in
-                    settings.hideMenuButton = newValue
-                    menuButtonHidden = newValue
-                    if newValue {
-                        presentStatusMessage(settings.localized("Double-tap empty gameplay space to show the menu button again."))
-                    }
-                }
-            )) {
-                Label(settings.localized("Hide Menu Button"), systemImage: "eye.slash")
-            }
-            Button {
-                presentQuickMenuPanel("pad_layout") {
-                    showPadLayoutEditor = true
-                }
-            } label: {
-                Label(settings.localized("Edit Virtual Pad Layout"), systemImage: "square.resize")
-            }
-
-            Divider()
-
-            Button {
-                presentQuickMenuPanel("compatibility_lab") {
-                    refreshCompatibilityState()
-                    showCompatibilityLab = true
-                }
-            } label: {
-                Label(settings.localized("Compatibility Lab"), systemImage: "wand.and.stars")
-            }
-
-            if gameMenuAvailable {
-                Button {
-                    presentQuickMenuPanel("per_game_settings") {
-                        openPerGameSettingsForCurrentGame()
-                    }
-                } label: {
-                    Label(settings.localized("Per-Game Settings"), systemImage: "slider.horizontal.3")
-                }
-            }
-
-            if vmMenuAvailable {
-                Button {
-                    presentQuickMenuPanel("speed_control") {
-                        showSpeedControl = true
-                    }
-                } label: {
-                    Label(settings.localized("Speed / Fast Forward"), systemImage: "forward.fill")
-                }
-
-                Button {
-                    presentQuickMenuPanel("reset_rom") {
-                        showResetConfirmation = true
-                    }
-                } label: {
-                    Label(settings.localized("Reset ROM"), systemImage: "arrow.counterclockwise.circle")
-                }
-            }
-
-            if gameMenuAvailable || vmMenuAvailable {
-                Button {
-                    presentQuickMenuPanel("save_states") {
-                        showSaveStates = true
-                    }
-                } label: {
-                    Label(settings.localized("Save / Load States"), systemImage: "square.stack.3d.up.fill")
-                }
-            }
-
-            if vmMenuAvailable {
-                discSwapMenu
-            }
-
-            if gameMenuAvailable {
-                Button {
-                    presentQuickMenuPanel("retroachievements") {
-                        showRetroAchievements = true
-                    }
-                } label: {
-                    Label(settings.localized("RetroAchievements"), systemImage: "trophy.fill")
-                }
-
-                Button {
-                    presentQuickMenuPanel("pnach_import") {
-                        showPNACHImporter = true
-                    }
-                } label: {
-                    Label(settings.localized("Import PNACH / 60 FPS Patch"), systemImage: "wand.and.stars")
-                }
-
-                Button {
-                    clearCurrentGameCache()
-                } label: {
-                    Label(settings.localized("Clear Current Game Cache"), systemImage: "trash.slash")
-                }
-            }
-
-            Divider()
-            Button {
-                appState.returnToMenu()
-            } label: {
-                Label(settings.localized("Back to Menu"), systemImage: "list.bullet")
-            }
+        Button {
+            SoundManager.shared.play(.nav)
+            showPauseMenu = true
         } label: {
             Image(systemName: "pause.circle.fill")
                 .font(.title3)
@@ -464,6 +352,143 @@ struct GameScreenView: View {
                 .padding(6)
                 .background(.black.opacity(0.15), in: Circle())
         }
+    }
+
+    /// Dismisses the pause panel, then runs the action once it has fully left the
+    /// screen (via the sheet's onDismiss) so the follow-up sheet/panel can present
+    /// without colliding with the still-animating pause sheet.
+    private func openPausePanel(_ name: String, _ action: @escaping () -> Void) {
+        NSLog("[ARMSX2 iOS QuickMenu] present \(name)")
+        pendingPauseAction = action
+        showPauseMenu = false
+    }
+
+    /// The in-game pause menu, shown as a proper grouped panel (like Settings)
+    /// instead of a cramped scrolling dropdown.
+    private var pauseMenuPanel: some View {
+        NavigationStack {
+            List {
+                Section(settings.localized("Display")) {
+                    Button {
+                        cycleOsdPreset()
+                    } label: {
+                        Label(settings.localized("OSD"), systemImage: "speedometer")
+                    }
+                    Toggle(isOn: $userVirtualPadVisible) {
+                        Label(settings.localized("Virtual Pad"), systemImage: "gamecontroller")
+                    }
+                    controllerSkinMenu
+                    if virtualPadHiddenByController {
+                        Text(settings.localized("Hidden while controller is connected"))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    Toggle(isOn: Binding(
+                        get: { fullScreen },
+                        set: { newValue in
+                            fullScreen = newValue
+                            ARMSX2Bridge.setFullScreen(newValue)
+                        }
+                    )) {
+                        Label(settings.localized("Full Screen"), systemImage: "arrow.up.left.and.arrow.down.right")
+                    }
+                    Toggle(isOn: Binding(
+                        get: { menuButtonHidden || settings.hideMenuButton },
+                        set: { newValue in
+                            settings.hideMenuButton = newValue
+                            menuButtonHidden = newValue
+                            if newValue {
+                                showPauseMenu = false
+                                presentStatusMessage(settings.localized("Double-tap empty gameplay space to show the menu button again."))
+                            }
+                        }
+                    )) {
+                        Label(settings.localized("Hide Menu Button"), systemImage: "eye.slash")
+                    }
+                    Button {
+                        openPausePanel("pad_layout") { showPadLayoutEditor = true }
+                    } label: {
+                        Label(settings.localized("Edit Virtual Pad Layout"), systemImage: "square.resize")
+                    }
+                }
+
+                Section(settings.localized("Game")) {
+                    Button {
+                        openPausePanel("compatibility_lab") {
+                            refreshCompatibilityState()
+                            showCompatibilityLab = true
+                        }
+                    } label: {
+                        Label(settings.localized("Compatibility Lab"), systemImage: "wand.and.stars")
+                    }
+                    if gameMenuAvailable {
+                        Button {
+                            openPausePanel("per_game_settings") { openPerGameSettingsForCurrentGame() }
+                        } label: {
+                            Label(settings.localized("Per-Game Settings"), systemImage: "slider.horizontal.3")
+                        }
+                    }
+                    if vmMenuAvailable {
+                        Button {
+                            openPausePanel("speed_control") { showSpeedControl = true }
+                        } label: {
+                            Label(settings.localized("Speed / Fast Forward"), systemImage: "forward.fill")
+                        }
+                        Button {
+                            openPausePanel("reset_rom") { showResetConfirmation = true }
+                        } label: {
+                            Label(settings.localized("Reset ROM"), systemImage: "arrow.counterclockwise.circle")
+                        }
+                    }
+                    if gameMenuAvailable || vmMenuAvailable {
+                        Button {
+                            openPausePanel("save_states") { showSaveStates = true }
+                        } label: {
+                            Label(settings.localized("Save / Load States"), systemImage: "square.stack.3d.up.fill")
+                        }
+                    }
+                    if vmMenuAvailable {
+                        discSwapMenu
+                    }
+                    if gameMenuAvailable {
+                        Button {
+                            openPausePanel("retroachievements") { showRetroAchievements = true }
+                        } label: {
+                            Label(settings.localized("RetroAchievements"), systemImage: "trophy.fill")
+                        }
+                        Button {
+                            openPausePanel("pnach_import") { showPNACHImporter = true }
+                        } label: {
+                            Label(settings.localized("Import PNACH / 60 FPS Patch"), systemImage: "wand.and.stars")
+                        }
+                        Button(role: .destructive) {
+                            showPauseMenu = false
+                            clearCurrentGameCache()
+                        } label: {
+                            Label(settings.localized("Clear Current Game Cache"), systemImage: "trash.slash")
+                        }
+                    }
+                }
+
+                Section {
+                    Button(role: .destructive) {
+                        showPauseMenu = false
+                        appState.returnToMenu()
+                    } label: {
+                        Label(settings.localized("Back to Menu"), systemImage: "list.bullet")
+                    }
+                }
+            }
+            .navigationTitle(settings.localized("Paused"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(settings.localized("Done")) { showPauseMenu = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private var controllerSkinMenu: some View {
