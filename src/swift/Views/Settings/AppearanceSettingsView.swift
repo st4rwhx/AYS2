@@ -22,6 +22,7 @@ struct AppearanceSettingsView: View {
 
     var body: some View {
         Form {
+            // ELORIS-PRISM: theme picker (seam)
             Section {
                 Picker(settings.localized("Theme"), selection: $settings.appColorScheme) {
                     ForEach(AppColorScheme.allCases) { scheme in

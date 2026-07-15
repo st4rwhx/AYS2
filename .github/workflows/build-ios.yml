@@ -138,6 +138,7 @@ jobs:
           # ARMSX2_VERSION (2.2.x); only the outward-facing bundle version is
           # rewritten here. Without this the store refuses to install with
           # "The downloaded version does not match the version specified by the source".
+          # ELORIS-PRISM: pin IPA version to SideStore feed version 0.1.<run> (seam)
           VERSION="0.1.${GITHUB_RUN_NUMBER}"
           APP_PLIST="$GITHUB_WORKSPACE/Payload/ARMSX2iOS.app/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_PLIST"

@@ -176,6 +176,7 @@ struct GameListView: View {
                     Group {
                         if games.isEmpty && appState.runningGameName == nil {
                             emptyState
+                        // ELORIS-PRISM: cover flow in portrait too, not landscape-only (seam)
                         } else if libraryLayout == "grid" && landscapeCoverFlowEnabled {
                             coverFlowLibrary(containerSize: geo.size)
                         } else if libraryLayout == "grid" {

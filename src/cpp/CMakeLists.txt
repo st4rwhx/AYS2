@@ -26,6 +26,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	if(ARMSX2_MAC_CATALYST)
 		set(ARMSX2_DEFAULT_BUNDLE_IDENTIFIER "com.armsx2.macos")
 	else()
+		# ELORIS-PRISM: bundle id (seam) — HARD CONSTRAINT, never change (preserves install/data)
 		set(ARMSX2_DEFAULT_BUNDLE_IDENTIFIER "com.balaj.elorisprism")
 	endif()
 	set(ARMSX2_BUNDLE_IDENTIFIER "${ARMSX2_DEFAULT_BUNDLE_IDENTIFIER}" CACHE STRING "Apple bundle identifier")
@@ -137,6 +138,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 
 	set(SWIFT_SOURCES
 		${CMAKE_SOURCE_DIR}/../swift/Views/RootView.swift
+		# ELORIS-PRISM: additive Swift sources (seam) — DashboardView..DiscordLogoShape, SoundManager, TermsOfUseView
 		${CMAKE_SOURCE_DIR}/../swift/Views/DashboardView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/CommunityView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/DiscordLogoShape.swift
