@@ -1,4 +1,4 @@
-// ELORIS-PRISM — source proxy + one-tap SideStore install redirect.
+// AYS2 — source proxy + one-tap SideStore install redirect.
 // Cloudflare Worker, free tier.
 //
 // Routes:
@@ -12,7 +12,7 @@
 // so only the small JSON is served here — no bandwidth cost.
 
 const UPSTREAM =
-  "https://github.com/ayanodeath/ELORIS-PRISM/releases/download/latest/source.json";
+  "https://github.com/st4rwhx/AYS2/releases/download/latest/source.json";
 const CACHE_TTL = 300; // seconds
 
 export default {
@@ -48,7 +48,7 @@ async function serveSource(request, ctx) {
   if (!response) {
     const upstream = await fetch(UPSTREAM, {
       cf: { cacheTtl: CACHE_TTL, cacheEverything: true },
-      headers: { "user-agent": "eloris-prism-source-worker" },
+      headers: { "user-agent": "ays2-source-worker" },
     });
     if (!upstream.ok) return new Response("source unavailable", { status: 502 });
     const body = await upstream.text();
@@ -57,7 +57,7 @@ async function serveSource(request, ctx) {
         "content-type": "application/json; charset=utf-8",
         "cache-control": `public, max-age=${CACHE_TTL}`,
         "access-control-allow-origin": "*",
-        "x-eloris-source": "cloudflare-worker",
+        "x-ays2-source": "cloudflare-worker",
       },
     });
     ctx.waitUntil(cache.put(cacheKey, response.clone()));
@@ -75,7 +75,7 @@ function installPage(feed) {
   return `<!doctype html><html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Add ELORIS-PRISM to SideStore</title>
+<title>Add AYS2 to SideStore</title>
 <style>
   :root{color-scheme:dark}
   *{box-sizing:border-box}
@@ -98,7 +98,7 @@ function installPage(feed) {
   code{background:rgba(0,0,0,.25);padding:2px 6px;border-radius:6px;font-size:11px;word-break:break-all}
 </style></head><body>
   <div class="card">
-    <h1>Add ELORIS-PRISM</h1>
+    <h1>Add AYS2</h1>
     <p>Opening SideStore to add the source. If nothing happens, tap the button.</p>
     <a class="btn" href="${sidestore}">Add to SideStore</a>
     <a class="btn alt" href="${altstore}">Use AltStore instead</a>

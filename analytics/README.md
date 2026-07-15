@@ -1,4 +1,4 @@
-# ELORIS-PRISM — Anonymous diagnostics
+# AYS2 — Anonymous diagnostics
 
 When the app crashes or hits a fatal error, it sends an **anonymous** report so
 bugs can be found and fixed. No account, no personal data — a random install
@@ -52,7 +52,7 @@ before the new log truncates it) and, **only if** it contains a crash
    `wrangler.toml` sets `REPORT_REPO`. Optionally also
    `wrangler secret put INGEST_KEY` and set the same value in the app to reject
    junk POSTs.
-4. Copy the deployed URL (e.g. `https://eloris-telemetry.<you>.workers.dev`).
+4. Copy the deployed URL (e.g. `https://ays2-telemetry.<you>.workers.dev`).
 5. Put it in the app: set `TelemetryManager.endpointString` in
    `src/swift/Models/TelemetryManager.swift`. While it's empty the uploader is a
    safe no-op, so nothing is sent until you deploy.

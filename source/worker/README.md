@@ -1,10 +1,10 @@
-# ELORIS-PRISM — short source URL (free)
+# AYS2 — short source URL (free)
 
 Turns the long GitHub release URL into a short, clean SideStore source:
 
 ```
-before:  https://github.com/ayanodeath/ELORIS-PRISM/releases/download/latest/source.json
-after:   https://elorisprism.<your-account>.workers.dev
+before:  https://github.com/st4rwhx/AYS2/releases/download/latest/source.json
+after:   https://aysx2.<your-account>.workers.dev
 ```
 
 It's a tiny Cloudflare Worker that proxies + caches the `source.json` from the
@@ -25,7 +25,7 @@ The IPA/icon downloads stay on GitHub Releases, so there's no bandwidth cost.
    cd source/worker
    wrangler deploy
    ```
-4. Wrangler prints the URL, e.g. `https://elorisprism.<your-account>.workers.dev`.
+4. Wrangler prints the URL, e.g. `https://aysx2.<your-account>.workers.dev`.
    The `<your-account>` part is your account's workers.dev subdomain (set it once
    in the Cloudflare dashboard → Workers & Pages → *your subdomain* if prompted).
 
@@ -41,7 +41,7 @@ The Worker also serves a redirect page that turns a normal `https://` link into
 a one-tap "Add to SideStore":
 
 ```
-https://elorisprism.<your-account>.workers.dev/install
+https://aysx2.<your-account>.workers.dev/install
 ```
 
 Share **that** link (bio, Discord, website). On iOS it opens SideStore and
@@ -57,11 +57,11 @@ Routes summary:
 - `/` and `/source.json` → the source feed (add this in SideStore)
 - `/install` (or `/add`) → the one-tap redirect page (share this with people)
 
-## If you later buy `elorisprism.app`
+## If you later buy `aysx2.app`
 
 Add it as a custom domain to this same Worker (Cloudflare dashboard →
 the Worker → Triggers → Custom Domains). The source URL then becomes simply
-`https://elorisprism.app`. No code change needed.
+`https://aysx2.app`. No code change needed.
 
 ## Note
 

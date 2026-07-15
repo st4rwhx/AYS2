@@ -1,4 +1,4 @@
-name = "eloris-telemetry"
+name = "ays2-telemetry"
 main = "worker.js"
 compatibility_date = "2024-11-01"
 
