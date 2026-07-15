@@ -3,6 +3,8 @@ name: Remove imported/ directory
 on:
   push:
     branches: [main]
+    paths:
+      - '.github/workflows/remove-imported.yml'
   workflow_dispatch:
 
 permissions:
@@ -19,15 +21,15 @@ jobs:
 
       - name: Remove imported/ directory
         run: |
+          if [ ! -d "imported" ]; then
+            echo "imported/ directory does not exist, nothing to do"
+            exit 0
+          fi
           git config user.name "st4rwhx"
           git config user.email "psycowrlds@gmail.com"
-          git rm -r imported/ --quiet || true
-          if git diff --cached --quiet; then
-            echo "Nothing to remove"
-          else
-            git commit -m "Remove imported/ directory (old fork snapshot)
+          git rm -r imported/ --quiet
+          git commit -m "Remove imported/ directory (old fork snapshot)
 
 This directory contained thousands of files from an old fork snapshot
 that are no longer needed. Removed via GitHub Actions."
-            git push
-          fi
+          git push
