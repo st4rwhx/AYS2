@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 import SwiftUI
-import PhotosUI
+import PhotosPI
 import UIKit
 
 struct AppearanceSettingsView: View {
@@ -22,7 +22,7 @@ struct AppearanceSettingsView: View {
 
     var body: some View {
         Form {
-            // ELORIS-PRISM: theme picker (seam)
+            // AYS2: theme picker (seam)
             Section {
                 Picker(settings.localized("Theme"), selection: $settings.appColorScheme) {
                     ForEach(AppColorScheme.allCases) { scheme in

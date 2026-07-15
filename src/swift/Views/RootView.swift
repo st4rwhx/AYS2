@@ -31,7 +31,7 @@ struct RootView: View {
             case .menu:
                 Color(uiColor: .systemGroupedBackground)
                     .ignoresSafeArea()
-                DashboardView()   // ELORIS-PRISM: NXE dashboard instead of the tab menu (seam)
+                DashboardView()   // AYS2: NXE dashboard instead of the tab menu (seam)
             case .playing:
                 GameScreenView()
             }
