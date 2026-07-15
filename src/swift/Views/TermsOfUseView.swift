@@ -21,7 +21,7 @@ struct TermsOfUseView: View {
                             .padding(.bottom, 4)
                     }
                     section("1. No warranty",
-                            "ELORIS-PRISM is provided \u{201C}as is\u{201D}, without warranty of any kind. You use it at your own risk.")
+                            "AYS2 is provided \u{201C}as is\u{201D}, without warranty of any kind. You use it at your own risk.")
                     section("2. Your content",
                             "You must legally own any game or BIOS image you use. This app contains no copyrighted games or BIOS and does not help you obtain them. You alone are responsible for the legality of the files you load.")
                     section("3. Anonymous diagnostics",

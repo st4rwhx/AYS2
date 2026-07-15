@@ -14,9 +14,9 @@
     <string>$(PRODUCT_NAME)</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
-    <!-- ELORIS-PRISM: display name (seam) -->
+    <!-- AYS2: display name (seam) -->
     <key>CFBundleDisplayName</key>
-    <string>ELORIS-PRISM</string>
+    <string>AYS2</string>
     <key>CFBundleIconFiles</key>
     <array>
         <string>icon-60</string>
@@ -63,7 +63,7 @@
     <array>
         <dict>
             <key>CFBundleURLName</key>
-            <string>ELORIS-PRISM</string>
+            <string>AYS2</string>
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>armsx2</string>

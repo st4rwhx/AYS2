@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# eloris-overlay.sh — the ELORIS-PRISM overlay tool.
+# eloris-overlay.sh — the AYS2 overlay tool.
 #
 # Makes the "ride on top of ARMSX2 without breaking our stuff" pattern operational.
 # See docs/ELORIS_OVERLAY.md for the full contract.
 #
-#   ./scripts/eloris-overlay.sh seams        # every ELORIS seam (marked edits)
+#   ./scripts/eloris-overlay.sh seams        # every AYS2 seam (marked edits)
 #   ./scripts/eloris-overlay.sh additive     # our files upstream never has
 #   ./scripts/eloris-overlay.sh diff <UPSTREAM>   # core parity vs an ARMSX2 checkout
 #
@@ -18,15 +18,15 @@ cmd="${1:-help}"
 
 case "$cmd" in
   seams)
-    echo "== ELORIS-PRISM seams (marked edits inside upstream files) =="
-    grep -rn "ELORIS-PRISM:" src/ .github/ 2>/dev/null || echo "(none found)"
+    echo "== AYS2 seams (marked edits inside upstream files) =="
+    grep -rn "AYS2:" src/ .github/ 2>/dev/null || echo "(none found)"
     echo
     echo "Seam files:"
-    grep -rl "ELORIS-PRISM:" src/ .github/ 2>/dev/null | sort
+    grep -rl "AYS2:" src/ .github/ 2>/dev/null | sort
     ;;
 
   additive)
-    echo "== ELORIS-PRISM additive files (100% ours) =="
+    echo "== AYS2 additive files (100% ours) =="
     for f in \
       src/swift/Views/DashboardView.swift \
       src/swift/Views/RetroKit.swift \
@@ -50,7 +50,7 @@ case "$cmd" in
         | sed "s#$ucpp/##; s#src/cpp/##" || true
     done
     echo
-    echo "Any differing file NOT carrying an ELORIS-PRISM marker is drift — investigate."
+    echo "Any differing file NOT carrying an AYS2 marker is drift — investigate."
     ;;
 
   *)

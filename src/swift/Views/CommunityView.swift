@@ -8,11 +8,11 @@ import SwiftUI
 
 enum CommunityLinks {
     static let discord = URL(string: "https://discord.gg/AXAzExECSv")!
-    static let github = URL(string: "https://github.com/ayanodeath/ELORIS-PRISM")!
+    static let github = URL(string: "https://github.com/st4rwhx/AYS2")!
 
     /// Discord "blurple".
     static let blurple = Color(red: 0.345, green: 0.396, blue: 0.949)
-    /// ELORIS-PRISM accent (matches the controller skin / prism).
+    /// AYS2 accent (matches the controller skin / prism).
     static let prism = Color(red: 0.29, green: 0.56, blue: 1.0)
 }
 
@@ -43,7 +43,7 @@ struct CommunityWelcomeView: View {
                     .shadow(color: CommunityLinks.prism.opacity(0.6), radius: 16)
 
                 VStack(spacing: 6) {
-                    Text("Welcome to ELORIS-PRISM")
+                    Text("Welcome to AYS2")
                         .font(.title2.bold())
                         .foregroundStyle(.white)
                     Text("A passion-built PS2 experience for iOS.")
@@ -73,7 +73,7 @@ struct CommunityWelcomeView: View {
                 Spacer(minLength: 4)
 
                 Button { dismiss() } label: {
-                    Text("Continue to ELORIS-PRISM")
+                    Text("Continue to AYS2")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)

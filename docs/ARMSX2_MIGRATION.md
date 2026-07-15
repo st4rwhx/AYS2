@@ -1,4 +1,4 @@
-# ELORIS-PRISM ← ARMSX2 core migration plan
+# AYS2 ← ARMSX2 core migration plan
 
 ## Why
 Our tree is an **old snapshot of ARMSX2 + ~3000 lines of hand-patches** (Counters.cpp
@@ -11,7 +11,7 @@ faults on TLB-using games (GTA SA) → demote-to-slow → ~37–50 fps, degradin
 ## Verified facts (research)
 - ARMSX2 (`github.com/ARMSX2/ARMSX2`, GPL-3.0) is the **upstream our whole app forked
   from** — same C++ core AND same iOS Swift shell (`SwiftUIHost/EmulatorBridge/
-  AppState/SettingsStore/FileImportHandler/PadLayoutStore...`).
+AppState/SettingsStore/FileImportHandler/PadLayoutStore...`).
 - Current ARMSX2 = **2.4.1 (build 241)**. iOS frontend = SwiftUI, Metal-only.
 - iOS build = `platforms/ios/app/src/main/cpp/CMakeLists.txt`, CMake **Xcode**
   generator, unsigned IPA (same as our SideStore flow).
@@ -23,7 +23,7 @@ faults on TLB-using games (GTA SA) → demote-to-slow → ~37–50 fps, degradin
   newer **universal `brk #0xf00d` (JIT26)** registration with timeout→`brk #0x69`
   fallback that our older DarwinMisc lacks.
 
-## Strategy: adopt ARMSX2 2.4.1 tree, re-skin as ELORIS-PRISM
+## Strategy: adopt ARMSX2 2.4.1 tree, re-skin as AYS2
 Least-error path = base on their **tested** tree/build verbatim, change only what's
 ours. Do NOT hand-merge their code into our old diverged layout (header/struct
 mismatches = cascade of breakage).
@@ -36,11 +36,11 @@ mismatches = cascade of breakage).
 
 ### Phases (each: CI-green by me → device-test by user before relying on it)
 - **P1 – Baseline**: import ARMSX2 iOSv2.3.0 clean core, set bundle id
-  `, app name ELORIS-PRISM. Get CI to build an unsigned IPA.
+  `, app name AYS2. Get CI to build an unsigned IPA.
   ✅ **DONE — CI GREEN on `7ea136d` (2026-07-14), 18.2 MB IPA produced.**
-  Bundle id` + name ELORIS-PRISM verified in the built
+  Bundle id` + name AYS2 verified in the built
   product (CI `-DARMSX2_BUNDLE_IDENTIFIER`, CMake `XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER`,
-  Info.plist `CFBundleIdentifier=$(PRODUCT_BUNDLE_IDENTIFIER)`, `CFBundleDisplayName=ELORIS-PRISM`).
+  Info.plist `CFBundleIdentifier=$(PRODUCT_BUNDLE_IDENTIFIER)`, `CFBundleDisplayName=AYS2`).
   Fixes it took: cmake modules, discord-rpc(iOS), 3rdparty/include sync,
   imgui 1.91.9b→1.92.8, rcheevos v11.5.0→v12.3.0, TARGET_OS_IPHONE via both PCHs,
   Swift onPreferenceChange main-actor hop. Core `pcsx2/`+`common/` proven
@@ -50,7 +50,7 @@ mismatches = cascade of breakage).
   display name. Verify bundle id + data-dir compatibility on device.
 - **P3 – SideStore/CI**: fold our `build-ios.yml` niceties (version pin
   `0.1.${RUN}`, versioned immutable IPA URL, checksums, rolling release,
-  source.json publish to ayanodeath/ELORIS-PRISM) onto their build.
+  source.json publish to st4rwhx/AYS2) onto their build.
 - **P4 – UI**: decide — adopt ARMSX2's richer SwiftUI frontend and just recolor to
   our PlayStation-blue NXE, OR port our DashboardView/RetroKit over their bridge.
   (ARMSX2's frontend is more complete than ours now: skins, patches, covers.)

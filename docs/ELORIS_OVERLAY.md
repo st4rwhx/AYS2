@@ -1,6 +1,6 @@
-# ELORIS-PRISM Overlay — how we ride on top of ARMSX2 without breaking
+# AYS2 Overlay — how we ride on top of ARMSX2 without breaking
 
-ELORIS-PRISM is a **downstream skin + hardening layer** on top of the ARMSX2 iOS
+AYS2 is a **downstream skin + hardening layer** on top of the ARMSX2 iOS
 emulator core. ARMSX2 moves fast (native ARM64 recompiler landing phase by phase,
 NEON audio, Metal GS work). We want **every ARMSX2 update for free**, without our
 own UI/branding/JIT fixes getting clobbered — and we want to be able to **spot
@@ -13,20 +13,20 @@ or move a divergence, update this file in the same commit.
 
 ## 1. The golden rule
 
-> **Everything ELORIS is either (a) a NEW file the upstream never touches, or
+> **Everything AYS2 is either (a) a NEW file the upstream never touches, or
 > (b) a MINIMAL, MARKED edit inside an upstream file.**
 
 The smaller and more marked our footprint, the more mechanical every rebase is.
 Every hand-edit we make inside an upstream file MUST carry the marker
 
 ```
-ELORIS-PRISM:
+AYS2:
 ```
 
 so the entire seam surface is greppable in one command:
 
 ```sh
-grep -rn "ELORIS-PRISM:" src/
+grep -rn "AYS2:" src/
 ```
 
 If a change can live in a new file instead of editing an upstream file, it MUST.
@@ -60,11 +60,11 @@ Copied forward untouched on every rebase.
 | `src/cpp/ios_main.mm` | JIT protocol default → `legacy` (brk #0x69) + one-time V2 migration |
 | `src/cpp/pcsx2/PrecompiledHeader.h` | `#include <TargetConditionals.h>` so `TARGET_OS_IPHONE` resolves |
 | `src/cpp/common/PrecompiledHeader.h` | same TargetConditionals include |
-| `src/cpp/pcsx2/ImGui/ImGuiOverlays.cpp` | in-game OSD brand → `ELORIS-PRISM` |
-| `src/cpp/pcsx2/ImGui/FullscreenUI.cpp` | fullscreen heading brand → `ELORIS-PRISM` |
-| `src/cpp/ARMSX2Bridge.mm` | `buildVersion()` → `ELORIS-PRISM v…` |
+| `src/cpp/pcsx2/ImGui/ImGuiOverlays.cpp` | in-game OSD brand → `AYS2` |
+| `src/cpp/pcsx2/ImGui/FullscreenUI.cpp` | fullscreen heading brand → `AYS2` |
+| `src/cpp/ARMSX2Bridge.mm` | `buildVersion()` → `AYS2 v…` |
 | `src/cpp/CMakeLists.txt` | bundle id app name, our SWIFT_SOURCES additions |
-| `src/cpp/Info.plist.in` | `CFBundleDisplayName` → ELORIS-PRISM |
+| `src/cpp/Info.plist.in` | `CFBundleDisplayName` → AYS2 |
 | `.github/workflows/build-ios.yml` | pin IPA version to `0.1.<run>`, SideStore publish, checksums |
 
 ### 2c. Hard constraints (never violate on any rebase)
@@ -91,7 +91,7 @@ tags).
 4. **Re-apply the additive files** (§2a) — they're ours, copy forward as-is.
 5. **Re-apply each seam** (§2b). For upstream files that changed between tags,
    3-way it: take upstream's new version, then re-insert our marked edit. Grep
-   `ELORIS-PRISM:` on the OLD tree to see exactly what to re-insert.
+   `AYS2:` on the OLD tree to see exactly what to re-insert.
 6. **Re-verify the hard constraints** (§2c).
 7. **Build green in CI**, fixing 3rdparty version couplings as they surface
    (the pattern is always: find the exact cause in the new tree → minimal fix).
@@ -112,7 +112,7 @@ diff every release and **read their work like an open book**. Use that.
 1. **Mine each release diff** (`log OLDTAG..NEWTAG`) for:
    - **Stubs / "Phase N" / TODO / skeleton** — the ARM64 EE recompiler (`pcsx2/arm64/aR5900*`, `aVU*`) is explicitly *incremental*; its own header says "skeleton, stubs, interpreter is ground truth until functional." That is a **map of what's not done yet**.
    - Files touched repeatedly across releases = their current hot area = where the perf/compat is still being won.
-2. **Track the gaps** in `docs/ELORIS_GAPS.md` (create as needed): for each known
+2. **Track the gaps** in `docs/AYS2_GAPS.md` (create as needed): for each known
    incomplete area, note where it is, why it's slow/broken, and whether we can
    help (a targeted fix upstream) or route around it (per-game setting, iOS tuning).
 3. **Win on iOS-specific ground they under-invest in** — this is our edge:
