@@ -16,7 +16,7 @@ faults on TLB-using games (GTA SA) → demote-to-slow → ~37–50 fps, degradin
 - iOS build = `platforms/ios/app/src/main/cpp/CMakeLists.txt`, CMake **Xcode**
   generator, unsigned IPA (same as our SideStore flow).
 - **Bundle id is a CMake cache var** `ARMSX2_BUNDLE_IDENTIFIER` (default
-  `com.armsx2.ios`). We set it to `com.balaj.elorisprism` → HARD constraint kept.
+  `com.armsx2.ios`). We set it to` → HARD constraint kept.
 - Entitlements: `com.apple.security.cs.allow-jit`,
   `allow-unsigned-executable-memory`, `get-task-allow`. iOS deploy target 17.0.
 - iOS 26 killed MAP_JIT for everyone → dual-map+TXM is the only path; ARMSX2 has a
@@ -29,16 +29,16 @@ ours. Do NOT hand-merge their code into our old diverged layout (header/struct
 mismatches = cascade of breakage).
 
 ### Hard constraints (never break)
-1. Bundle id **stays `com.balaj.elorisprism`** (user cannot reinstall / would lose app data).
+1. Bundle id **stays ** (user cannot reinstall / would lose app data).
 2. Same Documents/ layout so existing games/BIOS/saves survive an in-place update.
 3. Keep SideStore distribution (unsigned IPA, versioned URL, source.json) + our CI.
 4. Keep JIT entitlements (StikDebug flow).
 
 ### Phases (each: CI-green by me → device-test by user before relying on it)
 - **P1 – Baseline**: import ARMSX2 iOSv2.3.0 clean core, set bundle id
-  `com.balaj.elorisprism`, app name ELORIS-PRISM. Get CI to build an unsigned IPA.
+  `, app name ELORIS-PRISM. Get CI to build an unsigned IPA.
   ✅ **DONE — CI GREEN on `7ea136d` (2026-07-14), 18.2 MB IPA produced.**
-  Bundle id `com.balaj.elorisprism` + name ELORIS-PRISM verified in the built
+  Bundle id` + name ELORIS-PRISM verified in the built
   product (CI `-DARMSX2_BUNDLE_IDENTIFIER`, CMake `XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER`,
   Info.plist `CFBundleIdentifier=$(PRODUCT_BUNDLE_IDENTIFIER)`, `CFBundleDisplayName=ELORIS-PRISM`).
   Fixes it took: cmake modules, discord-rpc(iOS), 3rdparty/include sync,
