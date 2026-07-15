@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 import SwiftUI
-import PhotosPI
+import PhotosUI
 import UIKit
 
 struct AppearanceSettingsView: View {
