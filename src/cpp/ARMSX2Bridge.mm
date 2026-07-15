@@ -2041,8 +2041,8 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
 
 + (nonnull NSString *)buildVersion {
     NSString *ver = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"?";
-    // ELORIS-PRISM: About/version brand (seam)
-    return [NSString stringWithFormat:@"ELORIS-PRISM v%@", ver];
+    // AYS2: About/version brand (seam)
+    return [NSString stringWithFormat:@"AYS2 v%@", ver];
 }
 
 + (BOOL)isJITAvailable {

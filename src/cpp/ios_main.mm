@@ -755,7 +755,7 @@ static int ARMSX2GetIOSMajorVersion()
 
 static const char* ARMSX2DefaultJITScriptProtocol()
 {
-    // ELORIS-PRISM: JIT default = legacy brk #0x69 (seam) — StikDebug handshake.
+    // AYS2: JIT default = legacy brk #0x69 (seam) — StikDebug handshake.
     // brk #0x69 (the DolphiniOS / StikDebug "Dolphin.js" handshake) is the JIT
     // registration path that actually works on iOS sideload setups, including
     // iOS 26. The "universal" brk #0xf00d protocol needs an enabler almost nobody

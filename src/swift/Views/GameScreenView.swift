@@ -365,8 +365,8 @@ struct GameScreenView: View {
 
     private static let pauseTileBlue = Color(red: 0.153, green: 0.427, blue: 1.0)
 
-    // ELORIS-PRISM: pause button icon + tile pause menu (seam)
-    /// The in-game pause menu, styled like the ELORIS-PRISM Settings hub: grouped
+    // AYS2: pause button icon + tile pause menu (seam)
+    /// The in-game pause menu, styled like the AYS2 Settings hub: grouped
     /// blue tiles instead of a plain list.
     private var pauseMenuPanel: some View {
         NavigationStack {

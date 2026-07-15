@@ -620,7 +620,7 @@ final class SettingsStore: @unchecked Sendable {
         }
     }
     var libraryBackgroundRevision = 0
-    // ELORIS-PRISM: app-wide light/dark theme setting (seam)
+    // AYS2: app-wide light/dark theme setting (seam)
     /// App-wide appearance preference. Drives the window's interface style so both
     /// our NXE chrome and the underlying ARMSX2 views flip together.
     var appColorScheme: AppColorScheme {
