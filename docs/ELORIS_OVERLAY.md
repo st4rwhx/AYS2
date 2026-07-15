@@ -63,12 +63,12 @@ Copied forward untouched on every rebase.
 | `src/cpp/pcsx2/ImGui/ImGuiOverlays.cpp` | in-game OSD brand → `ELORIS-PRISM` |
 | `src/cpp/pcsx2/ImGui/FullscreenUI.cpp` | fullscreen heading brand → `ELORIS-PRISM` |
 | `src/cpp/ARMSX2Bridge.mm` | `buildVersion()` → `ELORIS-PRISM v…` |
-| `src/cpp/CMakeLists.txt` | bundle id `com.balaj.elorisprism`, app name, our SWIFT_SOURCES additions |
+| `src/cpp/CMakeLists.txt` | bundle id app name, our SWIFT_SOURCES additions |
 | `src/cpp/Info.plist.in` | `CFBundleDisplayName` → ELORIS-PRISM |
 | `.github/workflows/build-ios.yml` | pin IPA version to `0.1.<run>`, SideStore publish, checksums |
 
 ### 2c. Hard constraints (never violate on any rebase)
-- **Bundle id stays `com.balaj.elorisprism`** — changing it loses the user's install/data.
+- **Bundle id stays — changing it loses the user's install/data.
 - Keep the JIT default = `legacy` (brk #0x69 / StikDebug) on iOS.
 - Keep `TargetConditionals.h` in both PCHs (our vendored zlib doesn't pull it).
 - SideStore IPA version must equal `source.json` version (`0.1.<run>`).
