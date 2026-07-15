@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - '.github/workflows/remove-imported.yml'
+      - 'TRIGGER_REMOVE'
   workflow_dispatch:
 
 permissions:
