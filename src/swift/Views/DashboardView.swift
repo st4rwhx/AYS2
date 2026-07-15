@@ -1,7 +1,7 @@
-// DashboardView.swift — ELORIS-PRISM console-style home (NXE dashboard).
+// DashboardView.swift — AYS2 console-style home (NXE dashboard).
 // SPDX-License-Identifier: GPL-3.0+
 //
-// The ELORIS-PRISM identity layer: a light/dark NXE field, a horizontal top nav
+// The AYS2 identity layer: a light/dark NXE field, a horizontal top nav
 // (logo · bumpers · tabs), PlayStation-blue accent, a swipeable row of full 3D
 // covers, and a tiled Settings hub. Games boot straight from the carousel; the
 // full ARMSX2 library (cover downloads, disc management) is one tap away.
