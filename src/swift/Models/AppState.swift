@@ -6,6 +6,7 @@ import SwiftUI
 @Observable
 final class AppState: @unchecked Sendable {
     static let shared = AppState()
+    static let systemChromeNeedsUpdateNotification = Notification.Name("ARMSX2iOSSystemChromeNeedsUpdate")
 
     enum Screen {
         case menu
@@ -15,7 +16,20 @@ final class AppState: @unchecked Sendable {
     var currentScreen: Screen = .menu
     var selectedTab: Int = 0
     var runningGameName: String? = nil
-    var hideStatusBar: Bool = false
+    var hideStatusBar: Bool = false {
+        didSet {
+            if oldValue != hideStatusBar {
+                NotificationCenter.default.post(name: Self.systemChromeNeedsUpdateNotification, object: nil)
+            }
+        }
+    }
+    var hideHomeIndicator: Bool = false {
+        didSet {
+            if oldValue != hideHomeIndicator {
+                NotificationCenter.default.post(name: Self.systemChromeNeedsUpdateNotification, object: nil)
+            }
+        }
+    }
 
     @ObservationIgnored private var pendingBootAction: (() -> Void)?
     @ObservationIgnored private var shutdownObserver: NSObjectProtocol?
@@ -24,7 +38,7 @@ final class AppState: @unchecked Sendable {
 
     private init() {
         shutdownObserver = NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("iPSX2VMDidShutdown"),
+            forName: NSNotification.Name("ARMSX2iOSVMDidShutdown"),
             object: nil, queue: .main
         ) { [weak self] _ in
             self?.runningGameName = nil
@@ -39,7 +53,7 @@ final class AppState: @unchecked Sendable {
 
         // [P48] Auto-boot: ObjC side posts this notification to switch UI to game screen
         autoBootObserver = NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("iPSX2AutoBootDidStart"),
+            forName: NSNotification.Name("ARMSX2iOSAutoBootDidStart"),
             object: nil, queue: .main
         ) { [weak self] _ in
             self?.runningGameName = "AutoBoot"
@@ -48,30 +62,46 @@ final class AppState: @unchecked Sendable {
     }
 
     func bootGame(isoName: String) {
-        iPSX2Bridge.bootISO(isoName)
-        iPSX2Bridge.requestVMBoot()
+        Task { @MainActor in
+            StikDebugLauncher.autoOpenIfNeeded(reason: "game boot")
+        }
+        ARMSX2Bridge.bootISO(isoName)
+        ARMSX2Bridge.prepareGameRenderViewForCurrentRenderer()
         runningGameName = isoName
         currentScreen = .playing
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            ARMSX2Bridge.requestVMBoot()
+        }
     }
 
     func bootBIOSOnly() {
-        iPSX2Bridge.setINIString("GameISO", key: "BootISO", value: "")
-        iPSX2Bridge.requestVMBoot()
+        Task { @MainActor in
+            StikDebugLauncher.autoOpenIfNeeded(reason: "BIOS boot")
+        }
+        ARMSX2Bridge.setINIString("GameISO", key: "BootISO", value: "")
+        ARMSX2Bridge.prepareGameRenderViewForCurrentRenderer()
         runningGameName = "BIOS"
         currentScreen = .playing
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            ARMSX2Bridge.requestVMBoot()
+        }
     }
 
     func returnToMenu() {
+        if ARMSX2Bridge.isVMRunning() {
+            ARMSX2Bridge.setVMPaused(true)
+        }
         currentScreen = .menu
         // [P44-2] Restore opaque background on hosting controller
-        NotificationCenter.default.post(name: NSNotification.Name("iPSX2ReturnToMenu"), object: nil)
+        NotificationCenter.default.post(name: NSNotification.Name("ARMSX2iOSReturnToMenu"), object: nil)
     }
 
     func returnToGame() {
         if runningGameName != nil {
             // [P44-2] Clear background so Metal surface shows through
-            NotificationCenter.default.post(name: NSNotification.Name("iPSX2EnterGameScreen"), object: nil)
+            NotificationCenter.default.post(name: NSNotification.Name("ARMSX2iOSEnterGameScreen"), object: nil)
             currentScreen = .playing
+            ARMSX2Bridge.setVMPaused(false)
         }
     }
 
@@ -79,13 +109,23 @@ final class AppState: @unchecked Sendable {
         pendingBootAction = { [weak self] in
             self?.bootGame(isoName: isoName)
         }
-        iPSX2Bridge.requestVMShutdown()
+        ARMSX2Bridge.requestVMShutdown()
     }
 
     func shutdownAndBootBIOS() {
         pendingBootAction = { [weak self] in
             self?.bootBIOSOnly()
         }
-        iPSX2Bridge.requestVMShutdown()
+        ARMSX2Bridge.requestVMShutdown()
+    }
+
+    func resetCurrentVM() {
+        guard let runningGameName else { return }
+
+        if runningGameName == "BIOS" {
+            shutdownAndBootBIOS()
+        } else {
+            shutdownAndBoot(isoName: runningGameName)
+        }
     }
 }

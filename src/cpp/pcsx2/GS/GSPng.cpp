@@ -1,18 +1,18 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "GSPng.h"
 #include "GSExtra.h"
 #include "common/FileSystem.h"
 #include <zlib.h>
-#if !TARGET_OS_IPHONE
+#if !TARGET_OS_IPHONE && !defined(iPSX2_MACOS)
 #include <png.h>
 #endif
 
 namespace GSPng
 {
 
-#if !TARGET_OS_IPHONE
+#if !TARGET_OS_IPHONE && !defined(iPSX2_MACOS)
 	bool SaveFile(const std::string& file, const Format fmt, const u8* const image,
 		u8* const row, const int width, const int height, const int pitch,
 		const int compression, const bool rb_swapped = false, const bool first_image = false)
@@ -37,7 +37,7 @@ namespace GSPng
 		if (compression < 0 || compression > Z_BEST_COMPRESSION)
 			compression = Z_BEST_SPEED;
 
-#if !TARGET_OS_IPHONE
+#if !TARGET_OS_IPHONE && !defined(iPSX2_MACOS)
 		std::unique_ptr<u8[]> row(new u8[pixel[fmt].bytes_per_pixel_out * w]);
 
 		std::string filename = root + pixel[fmt].extension[0];

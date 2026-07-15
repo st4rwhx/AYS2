@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "Common.h"
@@ -47,7 +47,11 @@ static void _vu1Exec(VURegs* VU)
 		if (VU0.VI[REG_FBRST].UL & 0x400)
 		{
 			VU0.VI[REG_VPU_STAT].UL |= 0x200;
-			hwIntcIrq(INTC_VU1);
+#ifdef ARCH_ARM64
+			extern bool g_mvuShadowRun; // MVU_DIFF shadow: don't raise a real INTC
+			if (!g_mvuShadowRun)
+#endif
+				hwIntcIrq(INTC_VU1);
 			VU->ebit = 1;
 		}
 	}
@@ -56,7 +60,11 @@ static void _vu1Exec(VURegs* VU)
 		if (VU0.VI[REG_FBRST].UL & 0x800)
 		{
 			VU0.VI[REG_VPU_STAT].UL |= 0x400;
-			hwIntcIrq(INTC_VU1);
+#ifdef ARCH_ARM64
+			extern bool g_mvuShadowRun; // MVU_DIFF shadow: don't raise a real INTC
+			if (!g_mvuShadowRun)
+#endif
+				hwIntcIrq(INTC_VU1);
 			VU->ebit = 1;
 		}
 	}
@@ -189,8 +197,7 @@ static void _vu1Exec(VURegs* VU)
 	{
 		if (VU->ebit-- == 1)
 		{
-			CliffDiag::vu1Ebit.fetch_add(1, std::memory_order_relaxed); // [CLIFF_DIAG]
-			VU->VIBackupCycles = 0;
+				VU->VIBackupCycles = 0;
 			_vuFlushAll(VU);
 			VU0.VI[REG_VPU_STAT].UL &= ~0x100;
 			vif1Regs.stat.VEW = false;
@@ -262,7 +269,7 @@ void InterpVU1::Execute(u32 cycles)
 	const FPControlRegisterBackup fpcr_backup(EmuConfig.Cpu.VU1FPCR);
 
 	VU1.VI[REG_TPC].UL <<= 3;
-	u32 startcycles = VU1.cycle;
+	u64 startcycles = VU1.cycle;
 
 	while ((VU1.cycle - startcycles) < cycles)
 	{

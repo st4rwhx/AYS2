@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #pragma once
@@ -73,9 +73,13 @@ namespace Achievements
 	/// Forces hardcore mode off until next reset.
 	void DisableHardcoreMode();
 
-	/// Prompts the user to disable hardcore mode, if they agree, returns true.
-	bool ConfirmHardcoreModeDisable(const char* trigger);
-	void ConfirmHardcoreModeDisableAsync(const char* trigger, std::function<void(bool)> callback);
+	/// Returns the translated title to display for the message box asking the
+	// user to disable hardcore mode.
+	const char* GetHardcoreModeDisableTitle();
+
+	/// Returns the translated text to display in the message box asking the
+	/// user to disable hardcore mode.
+	std::string GetHardcoreModeDisableText(const char* reason);
 
 	/// Returns true if hardcore mode is active, and functionality should be restricted.
 	bool IsHardcoreModeActive();
@@ -85,6 +89,54 @@ namespace Achievements
 
 	/// Returns true if the achievement system is active. Achievements can be active without a valid client.
 	bool IsActive();
+
+	struct UserStats
+	{
+		std::string username;
+		std::string display_name;
+		std::string avatar_path;
+		u32 points = 0;
+		u32 softcore_points = 0;
+		u32 unread_messages = 0;
+	};
+
+	struct GameStats
+	{
+		std::string title;
+		std::string rich_presence;
+		std::string icon_path;
+		std::string icon_url;
+		u32 game_id = 0;
+		u32 unlocked_achievements = 0;
+		u32 total_achievements = 0;
+		u32 unlocked_points = 0;
+		u32 total_points = 0;
+		bool has_achievements = false;
+		bool has_leaderboards = false;
+		bool has_rich_presence = false;
+	};
+
+	struct AchievementInfo
+	{
+		std::string title;
+		std::string description;
+		std::string badge_path;
+		std::string measured_progress;
+		u32 id = 0;
+		u32 points = 0;
+		u32 unlock_time = 0;
+		u32 state = 0;
+		u32 category = 0;
+		u32 bucket = 0;
+		u32 unlocked = 0;
+		float measured_percent = 0.0f;
+		float rarity = 0.0f;
+		float rarity_hardcore = 0.0f;
+	};
+
+	bool GetCurrentUserStats(UserStats* stats);
+	bool GetCurrentGameStats(GameStats* stats);
+	bool GetCurrentAchievementList(std::vector<AchievementInfo>* achievements);
 
 	/// Returns true if RetroAchievements game data has been loaded.
 	bool HasActiveGame();
@@ -122,38 +174,6 @@ namespace Achievements
 	/// Returns the path to the user's profile avatar.
 	/// Should be called with the lock held.
 	std::string GetLoggedInUserBadgePath();
-
-	struct UserStats
-	{
-		std::string username;
-		std::string display_name;
-		std::string avatar_path;
-		u32 points = 0;
-		u32 softcore_points = 0;
-		u32 unread_messages = 0;
-	};
-
-	struct GameStats
-	{
-		u32 game_id = 0;
-		std::string title;
-		std::string rich_presence;
-		std::string icon_path;
-		std::string icon_url;
-		u32 unlocked_achievements = 0;
-		u32 total_achievements = 0;
-		u32 unlocked_points = 0;
-		u32 total_points = 0;
-		bool has_achievements = false;
-		bool has_leaderboards = false;
-		bool has_rich_presence = false;
-	};
-
-	/// Retrieves the currently logged in user stats, if available.
-	bool GetCurrentUserStats(UserStats* out_stats);
-
-	/// Retrieves the current game's stats, if a game is active.
-	bool GetCurrentGameStats(GameStats* out_stats);
 
 	/// Clears all cached state used to render the UI.
 	void ClearUIState();

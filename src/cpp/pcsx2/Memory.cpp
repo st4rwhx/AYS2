@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 /*
@@ -40,24 +40,29 @@ BIOS
 #include "common/AlignedMalloc.h"
 #include "common/Error.h"
 
+#include <cstdio>
+
 #ifdef ENABLECACHE
 #include "Cache.h"
 #endif
 
 #ifdef __APPLE__
 #include "common/Darwin/DarwinMisc.h"
+#include <TargetConditionals.h>
+#endif
+
+#ifndef ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
+#define ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS 0
 #endif
 
 namespace Ps2MemSize
 {
 	u32 ExposedRam = MainRam;
+	u32 ExposedIopRam = IopRam;
 } // namespace Ps2MemSize
 
 namespace SysMemory
 {
-	static u8* TryAllocateVirtualMemory(const char* name, void* file_handle, uptr base, size_t size);
-	static u8* AllocateVirtualMemory(const char* name, void* file_handle, size_t size, size_t offset_from_base);
-
 	static bool AllocateMemoryMap();
 	static void DumpMemoryMap();
 	static void ReleaseMemoryMap();
@@ -65,6 +70,7 @@ namespace SysMemory
 	static u8* s_data_memory;
 	static void* s_data_memory_file_handle;
 	static u8* s_code_memory;
+	static std::unique_ptr<SharedMemoryMappingArea> s_memory_mapping_area;
 } // namespace SysMemory
 
 static void memAllocate();
@@ -92,111 +98,115 @@ namespace HostMemoryMap
 	}
 } // namespace HostMemoryMap
 
-u8* SysMemory::TryAllocateVirtualMemory(const char* name, void* file_handle, uptr base, size_t size)
-{
-	u8* baseptr;
-
-	if (file_handle)
-		baseptr = static_cast<u8*>(HostSys::MapSharedMemory(file_handle, 0, (void*)base, size, PageAccess_ReadWrite()));
-	else
-		baseptr = static_cast<u8*>(HostSys::Mmap((void*)base, size, PageAccess_Any()));
-
-	if (!baseptr)
-		return nullptr;
-
-	if (base != 0 && (uptr)baseptr != base)
-	{
-		if (file_handle)
-		{
-			if (baseptr)
-				HostSys::UnmapSharedMemory(baseptr, size);
-		}
-		else
-		{
-			if (baseptr)
-				HostSys::Munmap(baseptr, size);
-		}
-
-		return nullptr;
-	}
-
-	DevCon.WriteLn(Color_Gray, "%-32s @ 0x%016" PRIXPTR " -> 0x%016" PRIXPTR " %s", name,
-		baseptr, (uptr)baseptr + size, fmt::format("[{}mb]", size / _1mb).c_str());
-
-	return baseptr;
-}
-
-u8* SysMemory::AllocateVirtualMemory(const char* name, void* file_handle, size_t size, size_t offset_from_base)
-{
-	// ARM64 does not need the rec areas to be in +/- 2GB.
-#ifdef _M_X86
-	pxAssertRel(Common::IsAlignedPow2(size, __pagesize), "Virtual memory size is page aligned");
-
-	// Everything looks nicer when the start of all the sections is a nice round looking number.
-	// Also reduces the variation in the address due to small changes in code.
-	// Breaks ASLR but so does anything else that tries to make addresses constant for our debugging pleasure
-	uptr codeBase = (uptr)(void*)AllocateVirtualMemory / (1 << 28) * (1 << 28);
-
-	// The allocation is ~640mb in size, slighly under 3*2^28.
-	// We'll hope that the code generated for the PCSX2 executable stays under 512mb (which is likely)
-	// On x86-64, code can reach 8*2^28 from its address [-6*2^28, 4*2^28] is the region that allows for code in the 640mb allocation to reach 512mb of code that either starts at codeBase or 256mb before it.
-	// We start high and count down because on macOS code starts at the beginning of useable address space, so starting as far ahead as possible reduces address variations due to code size.  Not sure about other platforms.  Obviously this only actually affects what shows up in a debugger and won't affect performance or correctness of anything.
-	for (int offset = 4; offset >= -6; offset--)
-	{
-		uptr base = codeBase + (offset << 28) + offset_from_base;
-		if ((sptr)base < 0 || (sptr)(base + size - 1) < 0)
-		{
-			// VTLB will throw a fit if we try to put EE main memory here
-			continue;
-		}
-
-		if (u8* ret = TryAllocateVirtualMemory(name, file_handle, base, size))
-			return ret;
-
-		DevCon.Warning("%s: host memory @ 0x%016" PRIXPTR " -> 0x%016" PRIXPTR " is unavailable; attempting to map elsewhere...", name,
-			base, base + size);
-	}
-#else
-	return TryAllocateVirtualMemory(name, file_handle, 0, size);
-#endif
-
-	return nullptr;
-}
-
 bool SysMemory::AllocateMemoryMap()
 {
+	std::fprintf(stderr, "@@MEMMAP_STAGE@@ create_shared_begin main=%zu code=%zu\n",
+		static_cast<size_t>(HostMemoryMap::MainSize), static_cast<size_t>(HostMemoryMap::CodeSize));
+	std::fflush(stderr);
 	s_data_memory_file_handle = HostSys::CreateSharedMemory(HostSys::GetFileMappingName("pcsx2").c_str(), HostMemoryMap::MainSize);
 	if (!s_data_memory_file_handle)
 	{
+		std::fprintf(stderr, "@@MEMMAP_STAGE@@ create_shared_fail\n");
+		std::fflush(stderr);
 		Host::ReportErrorAsync("Error", "Failed to create shared memory file.");
 		ReleaseMemoryMap();
 		return false;
 	}
 
-	if ((s_data_memory = AllocateVirtualMemory("Data Memory", s_data_memory_file_handle, HostMemoryMap::MainSize, 0)) == nullptr)
+	std::fprintf(stderr, "@@MEMMAP_STAGE@@ create_shared_ok handle=%p\n", s_data_memory_file_handle);
+	std::fflush(stderr);
+	const size_t main_area_size =
+#if defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+		HostMemoryMap::MainSize;
+#else
+		HostMemoryMap::MainSize + HostMemoryMap::CodeSize;
+#endif
+	std::fprintf(stderr, "@@MEMMAP_STAGE@@ area_create_begin size=%zu jit=0 split_code_jit=%d\n",
+		main_area_size,
+#if defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+		1
+#else
+		0
+#endif
+	);
+	std::fflush(stderr);
+	if (!(s_memory_mapping_area = SharedMemoryMappingArea::Create(main_area_size, false)))
 	{
-		Host::ReportErrorAsync("Error", "Failed to map data memory at an acceptable location.");
+		std::fprintf(stderr, "@@MEMMAP_STAGE@@ area_create_fail\n");
+		std::fflush(stderr);
+		Host::ReportErrorAsync("Error", "Failed to map data memory.");
 		ReleaseMemoryMap();
 		return false;
 	}
 
-	if ((s_code_memory = AllocateVirtualMemory("Code Memory", nullptr, HostMemoryMap::CodeSize, HostMemoryMap::MainSize)) == nullptr)
+	std::fprintf(stderr, "@@MEMMAP_STAGE@@ area_create_ok base=%p size=%zu\n",
+		s_memory_mapping_area->BasePointer(), s_memory_mapping_area->GetSize());
+	std::fflush(stderr);
+	std::fprintf(stderr, "@@MEMMAP_STAGE@@ data_map_begin base=%p size=%zu\n",
+		s_memory_mapping_area->BasePointer(), static_cast<size_t>(HostMemoryMap::MainSize));
+	std::fflush(stderr);
+	if ((s_data_memory = s_memory_mapping_area->Map(s_data_memory_file_handle, 0, s_memory_mapping_area->BasePointer(), HostMemoryMap::MainSize, PageAccess_ReadWrite())) == nullptr)
 	{
-		Host::ReportErrorAsync("Error", "Failed to allocate code memory at an acceptable location.");
+		std::fprintf(stderr, "@@MEMMAP_STAGE@@ data_map_fail\n");
+		std::fflush(stderr);
+		Host::ReportErrorAsync("Error", "Failed to map data memory.");
 		ReleaseMemoryMap();
 		return false;
 	}
 
+	std::fprintf(stderr, "@@MEMMAP_STAGE@@ data_map_ok ptr=%p\n", s_data_memory);
+	std::fflush(stderr);
+#if defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+	std::fprintf(stderr, "@@MEMMAP_STAGE@@ code_dualmap_begin size=%zu\n", static_cast<size_t>(HostMemoryMap::CodeSize));
+	std::fflush(stderr);
+	if ((s_code_memory = static_cast<u8*>(DarwinMisc::MmapCodeDualMap(HostMemoryMap::CodeSize))) == nullptr)
+	{
+		std::fprintf(stderr, "@@MEMMAP_STAGE@@ code_dualmap_fail\n");
+		std::fflush(stderr);
+		Host::ReportErrorAsync("Error", "Failed to allocate iOS executable code memory.");
+		ReleaseMemoryMap();
+		return false;
+	}
+
+	std::fprintf(stderr, "@@MEMMAP_STAGE@@ code_dualmap_ok rx=%p rw_offset=%td rw_base=%p size=%zu\n",
+		s_code_memory, DarwinMisc::g_code_rw_offset,
+		reinterpret_cast<void*>(DarwinMisc::g_code_rw_base), DarwinMisc::g_code_rw_size);
+	std::fflush(stderr);
+#else
+	std::fprintf(stderr, "@@MEMMAP_STAGE@@ code_map_begin base=%p size=%zu\n",
+		s_memory_mapping_area->OffsetPointer(HostMemoryMap::MainSize), static_cast<size_t>(HostMemoryMap::CodeSize));
+	std::fflush(stderr);
+	if ((s_code_memory = s_memory_mapping_area->Map(nullptr, 0, s_memory_mapping_area->OffsetPointer(HostMemoryMap::MainSize), HostMemoryMap::CodeSize, PageAccess_Any())) == nullptr)
+	{
+		std::fprintf(stderr, "@@MEMMAP_STAGE@@ code_map_fail\n");
+		std::fflush(stderr);
+		Host::ReportErrorAsync("Error", "Failed to allocate code memory.");
+		ReleaseMemoryMap();
+		return false;
+	}
+#endif
+
+	std::fprintf(stderr, "@@MEMMAP_STAGE@@ code_map_ok ptr=%p\n", s_code_memory);
+	std::fflush(stderr);
 	HostMemoryMap::EEmem = (uptr)(s_data_memory + HostMemoryMap::EEmemOffset);
 	HostMemoryMap::IOPmem = (uptr)(s_data_memory + HostMemoryMap::IOPmemOffset);
-	HostMemoryMap::VUmem = (uptr)(s_data_memory + HostMemoryMap::VUmemSize);
+	HostMemoryMap::VUmem = (uptr)(s_data_memory + HostMemoryMap::VUmemOffset);
 
 #ifdef __APPLE__
+	std::fprintf(stderr, "@@MEMMAP_STAGE@@ set_jit_range_begin ptr=%p size=%zu\n",
+		s_code_memory, static_cast<size_t>(HostMemoryMap::CodeSize));
+	std::fflush(stderr);
 	DarwinMisc::SetJitRange(s_code_memory, HostMemoryMap::CodeSize);
+	std::fprintf(stderr, "@@MEMMAP_STAGE@@ set_jit_range_ok\n");
+	std::fflush(stderr);
 	// [P43] Log dual-mapping state
 	Console.WriteLn("@@P43_OFFSET@@ g_code_rw_offset=%ld", (long)DarwinMisc::g_code_rw_offset);
 #endif
 
+	std::fprintf(stderr, "@@MEMMAP_STAGE@@ allocate_memory_map_ok eemem=%p iop=%p vu=%p\n",
+		reinterpret_cast<void*>(HostMemoryMap::EEmem), reinterpret_cast<void*>(HostMemoryMap::IOPmem),
+		reinterpret_cast<void*>(HostMemoryMap::VUmem));
+	std::fflush(stderr);
 	DumpMemoryMap();
 	return true;
 }
@@ -210,8 +220,8 @@ void SysMemory::DumpMemoryMap()
 	DUMP_REGION("EE Main Memory", s_data_memory, HostMemoryMap::EEmemOffset, HostMemoryMap::EEmemSize);
 	DUMP_REGION("IOP Main Memory", s_data_memory, HostMemoryMap::IOPmemOffset, HostMemoryMap::IOPmemSize);
 	DUMP_REGION("VU0/1 On-Chip Memory", s_data_memory, HostMemoryMap::VUmemOffset, HostMemoryMap::VUmemSize);
-	DUMP_REGION("VTLB Virtual Map", s_data_memory, HostMemoryMap::VTLBAddressMapOffset, HostMemoryMap::VTLBVirtualMapSize);
-	DUMP_REGION("VTLB Address Map", s_data_memory, HostMemoryMap::VTLBAddressMapSize, HostMemoryMap::VTLBAddressMapSize);
+	DUMP_REGION("VTLB Virtual Map", s_data_memory, HostMemoryMap::VTLBVirtualMapOffset, HostMemoryMap::VTLBVirtualMapSize);
+	DUMP_REGION("VTLB Address Map", s_data_memory, HostMemoryMap::VTLBAddressMapOffset, HostMemoryMap::VTLBAddressMapSize);
 
 	DUMP_REGION("R5900 Recompiler Cache", s_code_memory, HostMemoryMap::EErecOffset, HostMemoryMap::EErecSize);
 	DUMP_REGION("R3000A Recompiler Cache", s_code_memory, HostMemoryMap::IOPrecOffset, HostMemoryMap::IOPrecSize);
@@ -230,15 +240,21 @@ void SysMemory::ReleaseMemoryMap()
 {
 	if (s_code_memory)
 	{
-		HostSys::Munmap(s_code_memory, HostMemoryMap::CodeSize);
+#if defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+		DarwinMisc::MunmapCodeDualMap(s_code_memory, HostMemoryMap::CodeSize);
+#else
+		s_memory_mapping_area->Unmap(s_code_memory, HostMemoryMap::CodeSize, false);
+#endif
 		s_code_memory = nullptr;
 	}
 
 	if (s_data_memory)
 	{
-		HostSys::UnmapSharedMemory(s_data_memory, HostMemoryMap::MainSize);
+		s_memory_mapping_area->Unmap(s_data_memory, HostMemoryMap::MainSize, true);
 		s_data_memory = nullptr;
 	}
+
+	s_memory_mapping_area.reset();
 
 	if (s_data_memory_file_handle)
 	{
@@ -317,6 +333,7 @@ void memSetExtraMemMode(bool mode)
 
 	// update the amount of RAM exposed to the VM
 	Ps2MemSize::ExposedRam = mode ? Ps2MemSize::TotalRam : Ps2MemSize::MainRam;
+	Ps2MemSize::ExposedIopRam = mode ? Ps2MemSize::TotalIopRam: Ps2MemSize::IopRam;
 }
 
 void memSetKernelMode() {
@@ -335,14 +352,16 @@ void memSetUserMode() {
 void ba0W16(u32 mem, u16 value)
 {
 	//MEM_LOG("ba000000 Memory write16 address %x value %x", mem, value);
+#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
 	// [iter230] TEMP_DIAG: DVE write trace
 	{
 		static u32 s_dve_w_n = 0;
 		if (s_dve_w_n++ < 40)
-			Console.WriteLn("@@DVE_W16@@ n=%u mem=%08x reg=%02x val=%04x cmd_exec=%d s_ba02=%02x s_ba06=%02x",
-				s_dve_w_n, mem, (unsigned)(mem & 0xFF), (unsigned)value,
-				(int)s_ba_command_executing, (unsigned)s_ba[0x2], (unsigned)s_ba[0x6]);
+				Console.WriteLn("@@DVE_W16@@ n=%u mem=%08x reg=%02x val=%04x cmd_exec=%d s_ba02=%02x s_ba06=%02x",
+					s_dve_w_n, mem, (unsigned)(mem & 0xFF), (unsigned)value,
+					(int)s_ba_command_executing, (unsigned)s_ba[0x2], (unsigned)s_ba[0x6]);
 	}
+#endif
 	u32 masked_mem = (mem & 0xFF);
 
 	if (masked_mem == 0x6) // Status Reg
@@ -400,13 +419,15 @@ void ba0W16(u32 mem, u16 value)
 
 u16 ba0R16(u32 mem)
 {
+#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
 	// [iter230] TEMP_DIAG: DVE read trace
 	{
 		static u32 s_dve_r_n = 0;
 		if (s_dve_r_n++ < 20)
-			Console.WriteLn("@@DVE_R16@@ n=%u mem=%08x cmd_exec=%d s_ba06=%02x",
-				s_dve_r_n, mem, (int)s_ba_command_executing, (unsigned)s_ba[0x6]);
+				Console.WriteLn("@@DVE_R16@@ n=%u mem=%08x cmd_exec=%d s_ba06=%02x",
+					s_dve_r_n, mem, (int)s_ba_command_executing, (unsigned)s_ba[0x6]);
 	}
+#endif
 
 	if (mem == 0x1a000006)
 	{
@@ -1302,4 +1323,86 @@ bool SaveStateBase::memFreeze(Error* error)
 	}
 
 	return IsOkay();
+}
+
+u8 EEMemoryInterface::Read8(u32 address, bool* valid)
+{
+	if (valid)
+		*valid = true;
+	return memRead8(address);
+}
+
+u16 EEMemoryInterface::Read16(u32 address, bool* valid)
+{
+	if (valid)
+		*valid = true;
+	return memRead16(address);
+}
+
+u32 EEMemoryInterface::Read32(u32 address, bool* valid)
+{
+	if (valid)
+		*valid = true;
+	return memRead32(address);
+}
+
+u64 EEMemoryInterface::Read64(u32 address, bool* valid)
+{
+	if (valid)
+		*valid = true;
+	return memRead64(address);
+}
+
+u128 EEMemoryInterface::Read128(u32 address, bool* valid)
+{
+	u128 value;
+	memRead128(address, value);
+	if (valid)
+		*valid = true;
+	return value;
+}
+
+bool EEMemoryInterface::ReadBytes(u32 address, void* dest, u32 size)
+{
+	return vtlb_memSafeReadBytes(address, dest, size);
+}
+
+bool EEMemoryInterface::Write8(u32 address, u8 value)
+{
+	memWrite8(address, value);
+	return true;
+}
+
+bool EEMemoryInterface::Write16(u32 address, u16 value)
+{
+	memWrite16(address, value);
+	return true;
+}
+
+bool EEMemoryInterface::Write32(u32 address, u32 value)
+{
+	memWrite32(address, value);
+	return true;
+}
+
+bool EEMemoryInterface::Write64(u32 address, u64 value)
+{
+	memWrite64(address, value);
+	return true;
+
+}
+bool EEMemoryInterface::Write128(u32 address, u128 value)
+{
+	memWrite128(address, value);
+	return true;
+}
+
+bool EEMemoryInterface::WriteBytes(u32 address, void* src, u32 size)
+{
+	return vtlb_memSafeWriteBytes(address, src, size);
+}
+
+bool EEMemoryInterface::CompareBytes(u32 address, void* src, u32 size)
+{
+	return vtlb_memSafeCmpBytes(address, src, size) == 0;
 }

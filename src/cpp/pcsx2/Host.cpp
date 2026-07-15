@@ -1,9 +1,8 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "BuildVersion.h"
 #include "GS.h"
-#include "Config.h"
 #include "GS/Renderers/HW/GSTextureReplacements.h"
 #include "Host.h"
 #include "LayeredSettingsInterface.h"
@@ -18,8 +17,27 @@
 
 #include "fmt/format.h"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+#include <sys/sysctl.h>
+#endif
+#endif
+
 #include <cstdarg>
 #include <shared_mutex>
+
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+static std::string GetIOSVersionForUserAgent()
+{
+	char version[64] = {};
+	size_t version_len = sizeof(version);
+	if (sysctlbyname("kern.osproductversion", version, &version_len, nullptr, 0) == 0 && version[0] != '\0')
+		return fmt::format("iOS {}", version);
+
+	return GetOSVersionString();
+}
+#endif
 
 namespace Host
 {
@@ -27,6 +45,7 @@ namespace Host
 		const std::string_view context, const std::string_view msg);
 
 	static std::mutex s_settings_mutex;
+	static std::mutex s_secrets_settings_mutex;
 	static LayeredSettingsInterface s_layered_settings_interface;
 
 	static constexpr u32 TRANSLATION_STRING_CACHE_SIZE = 4 * 1024 * 1024;
@@ -37,24 +56,6 @@ namespace Host
 	static std::vector<char> s_translation_string_cache;
 	static u32 s_translation_string_cache_pos;
 } // namespace Host
-
-bool Host::EnsureResourceSubdirectory(const char* relative_path)
-{
-	if (!relative_path || !relative_path[0])
-		return true;
-
-	const std::string user_dir(Path::Combine(EmuFolders::UserResources, relative_path));
-	if (FileSystem::DirectoryExists(user_dir.c_str()))
-		return true;
-
-	const std::string bundled_dir(Path::Combine(EmuFolders::Resources, relative_path));
-	if (FileSystem::DirectoryExists(bundled_dir.c_str()))
-		return true;
-
-	Internal::EnsureAndroidResourceSubdirCopied(relative_path);
-
-	return FileSystem::DirectoryExists(user_dir.c_str()) || FileSystem::DirectoryExists(bundled_dir.c_str());
-}
 
 std::pair<const char*, u32> Host::LookupTranslationString(const std::string_view context, const std::string_view msg)
 {
@@ -90,7 +91,7 @@ std::pair<const char*, u32> Host::LookupTranslationString(const std::string_view
 
 add_string:
 	s_translation_string_mutex.unlock_shared();
-	s_translation_string_mutex.lock();
+	std::lock_guard lock(s_translation_string_mutex);
 
 	if (s_translation_string_cache.empty()) [[unlikely]]
 	{
@@ -129,7 +130,6 @@ add_string:
 
 	ret.first = &s_translation_string_cache[insert_pos];
 	ret.second = static_cast<u32>(len);
-	s_translation_string_mutex.unlock();
 	return ret;
 }
 
@@ -151,10 +151,9 @@ std::string Host::TranslateToString(const std::string_view context, const std::s
 
 void Host::ClearTranslationCache()
 {
-	s_translation_string_mutex.lock();
+	std::lock_guard lock(s_translation_string_mutex);
 	s_translation_string_map.clear();
 	s_translation_string_cache_pos = 0;
-	s_translation_string_mutex.unlock();
 }
 
 void Host::ReportFormattedInfoAsync(const std::string_view title, const char* format, ...)
@@ -175,24 +174,24 @@ void Host::ReportFormattedErrorAsync(const std::string_view title, const char* f
 	ReportErrorAsync(title, message);
 }
 
-bool Host::ConfirmFormattedMessage(const std::string_view title, const char* format, ...)
-{
-	std::va_list ap;
-	va_start(ap, format);
-	std::string message = StringUtil::StdStringFromFormatV(format, ap);
-	va_end(ap);
-
-	return ConfirmMessage(title, message);
-}
-
 std::string Host::GetHTTPUserAgent()
 {
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+	const char* core_version = (BuildVersion::GitTag && BuildVersion::GitTag[0]) ? BuildVersion::GitTag : BuildVersion::GitRev;
+	return fmt::format("ARMSX2-iOS/v2.2.2 ({}) pcsx2/{}", GetIOSVersionForUserAgent(), core_version);
+#else
 	return fmt::format("PCSX2 {} ({})", BuildVersion::GitRev, GetOSVersionString());
+#endif
 }
 
 std::unique_lock<std::mutex> Host::GetSettingsLock()
 {
 	return std::unique_lock<std::mutex>(s_settings_mutex);
+}
+
+std::unique_lock<std::mutex> Host::GetSecretsSettingsLock()
+{
+	return std::unique_lock<std::mutex>(s_secrets_settings_mutex);
 }
 
 SettingsInterface* Host::GetSettingsInterface()
@@ -383,11 +382,10 @@ SettingsInterface* Host::Internal::GetBaseSettingsLayer()
 	return s_layered_settings_interface.GetLayer(LayeredSettingsInterface::LAYER_BASE);
 }
 
-#ifndef __ANDROID__
-void Host::Internal::EnsureAndroidResourceSubdirCopied(const char*)
+SettingsInterface* Host::Internal::GetSecretsSettingsLayer()
 {
+	return s_layered_settings_interface.GetLayer(LayeredSettingsInterface::LAYER_SECRETS);
 }
-#endif
 
 SettingsInterface* Host::Internal::GetGameSettingsLayer()
 {
@@ -402,8 +400,15 @@ SettingsInterface* Host::Internal::GetInputSettingsLayer()
 void Host::Internal::SetBaseSettingsLayer(SettingsInterface* sif)
 {
 	pxAssertRel(s_layered_settings_interface.GetLayer(LayeredSettingsInterface::LAYER_BASE) == nullptr,
-		"Base layer has not been set");
+		"Base layer has already been set");
 	s_layered_settings_interface.SetLayer(LayeredSettingsInterface::LAYER_BASE, sif);
+}
+
+void Host::Internal::SetSecretsSettingsLayer(SettingsInterface* sif)
+{
+	pxAssertRel(s_layered_settings_interface.GetLayer(LayeredSettingsInterface::LAYER_SECRETS) == nullptr,
+		"Secrets layer has already been set");
+	s_layered_settings_interface.SetLayer(LayeredSettingsInterface::LAYER_SECRETS, sif);
 }
 
 void Host::Internal::SetGameSettingsLayer(SettingsInterface* sif, std::unique_lock<std::mutex>& settings_lock)

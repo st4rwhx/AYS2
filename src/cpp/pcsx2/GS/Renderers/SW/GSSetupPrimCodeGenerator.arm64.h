@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0
 
 #pragma once
@@ -15,13 +15,14 @@ public:
 	void Generate();
 
 	size_t GetSize() const { return m_emitter.GetSizeOfCodeGenerated(); }
-	const u8* GetCode() const { return m_emitter.GetBuffer().GetStartAddress<const u8*>(); }
+	const u8* GetCode() const { return m_code; }
 
 private:
 	void Depth();
 	void Texture();
 	void Color();
 
+	const u8* m_code = nullptr;
 	vixl::aarch64::MacroAssembler m_emitter;
 
 	GSScanlineSelector m_sel;

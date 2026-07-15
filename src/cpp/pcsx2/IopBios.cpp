@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "Common.h"
@@ -34,6 +34,18 @@
 #include <unistd.h>
 #endif
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_IOS
+#define ARMSX2_HOSTFS_CASE_INSENSITIVE 1
+#include <dirent.h>
+#include <strings.h>
+#include <mutex>
+#include <unordered_map>
+#include <vector>
+#endif
+#endif
+
 #if !defined(S_ISREG) && defined(S_IFMT) && defined(S_IFREG)
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
 #endif
@@ -47,53 +59,69 @@
 
 typedef struct
 {
-	unsigned int mode;
-	unsigned int attr;
-	unsigned int size;
-	unsigned char ctime[8];
-	unsigned char atime[8];
-	unsigned char mtime[8];
-	unsigned int hisize;
+	u32 mode;
+	u32 attr;
+	u32 size;
+	u8 ctime[8];
+	u8 atime[8];
+	u8 mtime[8];
+	u32 hisize;
 } fio_stat_t;
 typedef struct
 {
 	fio_stat_t _fioStat;
 	/** Number of subs (main) / subpart number (sub) */
-	unsigned int private_0;
-	unsigned int private_1;
-	unsigned int private_2;
-	unsigned int private_3;
-	unsigned int private_4;
+	u32 private_0;
+	u32 private_1;
+	u32 private_2;
+	u32 private_3;
+	u32 private_4;
 	/** Sector start.  */
-	unsigned int private_5;
+	u32 private_5;
 } fxio_stat_t;
 
 typedef struct
 {
 	fio_stat_t stat;
 	char name[256];
-	unsigned int unknown;
+	u32 unknown;
 } fio_dirent_t;
 
 typedef struct
 {
 	fxio_stat_t stat;
 	char name[256];
-	unsigned int unknown;
+	u32 unknown;
 } fxio_dirent_t;
 
 static std::string hostRoot;
 
+#ifdef ARMSX2_HOSTFS_CASE_INSENSITIVE
+static std::mutex s_hostfsCaseCacheMutex;
+static std::unordered_map<std::string, std::string> s_hostfsCaseCache;
+
+static void hostfs_invalidate_case_cache()
+{
+	std::lock_guard<std::mutex> lock(s_hostfsCaseCacheMutex);
+	s_hostfsCaseCache.clear();
+}
+#endif
 
 void Hle_SetHostRoot(const char* bootFilename)
 {
 	hostRoot = Path::ToNativePath(Path::GetDirectory(bootFilename));
+#ifdef ARMSX2_HOSTFS_CASE_INSENSITIVE
+	hostfs_invalidate_case_cache();
+#endif
 	Console.WriteLn("HLE Host: Set 'host:' root path to: %s\n", hostRoot.c_str());
 }
 
 void Hle_ClearHostRoot()
 {
 	hostRoot = {};
+#ifdef ARMSX2_HOSTFS_CASE_INSENSITIVE
+	hostfs_invalidate_case_cache();
+#endif
 }
 
 // [TEMP_DIAG] IOP reboot counter — defined in R3000AInterpreter.cpp
@@ -178,7 +206,7 @@ namespace R3000A
 		if (!FileSystem::StatFile(file_path.c_str(), &file_stats))
 			return -IOP_ENOENT;
 
-		host_stats->size = file_stats.st_size;
+		host_stats->size = (u32)file_stats.st_size;
 		host_stats->hisize = 0;
 
 		// Convert the mode.
@@ -298,14 +326,14 @@ namespace R3000A
 			const int native_mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
 #endif
 
-            int hostfd;
-            if (file_path.rfind("content://", 0) == 0) {
-                hostfd = FileSystem::OpenFDFileContent(file_path.c_str());
-            } else {
-                hostfd = FileSystem::OpenFDFile(file_path.c_str(), native_flags, native_mode);
-            }
+			const int hostfd = FileSystem::OpenFDFile(file_path.c_str(), native_flags, native_mode);
 			if (hostfd < 0)
 				return translate_error(hostfd);
+
+#ifdef ARMSX2_HOSTFS_CASE_INSENSITIVE
+			if (flags & IOP_O_CREAT)
+				hostfs_invalidate_case_cache();
+#endif
 
 			*file = new HostFile(hostfd);
 			if (!*file)
@@ -327,13 +355,13 @@ namespace R3000A
 			switch (whence)
 			{
 				case IOP_SEEK_SET:
-					err = ::lseek(fd, offset, SEEK_SET);
+					err = static_cast<int>(::lseek(fd, offset, SEEK_SET));
 					break;
 				case IOP_SEEK_CUR:
-					err = ::lseek(fd, offset, SEEK_CUR);
+					err = static_cast<int>(::lseek(fd, offset, SEEK_CUR));
 					break;
 				case IOP_SEEK_END:
-					err = ::lseek(fd, offset, SEEK_END);
+					err = static_cast<int>(::lseek(fd, offset, SEEK_END));
 					break;
 				default:
 					return -IOP_EIO;
@@ -344,12 +372,12 @@ namespace R3000A
 
 		virtual int read(void* buf, u32 count) /* Flawfinder: ignore */
 		{
-			return translate_error(::read(fd, buf, count));
+			return translate_error(static_cast<int>(::read(fd, buf, count)));
 		}
 
 		virtual int write(void* buf, u32 count)
 		{
-			return translate_error(::write(fd, buf, count));
+			return translate_error(static_cast<int>(::write(fd, buf, count)));
 		}
 	};
 
@@ -621,6 +649,76 @@ namespace R3000A
 			return (path.compare(0, 4, "host") == 0 && path[not_number_pos] == ':');
 		}
 
+#ifdef ARMSX2_HOSTFS_CASE_INSENSITIVE
+		static std::string resolve_case_insensitive(const std::string& root, const std::string& full_path)
+		{
+			if (full_path.empty() || FileSystem::FileExists(full_path.c_str()) || FileSystem::DirectoryExists(full_path.c_str()))
+				return full_path;
+			if (full_path.size() < root.size() || full_path.compare(0, root.size(), root) != 0)
+				return full_path;
+
+			{
+				std::lock_guard<std::mutex> lock(s_hostfsCaseCacheMutex);
+				const auto it = s_hostfsCaseCache.find(full_path);
+				if (it != s_hostfsCaseCache.end())
+					return it->second;
+			}
+
+			std::string resolved = root;
+			size_t pos = root.size();
+			while (pos < full_path.size())
+			{
+				while (pos < full_path.size() && full_path[pos] == '/')
+					pos++;
+				if (pos >= full_path.size())
+					break;
+
+				const size_t comp_start = pos;
+				size_t next = full_path.find('/', pos);
+				if (next == std::string::npos)
+					next = full_path.size();
+				const std::string comp = full_path.substr(pos, next - pos);
+				pos = next;
+
+				std::string candidate = resolved + "/" + comp;
+				if (FileSystem::FileExists(candidate.c_str()) || FileSystem::DirectoryExists(candidate.c_str()))
+				{
+					resolved = std::move(candidate);
+					continue;
+				}
+
+				std::vector<std::string> folded;
+				if (DIR* dir = opendir(resolved.c_str()))
+				{
+					while (struct dirent* ent = readdir(dir))
+					{
+						if (strcasecmp(ent->d_name, comp.c_str()) == 0)
+							folded.emplace_back(ent->d_name);
+					}
+					closedir(dir);
+				}
+
+				if (folded.empty())
+				{
+					resolved += "/" + full_path.substr(comp_start);
+					break;
+				}
+				if (folded.size() > 1)
+				{
+					std::sort(folded.begin(), folded.end());
+					Console.Warning(fmt::format("IopHLE: host: ambiguous case-insensitive match for '{}' in '{}' ({} candidates), using '{}'",
+						comp, resolved, folded.size(), folded.front()));
+				}
+
+				resolved += "/" + folded.front();
+			}
+
+			std::lock_guard<std::mutex> lock(s_hostfsCaseCacheMutex);
+			s_hostfsCaseCache.emplace(full_path, resolved);
+			return resolved;
+		}
+#endif
+
 		std::string host_path(const std::string_view path, bool allow_open_host_root)
 		{
 			// We are NOT allowing to use the root of the host unit.
@@ -662,6 +760,11 @@ namespace R3000A
 					new_path.clear();
 				}
 			}
+
+#ifdef ARMSX2_HOSTFS_CASE_INSENSITIVE
+			if (!new_path.empty())
+				new_path = resolve_case_insensitive(hostRoot, new_path);
+#endif
 
 			return new_path;
 		}
@@ -876,7 +979,7 @@ namespace R3000A
 					v0 = host_stat(full_path, (fxio_stat_t*)&buf);
 
 					for (size_t i = 0; i < sizeof(fxio_stat_t); i++)
-						iopMemWrite8(data + i, buf[i]);
+						iopMemWrite8(static_cast<u32>(data + i), buf[i]);
 				}
 				else
 				{
@@ -884,7 +987,7 @@ namespace R3000A
 					v0 = host_stat(full_path, (fio_stat_t*)&buf);
 
 					for (size_t i = 0; i < sizeof(fio_stat_t); i++)
-						iopMemWrite8(data + i, buf[i]);
+						iopMemWrite8(static_cast<u32>(data + i), buf[i]);
 				}
 				pc = ra;
 				return 1;
@@ -928,6 +1031,9 @@ namespace R3000A
 				const std::string path = full_path.substr(full_path.find(':') + 1);
 				const std::string file_path(host_path(path, false));
 				const bool succeeded = FileSystem::DeleteFilePath(file_path.c_str());
+#ifdef ARMSX2_HOSTFS_CASE_INSENSITIVE
+				hostfs_invalidate_case_cache();
+#endif
 				if (!succeeded)
 					Console.Warning("IOPHLE remove_HLE failed for '%s'", file_path.c_str());
 				v0 = succeeded ? 0 : -IOP_EIO;
@@ -945,6 +1051,9 @@ namespace R3000A
 				const std::string path = full_path.substr(full_path.find(':') + 1);
 				const std::string folder_path(host_path(path, false)); // NOTE: Don't allow creating the ELF directory.
 				const bool succeeded = FileSystem::CreateDirectoryPath(folder_path.c_str(), false);
+#ifdef ARMSX2_HOSTFS_CASE_INSENSITIVE
+				hostfs_invalidate_case_cache();
+#endif
 				if (!succeeded)
 					Console.Warning("IOPHLE mkdir_HLE failed for '%s'", folder_path.c_str());
 				v0 = succeeded ? 0 : -IOP_EIO;
@@ -994,6 +1103,9 @@ namespace R3000A
 				const std::string path = full_path.substr(full_path.find(':') + 1);
 				const std::string folder_path(host_path(path, false)); // NOTE: Don't allow removing the elf directory itself.
 				const bool succeeded = FileSystem::DeleteDirectory(folder_path.c_str());
+#ifdef ARMSX2_HOSTFS_CASE_INSENSITIVE
+				hostfs_invalidate_case_cache();
+#endif
 				if (!succeeded)
 					Console.Warning("IOPHLE rmdir_HLE failed for '%s'", folder_path.c_str());
 				v0 = succeeded ? 0 : -IOP_EIO;
@@ -1061,15 +1173,15 @@ namespace R3000A
 				return 1;
 
 			// maximum allowed size for our buffer before we truncate
-			const unsigned int max_len = 4096;
+			constexpr unsigned int max_len = 4096;
 			char tmp[max_len], tmp2[max_len];
 			char* ptmp = tmp;
 			unsigned int printed_bytes = 0;
-			int remaining_buf = max_len - 1;
-			int n = 1, i = 0, j = 0;
+			unsigned int n = 1, i = 0, j = 0;
 
-			while (fmt[i])
+			while (fmt[i] && ptmp < std::end(tmp) - 1)
 			{
+				const int remaining_buf = static_cast<int>(std::end(tmp) - 1 - ptmp);
 				switch (fmt[i])
 				{
 					case '%':
@@ -1110,7 +1222,6 @@ namespace R3000A
 							case 'f':
 							case 'F':
 								printed_bytes = std::min(remaining_buf, snprintf(ptmp, remaining_buf, tmp2, (float)iopMemRead32(sp + n * 4)));
-								remaining_buf -= printed_bytes;
 								ptmp += printed_bytes;
 								n++;
 								break;
@@ -1122,7 +1233,6 @@ namespace R3000A
 							case 'g':
 							case 'G':
 								printed_bytes = std::min(remaining_buf, snprintf(ptmp, remaining_buf, tmp2, (double)iopMemRead32(sp + n * 4)));
-								remaining_buf -= printed_bytes;
 								ptmp += printed_bytes;
 								n++;
 								break;
@@ -1138,14 +1248,12 @@ namespace R3000A
 							case 'u':
 							case 'U':
 								printed_bytes = std::min(remaining_buf, snprintf(ptmp, remaining_buf, tmp2, (u32)iopMemRead32(sp + n * 4)));
-								remaining_buf -= printed_bytes;
 								ptmp += printed_bytes;
 								n++;
 								break;
 
 							case 'c':
 								printed_bytes = std::min(remaining_buf, snprintf(ptmp, remaining_buf, tmp2, (u8)iopMemRead32(sp + n * 4)));
-								remaining_buf -= printed_bytes;
 								ptmp += printed_bytes;
 								n++;
 								break;
@@ -1154,7 +1262,6 @@ namespace R3000A
 							{
 								std::string s = iopMemReadString(iopMemRead32(sp + n * 4));
 								printed_bytes = std::min(remaining_buf, snprintf(ptmp, remaining_buf, tmp2, s.data()));
-								remaining_buf -= printed_bytes;
 								ptmp += printed_bytes;
 								n++;
 							}
@@ -1175,6 +1282,7 @@ namespace R3000A
 						break;
 				}
 			}
+			pxAssertRel(ptmp >= tmp && ptmp < std::end(tmp), "Overflowed tmp buffer");
 			*ptmp = 0;
 			iopConLog(ShiftJIS_ConvertString(tmp, 1023));
 
@@ -1187,27 +1295,22 @@ namespace R3000A
 
 		u32 GetModList(u32 a0reg)
 		{
-			u32 lcptr = iopMemRead32(0x3f0);
-			u32 lcstring = irxFindLoadcore(lcptr);
-			u32 list = 0;
+			/* Loadcore puts a pointer to a static array at 0x3f0 */
+			u32 bootmodes_ptr = iopMemRead32(0x3f0);
+			/* Search for the main loadcore struct from there */
+			u32 lcstring = irxFindLoadcore(bootmodes_ptr);
+			u32 lc_struct = 0;
 
 			if (lcstring == 0)
 			{
-				list = lcptr - 0x20;
+				lc_struct = bootmodes_ptr - 0x20;
 			}
 			else
 			{
-				list = lcstring + 0x18;
+				lc_struct = lcstring + 0x18;
 			}
 
-			u32 mod = iopMemRead32(list);
-
-			while (mod != 0)
-			{
-				mod = iopMemRead32(mod);
-			}
-
-			return list;
+			return lc_struct + 0x10;
 		}
 
 		// Gets the thread list ptr from thbase

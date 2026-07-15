@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #pragma once
@@ -8,7 +8,17 @@
 #	pragma warning(disable:4250) //'class' inherits 'method' via dominance
 #endif
 
+// ELORIS-PRISM: TargetConditionals in PCH (seam) — our vendored zlib doesn't pull it.
+// Ensure Apple's TARGET_OS_* macros (e.g. TARGET_OS_IPHONE) are defined for every
+// translation unit that relies on them via the precompiled header. Some sources
+// (GSPng.cpp, SaveState.cpp, Image.cpp, ...) branch on TARGET_OS_IPHONE without
+// including TargetConditionals.h themselves, and would otherwise treat it as 0.
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+
 #include "common/Pcsx2Defs.h"
+#include "common/VectorIntrin.h"
 
 //////////////////////////////////////////////////////////////////////////////////////////
 // Include the STL that's actually handy.

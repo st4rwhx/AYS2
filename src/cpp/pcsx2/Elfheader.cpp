@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "Elfheader.h"
@@ -160,7 +160,8 @@ void ElfObject::InitElfHeaders()
 
 	// [P15] @@ELF_PHDR_DUMP@@ — dump PT_LOAD program headers to identify BSS vs code regions
 	// Removal condition: game code zeros (0x26FDF0) issue解消後
-	if (header.e_phnum > 0 && proghead) {
+	static constexpr bool kIOSLegacyELFDiagnostics = false;
+	if (kIOSLegacyELFDiagnostics && header.e_phnum > 0 && proghead) {
 		Console.WriteLn("@@ELF_PHDR_DUMP@@ entry=%08x phnum=%d filesize=%zu",
 			header.e_entry, header.e_phnum, data.size());
 		for (int i = 0; i < header.e_phnum && i < 16; i++) {

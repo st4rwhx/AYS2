@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0
 
 #include "arm64/AsmHelpers.h"
@@ -11,6 +11,7 @@
 #if defined(__APPLE__)
 #include "common/Darwin/DarwinMisc.h"
 #include <dlfcn.h>
+#include <TargetConditionals.h>
 #endif
 
 const vixl::aarch64::Register& armWRegister(int n)
@@ -76,6 +77,10 @@ thread_local a64::MacroAssembler* armAsm;
 thread_local u8* armAsmPtr;
 thread_local size_t armAsmCapacity;
 thread_local ArmConstantPool* armConstantPool;
+static thread_local u8* s_arm_block_start = nullptr;
+static thread_local size_t s_arm_block_write_size = 0;
+
+static constexpr size_t ARM64_CODE_WRITE_WINDOW = 1024 * 1024;
 
 #ifdef INCLUDE_DISASSEMBLER
 static std::mutex armDisasmMutex;
@@ -103,17 +108,29 @@ void armAlignAsmPtr()
 
 // [R59] Placement-new storage for MacroAssembler to avoid per-block heap alloc/free.
 // MacroAssembler dtor is trivial (~MacroAssembler() {}), so explicit dtor call is safe.
-static thread_local alignas(a64::MacroAssembler) u8 s_asm_storage[sizeof(a64::MacroAssembler)];
+alignas(a64::MacroAssembler) static thread_local u8 s_asm_storage[sizeof(a64::MacroAssembler)];
+
+static u8* armGetWritableCodePtr(u8* rx_ptr)
+{
+#if defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+	return rx_ptr + DarwinMisc::g_code_rw_offset;
+#else
+	return rx_ptr;
+#endif
+}
 
 u8* armStartBlock()
 {
 	armAlignAsmPtr();
 
-	HostSys::BeginCodeWrite();
+	s_arm_block_start = armAsmPtr;
+	s_arm_block_write_size = (armAsmCapacity < ARM64_CODE_WRITE_WINDOW) ? armAsmCapacity : ARM64_CODE_WRITE_WINDOW;
+	HostSys::BeginCodeWriteRange(s_arm_block_start, s_arm_block_write_size);
 
 	pxAssert(!armAsm);
-	armAsm = new (s_asm_storage) a64::MacroAssembler(static_cast<vixl::byte*>(armAsmPtr), armAsmCapacity);
+	armAsm = new (s_asm_storage) a64::MacroAssembler(static_cast<vixl::byte*>(armGetWritableCodePtr(armAsmPtr)), armAsmCapacity);
 	armAsm->GetScratchVRegisterList()->Remove(31);
+	armAsm->GetScratchRegisterList()->Remove(RSCRATCHADDR.GetCode());
 	return armAsmPtr;
 }
 
@@ -129,18 +146,16 @@ u8* armEndBlock()
 	armAsm->~MacroAssembler();
 	armAsm = nullptr;
 
-	HostSys::EndCodeWrite();
+	HostSys::EndCodeWriteRange(s_arm_block_start, s_arm_block_write_size);
 
 	HostSys::FlushInstructionCache(armAsmPtr, size);
 
+	s_arm_block_start = nullptr;
+	s_arm_block_write_size = 0;
 	armAsmPtr = armAsmPtr + size;
 	armAsmCapacity -= size;
 	return armAsmPtr;
 }
-
-// ... (omitted) ...
-
-
 
 void armDisassembleAndDumpCode(const void* ptr, size_t size)
 {
@@ -265,7 +280,7 @@ void armMoveAddressToReg(const vixl::aarch64::Register& reg, const void* addr)
 		reinterpret_cast<uintptr_t>(armGetCurrentCodePointer()) & ~static_cast<uintptr_t>(0xFFF));
 	const void* ptr_page =
 		reinterpret_cast<const void*>(reinterpret_cast<uintptr_t>(addr) & ~static_cast<uintptr_t>(0xFFF));
-	const s64 page_displacement = GetPCDisplacement(current_code_ptr_page, ptr_page) >> 12;
+	const s64 page_displacement = GetPCDisplacement(current_code_ptr_page, ptr_page) >> 10;
 	const u32 page_offset = static_cast<u32>(reinterpret_cast<uintptr_t>(addr) & 0xFFFu);
 	if (vixl::IsInt21(page_displacement) && a64::Assembler::IsImmAddSub(page_offset))
 	{
@@ -424,7 +439,10 @@ u8* ArmConstantPool::GetJumpTrampoline(const void* target)
 		return nullptr;
 	}
 
-	a64::MacroAssembler masm(static_cast<vixl::byte*>(m_base_ptr + offset), m_capacity - offset);
+	u8* const trampoline_ptr = m_base_ptr + offset;
+	static constexpr size_t TRAMPOLINE_WRITE_WINDOW = 64;
+	HostSys::BeginCodeWriteRange(trampoline_ptr, TRAMPOLINE_WRITE_WINDOW);
+	a64::MacroAssembler masm(static_cast<vixl::byte*>(armGetWritableCodePtr(trampoline_ptr)), m_capacity - offset);
 	masm.Mov(RXVIXLSCRATCH, reinterpret_cast<intptr_t>(target));
 	masm.Br(RXVIXLSCRATCH);
 	masm.FinalizeCode();
@@ -433,9 +451,10 @@ u8* ArmConstantPool::GetJumpTrampoline(const void* target)
 	m_jump_targets.emplace(target, offset);
 	m_used = offset + static_cast<u32>(masm.GetSizeOfCodeGenerated());
 
-	HostSys::FlushInstructionCache(reinterpret_cast<void*>(m_base_ptr + offset), m_used - offset);
+	HostSys::EndCodeWriteRange(trampoline_ptr, m_used - offset);
+	HostSys::FlushInstructionCache(reinterpret_cast<void*>(trampoline_ptr), m_used - offset);
 
-	return m_base_ptr + offset;
+	return trampoline_ptr;
 }
 
 u8* ArmConstantPool::GetLiteral(u64 value)
@@ -453,9 +472,12 @@ u8* ArmConstantPool::GetLiteral(const u128& value)
 		return nullptr;
 
 	const u32 offset = Common::AlignUpPow2(m_used, 16);
-	std::memcpy(&m_base_ptr[offset], &value, sizeof(value));
+	u8* const literal_ptr = &m_base_ptr[offset];
+	HostSys::BeginCodeWriteRange(literal_ptr, sizeof(value));
+	std::memcpy(armGetWritableCodePtr(literal_ptr), &value, sizeof(value));
+	HostSys::EndCodeWriteRange(literal_ptr, sizeof(value));
 	m_used = offset + sizeof(value);
-	return m_base_ptr + offset;
+	return literal_ptr;
 }
 
 u8* ArmConstantPool::GetLiteral(const u8* bytes, size_t len)

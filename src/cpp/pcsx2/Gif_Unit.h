@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #pragma once
@@ -9,28 +9,6 @@
 #include "GS/GSRegs.h"
 #include "MTGS.h"
 #include <atomic>
-// [CLIFF_DIAG] extern counters (defined in Counters.cpp)
-namespace CliffDiag {
-	extern std::atomic<uint32_t> copyGSPkt;
-	extern std::atomic<uint32_t> realignPkt;
-	extern std::atomic<uint32_t> xgkickXfer;
-	extern std::atomic<uint32_t> mtgsWaitCalls;
-	extern std::atomic<uint32_t> path1Bytes;
-	extern std::atomic<uint32_t> path2Bytes;
-	extern std::atomic<uint32_t> path3Bytes;
-	extern std::atomic<int32_t>  readAmountMax;
-	extern std::atomic<uint32_t> gsXferUs;
-	extern std::atomic<uint32_t> gsXferCalls;
-	extern std::atomic<uint32_t> vu1Ebit;
-	extern std::atomic<uint32_t> vu1ExecUs;
-	extern std::atomic<uint32_t> vu1Kicks;
-	extern std::atomic<uint32_t> xgkickUs;
-	extern std::atomic<uint32_t> frameKickNum;
-	extern std::atomic<uint32_t> firstWaitKick;
-	extern std::atomic<uint32_t> firstRealignKick;
-	extern std::atomic<uint32_t> waitUsAccum;
-	extern uint32_t f2258_totalKicks;
-}
 
 // FIXME common path ?
 #include "common/boost_spsc_queue.hpp"
@@ -128,7 +106,7 @@ struct Gif_Tag
 
 	__ri void analyzeTag()
 	{
-#ifdef _M_X86
+#ifdef ARCH_X86
 		// zero out bits for registers which shouldn't be tested
 		__m128i vregs = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(tag.REGS));
 		vregs = _mm_and_si128(vregs, _mm_srli_epi64(_mm_set1_epi32(0xFFFFFFFFu), (64 - nRegs * 4)));
@@ -141,12 +119,12 @@ struct Gif_Tag
 
 		// write out unpacked registers
 		_mm_storeu_si128(reinterpret_cast<__m128i*>(regs), vregs);
-#elif defined(_M_ARM64)
+#elif defined(ARCH_ARM64)
 		// zero out bits for registers which shouldn't be tested
 		u64 REGS64;
 		std::memcpy(&REGS64, tag.REGS, sizeof(u64));
 		REGS64 &= (0xFFFFFFFFFFFFFFFFULL >> (64 - nRegs * 4));
-		uint8x16_t vregs = vsetq_lane_u64(REGS64, vdupq_n_u64(0), 0);
+		uint8x16_t vregs = vreinterpretq_u8_u64(vsetq_lane_u64(REGS64, vdupq_n_u64(0), 0));
 
 		// get upper nibbles, interleave with lower nibbles, clear upper bits from low nibbles
 		vregs = vandq_u8(vzip1q_u8(vregs, vshrq_n_u8(vregs, 4)), vdupq_n_u8(0x0F));
@@ -293,13 +271,6 @@ struct Gif_Path
 	// causes busy-wait (82% of freeze time) without giving MTGS CPU time.
 	void mtgsReadWait()
 	{
-		CliffDiag::mtgsWaitCalls.fetch_add(1, std::memory_order_relaxed); // [CLIFF_DIAG]
-		// Track readAmount max
-		{
-			s32 ra = getReadAmount();
-			s32 cur = CliffDiag::readAmountMax.load(std::memory_order_relaxed);
-			while (ra > cur && !CliffDiag::readAmountMax.compare_exchange_weak(cur, ra, std::memory_order_relaxed)) {}
-		}
 		if (IsDevBuild)
 		{
 			DevCon.WriteLn(Color_Red, "Gif Path[%d] - MTGS Wait! [r=0x%x]", idx + 1, getReadAmount());
@@ -313,7 +284,6 @@ struct Gif_Path
 	// Moves packet data to start of buffer
 	void RealignPacket()
 	{
-		CliffDiag::realignPkt.fetch_add(1, std::memory_order_relaxed); // [CLIFF_DIAG]
 		GUNIT_LOG("Path Buffer: Realigning packet!");
 		s32 offset = curOffset - gsPack.size;
 		s32 sizeToAdd = curSize - offset;
@@ -346,7 +316,6 @@ struct Gif_Path
 
 	void CopyGSPacketData(u8* pMem, u32 size, bool aligned = false)
 	{
-		CliffDiag::copyGSPkt.fetch_add(1, std::memory_order_relaxed); // [CLIFF_DIAG]
 		if (curSize + size > buffSize)
 		{ // Move gsPack to front of buffer
 			GUNIT_LOG("CopyGSPacketData: Realigning packet!");
@@ -555,7 +524,7 @@ struct Gif_Path
 	// GS Packets that MTGS hasn't yet processed
 	u32 GetPendingGSPackets()
 	{
-		return mtvu.gsPackQueue.size();
+		return (u32)mtvu.gsPackQueue.size();
 	}
 };
 
@@ -596,7 +565,7 @@ struct Gif_Unit
 		if (vif1Regs.stat.VGW)
 		{
 			if (!(cpuRegs.interrupt & (1 << DMAC_VIF1)))
-				CPU_INT(DMAC_VIF1, 1);
+				CPU_INT(DMAC_VIF1, 1, EE_VIF1_SRC_GIF_UNIT);
 		}
 	}
 
@@ -643,7 +612,7 @@ struct Gif_Unit
 			}
 			if (curSize >= size)
 				return size;
-			if(((flush && gifTag.tag.EOP) || !flush) && (CHECK_XGKICKHACK || !EmuConfig.Cpu.Recompiler.EnableVU1))
+			if(((flush && gifTag.tag.EOP) || !flush) && (CHECK_XGKICKHACK || !REC_VU1))
 			{
 				return curSize | ((u32)gifTag.tag.EOP << 31);
 			}
@@ -676,14 +645,6 @@ struct Gif_Unit
 					Execute(false, true);
 				return 0;
 			}
-		}
-
-		// [CLIFF_DIAG] Track per-path byte counts + [P48-2] data checksum
-		{
-			int p = tranType & 3;
-			if (p == GIF_PATH_1) CliffDiag::path1Bytes.fetch_add(size, std::memory_order_relaxed);
-			else if (p == GIF_PATH_2) CliffDiag::path2Bytes.fetch_add(size, std::memory_order_relaxed);
-			else if (p == GIF_PATH_3) CliffDiag::path3Bytes.fetch_add(size, std::memory_order_relaxed);
 		}
 
 		GUNIT_LOG("%s - [path=%d][size=%d]", Gif_TransferStr[(tranType >> 8) & 0xf], (tranType & 3) + 1, size);
@@ -874,7 +835,7 @@ struct Gif_Unit
 					{
 						// Check if VIF is in a cycle or is currently "idle" waiting for GIF to come back.
 						if (!(cpuRegs.interrupt & (1 << DMAC_VIF1)))
-							CPU_INT(DMAC_VIF1, 1);
+							CPU_INT(DMAC_VIF1, 1, EE_VIF1_SRC_GIF_UNIT);
 					}
 
 					stat.APATH = 0;

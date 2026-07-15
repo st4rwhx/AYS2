@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "ImGui/ImGuiManager.h"
@@ -18,6 +18,10 @@
 #include "IconsPromptFont.h"
 
 #include "fmt/format.h"
+
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 #include <array>
 #include <atomic>
@@ -39,6 +43,10 @@ enum : u32
 	FIRST_EXTERNAL_INPUT_SOURCE = static_cast<u32>(InputSourceType::Pointer) + 1u,
 	LAST_EXTERNAL_INPUT_SOURCE = static_cast<u32>(InputSourceType::Count),
 };
+
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+extern "C" void ARMSX2_iOSUpdatePadVibration(u32 pad_index, float large_intensity, float small_intensity);
+#endif
 
 // ------------------------------------------------------------------------
 // Event Handler Type
@@ -138,6 +146,9 @@ static InputInterceptHook::Callback m_event_intercept_callback;
 
 // Input sources. Keyboard/mouse don't exist here.
 static std::array<std::unique_ptr<InputSource>, static_cast<u32>(InputSourceType::Count)> s_input_sources;
+
+// Layout preference for gamepad controller glyphs.
+static std::atomic<InputLayout> s_gamepad_icon_preference = InputLayout::Unknown;
 
 // ------------------------------------------------------------------------
 // Hotkeys
@@ -442,6 +453,16 @@ bool InputManager::PrettifyInputBinding(SmallStringBase& binding, bool use_icons
 		binding = ret;
 
 	return changed;
+}
+
+void InputManager::SetGamepadIconPreference(InputLayout layout)
+{
+	s_gamepad_icon_preference.store(layout, std::memory_order_relaxed);
+}
+
+InputLayout InputManager::GetGamepadIconPreference()
+{
+	return s_gamepad_icon_preference.load(std::memory_order_relaxed);
 }
 
 void InputManager::PrettifyInputBindingPart(const std::string_view binding, SmallString& ret, bool& changed, bool use_icons)
@@ -830,19 +851,16 @@ float InputManager::ApplySingleBindingScale(float scale, float deadzone, float v
 std::vector<const HotkeyInfo*> InputManager::GetHotkeyList()
 {
 	std::vector<const HotkeyInfo*> ret;
-#if !defined(__ANDROID__)
 	for (const HotkeyInfo* hotkey_list : s_hotkey_list)
 	{
 		for (const HotkeyInfo* hotkey = hotkey_list; hotkey->name != nullptr; hotkey++)
 			ret.push_back(hotkey);
 	}
-#endif
 	return ret;
 }
 
 void InputManager::AddHotkeyBindings(SettingsInterface& si, bool is_profile)
 {
-#if !defined(__ANDROID__)
 	for (const HotkeyInfo* hotkey_list : s_hotkey_list)
 	{
 		for (const HotkeyInfo* hotkey = hotkey_list; hotkey->name != nullptr; hotkey++)
@@ -854,7 +872,6 @@ void InputManager::AddHotkeyBindings(SettingsInterface& si, bool is_profile)
 			AddBindings(bindings, InputButtonEventHandler{hotkey->handler}, InputBindingInfo::Type::Button, si, "Hotkeys", hotkey->name, is_profile);
 		}
 	}
-#endif
 }
 
 void InputManager::AddPadBindings(SettingsInterface& si, u32 pad_index, bool is_profile)
@@ -1385,6 +1402,13 @@ void InputManager::SetUSBVibrationIntensity(u32 port, float large_or_single_moto
 
 void InputManager::SetPadVibrationIntensity(u32 pad_index, float large_or_single_motor_intensity, float small_motor_intensity)
 {
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+	// iOS feeds controller input through the app's direct SDL/GameController bridge
+	// rather than PCSX2's configurable motor bindings, so mirror every pad rumble
+	// command into the iOS rumble queue before the generic binding path below.
+	ARMSX2_iOSUpdatePadVibration(pad_index, large_or_single_motor_intensity, small_motor_intensity);
+#endif
+
 	for (PadVibrationBinding& pad : s_pad_vibration_array)
 	{
 		if (pad.pad_index != pad_index)
@@ -1434,6 +1458,11 @@ void InputManager::SetPadVibrationIntensity(u32 pad_index, float large_or_single
 
 void InputManager::PauseVibration()
 {
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+	for (u32 pad_index = 0; pad_index < Pad::NUM_CONTROLLER_PORTS; pad_index++)
+		ARMSX2_iOSUpdatePadVibration(pad_index, 0.0f, 0.0f);
+#endif
+
 	for (PadVibrationBinding& binding : s_pad_vibration_array)
 	{
 		for (u32 motor_index = 0; motor_index < MAX_MOTORS_PER_PAD; motor_index++)

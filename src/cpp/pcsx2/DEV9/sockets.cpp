@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "common/Assertions.h"
@@ -6,6 +6,7 @@
 #include "common/ScopedGuard.h"
 
 #ifdef _WIN32
+#include "common/RedtapeWindows.h"
 #include <winsock2.h>
 #include <iphlpapi.h>
 #elif defined(__POSIX__)
@@ -20,6 +21,7 @@
 #include "sockets.h"
 #include "AdapterUtils.h"
 #include "DEV9.h"
+#include "Host.h"
 
 #include "Sessions/ICMP_Session/ICMP_Session.h"
 #include "Sessions/TCP_Session/TCP_Session.h"
@@ -45,7 +47,7 @@ std::vector<AdapterEntry> SocketAdapter::GetAdapters()
 	std::vector<AdapterEntry> nic;
 	AdapterEntry autoEntry;
 	autoEntry.type = Pcsx2Config::DEV9Options::NetApi::Sockets;
-	autoEntry.name = "Auto";
+	autoEntry.name = TRANSLATE_STR("DEV9", "Auto");
 	autoEntry.guid = "Auto";
 	nic.push_back(autoEntry);
 
@@ -110,6 +112,7 @@ SocketAdapter::SocketAdapter()
 
 	AdapterUtils::Adapter adapter;
 	AdapterUtils::AdapterBuffer buffer;
+	Console.WriteLn("DEV9: Socket: init requested adapter='%s'", EmuConfig.DEV9.EthDevice.c_str());
 
 	if (strcmp(EmuConfig.DEV9.EthDevice.c_str(), "Auto") != 0)
 	{
@@ -184,6 +187,10 @@ SocketAdapter::SocketAdapter()
 	sendThreadId = std::this_thread::get_id();
 
 	initialized = true;
+	Console.WriteLn("DEV9: Socket: initialized adapter='%s' ps2IP=%u.%u.%u.%u gateway=%u.%u.%u.%u",
+		EmuConfig.DEV9.EthDevice.c_str(),
+		ps2IP.bytes[0], ps2IP.bytes[1], ps2IP.bytes[2], ps2IP.bytes[3],
+		gateway.bytes[0], gateway.bytes[1], gateway.bytes[2], gateway.bytes[3]);
 }
 
 bool SocketAdapter::blocks()

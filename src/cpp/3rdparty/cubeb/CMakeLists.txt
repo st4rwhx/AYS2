@@ -134,7 +134,13 @@ if(USE_AUDIOUNIT)
     target_sources(cubeb PRIVATE src/cubeb_osx_run_loop.cpp)
   endif()
   target_compile_definitions(cubeb PRIVATE USE_AUDIOUNIT)
-  target_link_libraries(cubeb PRIVATE "-framework AudioUnit" "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation" "-framework CoreServices")
+  if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # On iOS the standalone AudioUnit framework does not exist (its APIs live in
+    # AudioToolbox), and CoreServices is macOS-only. Link only what iOS ships.
+    target_link_libraries(cubeb PRIVATE "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation")
+  else()
+    target_link_libraries(cubeb PRIVATE "-framework AudioUnit" "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation" "-framework CoreServices")
+  endif()
 endif()
 endif()
 

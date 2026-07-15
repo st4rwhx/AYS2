@@ -1,9 +1,8 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #pragma once
 
-#include "arm64/VixlHelpers.h"
 #include "common/Pcsx2Defs.h"
 
 // [iPSX2] P0 Cleanup: Disable behavior-changing patches by default.
@@ -13,8 +12,8 @@
 #endif
 
 static const u32 BIAS = 2;				// Bus is half of the actual ps2 speed
-static const u32 PS2CLK = 294912000;	//hz	/* 294.912 mhz */
-extern s64 PSXCLK;	/* 36.864 Mhz */
+static const u32 PS2CLK = 294912000;	//Hz	/* 294.912 MHz */
+extern u32 PSXCLK;	/* 36.864 MHz */
 
 
 #include "Memory.h"
@@ -66,6 +65,18 @@ inline bool iPSX2_IsSafeOnlyEnabled()
 	static int s_cached = -1;
 	if (s_cached < 0)
 		s_cached = iPSX2_GetRuntimeEnvBool("iPSX2_SAFE_ONLY", true) ? 1 : 0;
+	return (s_cached == 1);
+}
+
+// DEBUG_VERBOSE=1 で legacy "DEBUG: ..." prefix log + R103 block dump 等の hot-path
+// diagnostic を有効化。 release ship default は false (= 全 suppress)。
+// 用途: counter rcnt* trace、 JIT block compile trace、 icache flush trace 等を
+// 必要時 (= 退行調査) に env で復活可能にする。
+inline bool iPSX2_IsDebugVerbose()
+{
+	static int s_cached = -1;
+	if (s_cached < 0)
+		s_cached = iPSX2_GetRuntimeEnvBool("iPSX2_DEBUG_VERBOSE", false) ? 1 : 0;
 	return (s_cached == 1);
 }
 

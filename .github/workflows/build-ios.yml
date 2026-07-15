@@ -3,8 +3,11 @@ name: Build iPSX2 iOS
 # Déclenche sur chaque push sur main, ou manuellement depuis l'onglet Actions
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, "claude/**"]
   workflow_dispatch:
+
+permissions:
+  contents: write # nécessaire pour publier l'IPA en GitHub Release
 
 jobs:
   build:
@@ -17,7 +20,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1 # Pas besoin de tout l'historique git
+          fetch-depth: 30 # historique récent pour générer le changelog SideStore
 
       # ── 2. Sélectionner Xcode ──────────────────────────────────────────────
       - name: Select Xcode
@@ -62,16 +65,24 @@ jobs:
       # ── 5. Configurer cmake → génère iPSX2.xcodeproj ───────────────────────
       - name: CMake configure
         run: |
+          # --fresh wipes the cached CMakeCache/CMakeFiles and reruns configure
+          # from scratch, so generated headers (e.g. svnrev.h from
+          # write_svnrev_h) are always regenerated with the current cmake logic.
+          # Without it, the restored build/ cache can serve a stale generated
+          # header even though the cmake source changed. Compiled objects in
+          # DerivedData are kept, so incremental compilation still benefits.
           cmake \
+            --fresh \
             -B "$GITHUB_WORKSPACE/build" \
             -G Xcode \
             -DCMAKE_SYSTEM_NAME=iOS \
-            -DiPSX2_REAL_DEVICE=ON \
+            -DARMSX2_REAL_DEVICE=ON \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -DCMAKE_CXX_STANDARD=20 \
             -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+            -DARMSX2_BUNDLE_IDENTIFIER="com.balaj.elorisprism" \
             "$GITHUB_WORKSPACE/src/cpp" 2>&1 | tee cmake_output.txt
           # Extraire erreurs et les mettre dans le Summary public
           echo '## CMake Output' >> $GITHUB_STEP_SUMMARY
@@ -86,8 +97,8 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild \
-            -project "$GITHUB_WORKSPACE/build/iPSX2.xcodeproj" \
-            -scheme iPSX2 \
+            -project "$GITHUB_WORKSPACE/build/ARMSX2iOS.xcodeproj" \
+            -scheme ARMSX2iOS \
             -configuration Release \
             -sdk "$IOS_SDK" \
             -derivedDataPath "$GITHUB_WORKSPACE/build/DerivedData" \
@@ -104,15 +115,36 @@ jobs:
           grep -E '(error:|Error:|FAILED|BUILD FAILED)' build.log | tail -80 >> $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
           # Vérifier que le .app a bien été produit
-          find "$GITHUB_WORKSPACE/build/DerivedData" -name "iPSX2.app" -type d | head -3
+          find "$GITHUB_WORKSPACE/build/DerivedData" -name "ARMSX2iOS.app" -type d | head -3
 
       # ── 7. Packager en .ipa ─────────────────────────────────────────────────
       - name: Package IPA
         run: |
-          APP=$(find "$GITHUB_WORKSPACE/build/DerivedData" -name "iPSX2.app" -type d | head -1)
+          # CMake's Xcode generator writes the final .app to build/Release-iphoneos,
+          # not under DerivedData (which only holds intermediates). Search the whole
+          # build tree so we find it regardless of layout.
+          APP=$(find "$GITHUB_WORKSPACE/build" -name "ARMSX2iOS.app" -type d | head -1)
           echo "App trouvée : $APP"
+          if [[ -z "$APP" ]]; then
+            echo "::error::ARMSX2iOS.app not found under build/"
+            find "$GITHUB_WORKSPACE/build" -name "*.app" -type d || true
+            exit 1
+          fi
           mkdir -p "$GITHUB_WORKSPACE/Payload"
-          cp -r "$APP" "$GITHUB_WORKSPACE/Payload/iPSX2.app"
+          cp -r "$APP" "$GITHUB_WORKSPACE/Payload/ARMSX2iOS.app"
+          # Pin the bundle version to the SideStore/AltStore feed version
+          # (0.1.<run>) so the IPA's CFBundleShortVersionString matches the version
+          # declared in source.json. The ARMSX2 core keeps its internal
+          # ARMSX2_VERSION (2.2.x); only the outward-facing bundle version is
+          # rewritten here. Without this the store refuses to install with
+          # "The downloaded version does not match the version specified by the source".
+          # ELORIS-PRISM: pin IPA version to SideStore feed version 0.1.<run> (seam)
+          VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          APP_PLIST="$GITHUB_WORKSPACE/Payload/ARMSX2iOS.app/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" "$APP_PLIST"
+          echo "Pinned bundle version → $VERSION (CFBundleVersion ${GITHUB_RUN_NUMBER})"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PLIST"
           cd "$GITHUB_WORKSPACE"
           zip -r iPSX2.ipa Payload/
           ls -lh iPSX2.ipa
@@ -124,6 +156,124 @@ jobs:
           name: iPSX2-${{ github.sha }}
           path: iPSX2.ipa
           retention-days: 14 # Dispo 2 semaines
+
+      # ── 8b. Publier l'IPA en GitHub Release (lien direct pour Sideloadly) ───
+      # Release "roulante" ios-latest : recréée à chaque build réussi, elle
+      # pointe toujours vers le dernier IPA. Sur un repo public, l'asset a une
+      # URL de téléchargement directe (sans login) utilisable dans Sideloadly.
+      - name: Publish IPA to rolling Release
+        # Publishes to the PUBLIC storefront repo (ELORIS-PRISM), NEVER to this
+        # source repo. Requires a repo-scoped PAT stored as the RELEASE_TOKEN
+        # secret (the default GITHUB_TOKEN can't write to another repo). If the
+        # secret/repo isn't set up yet this step no-ops instead of failing the
+        # build — the IPA is always available as an artifact above.
+        continue-on-error: true
+        env:
+          # Target public storefront repo (@handle/ELORIS-PRISM). Change this
+          # once the storefront account exists.
+          RELEASE_REPO: ayanodeath/ELORIS-PRISM
+          # Contact for the GPL-3.0 written offer (§6). Anyone who has the app
+          # can request the corresponding source here. Fill in your email.
+          SOURCE_CONTACT: "ayanoxkiyotakaxpsycoworld@gmail.com"
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::warning::RELEASE_TOKEN secret not set — skipping publish to $RELEASE_REPO."
+            echo "Create a repo-scoped PAT and add it as the RELEASE_TOKEN secret to enable auto-publish."
+            exit 0
+          fi
+          TAG="latest"
+          VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          # Public-facing asset is branded ELORIS-PRISM; internal build target
+          # stays iPSX2 (scheme/paths), so rename the packaged IPA here.
+          # Versioned filename → the download URL is IMMUTABLE per version. A
+          # client whose cached source.json is a build or two behind still
+          # resolves to a matching IPA (no "downloaded version does not match"),
+          # because the rolling release is never deleted and old versioned IPAs
+          # stay reachable. Only the feed files (source.json/icon) are refreshed.
+          IPA_NAME="ELORIS-PRISM-${VERSION}.ipa"
+          cp iPSX2.ipa "$IPA_NAME"
+          IPA_SIZE=$(stat -f%z "$IPA_NAME" 2>/dev/null || stat -c%s "$IPA_NAME")
+          TODAY=$(date +%F)
+          # Integrity hashes — required by SideStore's Community-Source submission
+          # (md5, anti bait-and-switch) and generally good practice.
+          IPA_MD5=$(md5 -q "$IPA_NAME" 2>/dev/null || md5sum "$IPA_NAME" | cut -d' ' -f1)
+          IPA_SHA=$(shasum -a 256 "$IPA_NAME" | cut -d' ' -f1)
+          printf '%s\n  version: %s\n  size:    %s bytes\n  md5:     %s\n  sha256:  %s\n' \
+            "$IPA_NAME" "$VERSION" "$IPA_SIZE" "$IPA_MD5" "$IPA_SHA" > checksums.txt
+          {
+            echo '## Release checksums'
+            echo '```'; cat checksums.txt; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          IPA_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/${IPA_NAME}"
+          ICON_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/icon.png"
+
+          # Icon for the store listing.
+          cp "src/assets/Assets.xcassets/AppIcon.appiconset/icon-1024.png" icon.png || true
+
+          # GPL-3.0 §6 written offer. Ships in every release next to the IPA so
+          # any recipient can obtain the corresponding source on request. This
+          # is the ONLY compliance pointer needed — it names no repo and says
+          # nothing about what the app is, so it stays SEO-neutral.
+          cat > SOURCE-OFFER.txt <<OFFER
+          ELORIS-PRISM includes components licensed under the GNU General Public
+          License, version 3 (GPL-3.0). In accordance with section 6 of that
+          license, the complete corresponding source code is available to any
+          person who possesses this software, at no charge, on request for a
+          period of at least three years.
+
+          To request the corresponding source, contact: ${SOURCE_CONTACT}
+          OFFER
+
+          # Build a human-readable changelog from recent commit subjects. This
+          # becomes the version's localizedDescription, which SideStore/AltStore
+          # render as the "What's New" text — so users see what actually changed
+          # instead of a generic "Latest development build." Subjects only (never
+          # bodies), so commit trailers never leak into the store listing.
+          CHANGELOG="$(git log -10 --no-merges --pretty=format:'• %s' 2>/dev/null \
+            | grep -viE '^• (ci|chore|build)(\(|:)' \
+            | sed -E "s/otti'?s?/upstream/Ig" | head -8)"
+          [ -z "$CHANGELOG" ] && CHANGELOG="• Latest development build."
+          export CHANGELOG
+
+          # Regenerate the SideStore/AltStore source with this build's version,
+          # size and date so SideStore detects it as an update (same bundle id =
+          # no new App ID consumed on update).
+          python3 - "$VERSION" "$IPA_SIZE" "$TODAY" "$IPA_URL" "$ICON_URL" <<'PY'
+          import json, sys, os
+          version, size, date, ipa, icon = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+          notes = (os.environ.get("CHANGELOG") or "").strip()[:1200] or "• Latest development build."
+          desc = f"What's new in v{version}:\n{notes}"
+          src = json.load(open("source.json"))
+          app = src["apps"][0]
+          app["iconURL"] = icon
+          app["downloadURL"] = ipa
+          app["version"] = version
+          app["versionDate"] = date
+          app["size"] = size
+          app["versions"] = [{
+              "version": version, "date": date,
+              "localizedDescription": desc,
+              "downloadURL": ipa, "size": size, "minOSVersion": "17.0"
+          }]
+          json.dump(src, open("source.json", "w"), indent=2, ensure_ascii=False)
+          print("source.json version:", version, "\nnotes:\n" + desc)
+          PY
+
+          # Never delete the rolling release — that would wipe older versioned
+          # IPAs and turn a harmless "slightly stale" install into a 404. Create
+          # it once, then clobber-upload: the versioned IPA accumulates, the feed
+          # files (source.json/icon/offer/checksums) are always refreshed.
+          gh release view "$TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$RELEASE_REPO" \
+              --title "ELORIS-PRISM (rolling)" \
+              --prerelease \
+              --notes "Rolling ELORIS-PRISM release. Add this source in SideStore/AltStore for 1-tap updates:
+          \`https://github.com/${RELEASE_REPO}/releases/download/${TAG}/source.json\`"
+          gh release upload "$TAG" "$IPA_NAME" source.json icon.png SOURCE-OFFER.txt checksums.txt \
+            --repo "$RELEASE_REPO" --clobber
+          echo "Published $IPA_NAME + source.json → https://github.com/$RELEASE_REPO/releases/tag/$TAG"
 
       # ── 9. Upload les logs si la build échoue ──────────────────────────────
       - name: Upload build logs (si erreur)

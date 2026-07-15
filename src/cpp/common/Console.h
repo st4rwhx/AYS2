@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2002-2025 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
 #pragma once
@@ -81,11 +81,6 @@ namespace Log
 	bool IsFileOutputEnabled();
 	bool SetFileOutputLevel(LOGLEVEL level, std::string path);
 
-#if defined(__ANDROID__)
-	// adds an Android-specific file mirror for logcat output
-	bool SetAndroidFileOutputLevel(LOGLEVEL level, std::string path);
-#endif
-
 	// returns the log file, this is really dangerous to use if it changes...
 	std::FILE* GetFileLogHandle();
 
@@ -101,6 +96,7 @@ namespace Log
 	LOGLEVEL GetMaxLevel();
 
 	// writes a message to the log
+	bool ShouldSuppressLegacyProbeMessage(std::string_view message);
 	void Write(LOGLEVEL level, ConsoleColors color, std::string_view message);
 	void Writef(LOGLEVEL level, ConsoleColors color, const char* format, ...);
 	void Writev(LOGLEVEL level, ConsoleColors color, const char* format, va_list ap);
