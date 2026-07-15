@@ -162,27 +162,16 @@ jobs:
       # pointe toujours vers le dernier IPA. Sur un repo public, l'asset a une
       # URL de téléchargement directe (sans login) utilisable dans Sideloadly.
       - name: Publish IPA to rolling Release
-        # Publishes to the PUBLIC storefront repo (AYS2), NEVER to this
-        # source repo. Requires a repo-scoped PAT stored as the RELEASE_TOKEN
-        # secret (the default GITHUB_TOKEN can't write to another repo). If the
-        # secret/repo isn't set up yet this step no-ops instead of failing the
-        # build — the IPA is always available as an artifact above.
-        continue-on-error: true
+        # Publishes directly to this repo (st4rwhx/AYS2) using the native GITHUB_TOKEN
+        # which has write access to the repo triggering the workflow.
         env:
-          # Target public storefront repo (@handle/AYS2). Change this
-          # once the storefront account exists.
           RELEASE_REPO: st4rwhx/AYS2
           # Contact for the GPL-3.0 written offer (§6). Anyone who has the app
           # can request the corresponding source here. Fill in your email.
           SOURCE_CONTACT: "ayanoxkiyotakaxpsycoworld@gmail.com"
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [[ -z "${GH_TOKEN:-}" ]]; then
-            echo "::warning::RELEASE_TOKEN secret not set — skipping publish to $RELEASE_REPO."
-            echo "Create a repo-scoped PAT and add it as the RELEASE_TOKEN secret to enable auto-publish."
-            exit 0
-          fi
           TAG="latest"
           VERSION="0.1.${GITHUB_RUN_NUMBER}"
           # Public-facing asset is branded AYS2; internal build target
