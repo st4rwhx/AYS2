@@ -1,19 +1,30 @@
 # 🚀 Phase 8: BUILD IN PROGRESS - Live Status
 
-**Status**: ⏳ **In Progress**  
-**Build Run**: #160  
-**Branch**: `migrate/v2.6.0.5-master`  
-**Commit**: `265d58b0` (Fix: Enable build-ios workflow on migrate/** branches)  
-**Created**: 2026-07-16T01:13:49Z  
-**Updated**: 2026-07-16T01:13:53Z  
+**Status**: ⏳ **In Progress - NEW BUILD WITH FIX**  
+**Build Run**: #163  
+**Branch**: `migrate/v2.6.0.5-clean`  
+**Commit**: `a06fe911` (Fix: RapidYAML v0.11+ API - use Parser::parse_in_arena() instead of EventHandlerTree)  
+**Created**: 2026-07-16T01:47:48Z  
+**Updated**: 2026-07-16T01:47:48Z (LIVE)
+
+---
+
+## 🎯 What's Different From Previous Attempts
+
+✅ **Run #162 Failed**: C++ compilation error - `EventHandlerTree` doesn't exist in v0.11+  
+✅ **Root Cause Found**: RapidYAML API changed - `EventHandlerTree` removed, now use `Parser::parse_in_arena()` method  
+✅ **Fix Applied**: Updated `src/cpp/common/YAML.cpp` (lines 135-146)  
+✅ **Pushed**: Commit `a06fe911` to GitHub  
+⏳ **Run #163 Started**: 2026-07-16T01:47:48Z - building with the fix
 
 ---
 
 ## 🎯 What's Building Right Now
 
-✅ **Workflow Enabled** — Fixed `.github/workflows/build-ios.yml` to include `migrate/**` branches  
-⏳ **CMake Configuration** — Setting up build environment with new ARMSX2 v2.6.0.5 core  
-⏳ **C++ Compilation** — Compiling new EE recompiler with zero-register folding optimization  
+✅ **Workflow Enabled** — Build triggered on push  
+✅ **Fix Applied** — YAML.cpp now uses correct RapidYAML v0.11+ API  
+⏳ **CMake Configuration** — Setting up build environment with fixed YAML parser  
+⏳ **C++ Compilation** — Compiling with corrected parse_in_arena() call  
 ⏳ **Swift Build** — Compiling iOS UI and EmulatorBridge  
 ⏳ **MetalFX Integration** — Linking Metal + MetalFX frameworks  
 ⏳ **IPA Generation** — Creating signed iOS app package (~18–20 MB expected)  
@@ -23,60 +34,74 @@
 
 ## ✅ Changes This Session
 
-1. **Fixed Workflow Trigger**:
-   - Updated `.github/workflows/build-ios.yml`
-   - Added `"migrate/**"` to branch triggers
-   - **Before**: `branches: [main, master, "claude/**"]`
-   - **After**: `branches: [main, master, "claude/**", "migrate/**"]`
+### 1. **Root Cause Analysis**:
+   - Searched build logs for compilation errors
+   - Found: `error: no member named 'EventHandlerTree' in namespace 'ryml'`
+   - Verified: `EventHandlerTree` class removed in RapidYAML v0.11+
 
-2. **Pushed Workflow Fix**:
-   - Commit: `265d58b0`
-   - Message: "Fix: Enable build-ios workflow on migrate/** branches"
-   - This triggered **Run #160** automatically
+### 2. **Fix Applied** (src/cpp/common/YAML.cpp):
+   ```cpp
+   // BEFORE (deprecated):
+   ryml::EventHandlerTree event_handler(callbacks);  // ❌ REMOVED in v0.11+
+   ryml::Parser parser(&event_handler);
+   ryml::parse_in_arena(&parser, file_name, yaml, &tree);  // ❌ Wrong API
+   
+   // AFTER (fixed):
+   ryml::Parser parser(callbacks);  // ✅ New API
+   parser.parse_in_arena(file_name, yaml, &tree);  // ✅ Method call, not free function
+   ```
+
+### 3. **Commit & Push**:
+   - Commit: `a06fe911`
+   - Message: "Fix: RapidYAML v0.11+ API - use Parser::parse_in_arena() instead of EventHandlerTree"
+   - Pushed to `migrate/v2.6.0.5-clean`
 
 ---
 
 ## 📊 Expected Outcomes
 
-### If Build ✅ SUCCEEDS:
+### If Build ✅ SUCCEEDS (this time):
+- ✅ YAML.cpp compiles without EventHandlerTree errors
+- ✅ All C++ compilation passes
+- ✅ Swift compilation passes
 - ✅ IPA generated (v0.1.260 or next build number)
 - ✅ Uploaded to Releases as rolling `latest`
 - ✅ Ready for device sideload testing on iPhone 15
 - ✅ Proceed to Phase 8 device testing
 
-### If Build ❌ FAILS:
-- ❌ Check logs for CMake/compile/link errors
-- ❌ Common issues:
-  - Missing 3rdparty includes
-  - Swift-ObjC bridge mismatch
-  - MetalFX weak-link guards
+### If Build ❌ FAILS Again:
+- ❌ Check logs for other compilation issues
+- ❌ Likely causes:
+  - Missing other API changes in rapidyaml
   - Path resolution issues
-- ❌ Fix root cause and retry
+  - Swift-ObjC bridge issues
+- ❌ Apply additional fixes and retry
 
 ---
 
 ## 🔍 Next Steps
 
-1. **Wait for build to complete** (15–30 min typical for iOS builds)
-2. **Check Run #160 logs**: https://github.com/st4rwhx/AYS2/actions/runs/29463594147
-3. **If SUCCESS**:
+1. **Monitor Run #163**: https://github.com/st4rwhx/AYS2/actions/runs/29463594147
+2. **Expected Duration**: 15–30 minutes from start (01:47 UTC)
+3. **If SUCCESS** (by ~02:15 UTC):
    - Download IPA from Releases
    - Sideload to iPhone 15
    - Test all Phase 8 device checklist items
 4. **If FAILURE**:
    - Review error logs
-   - Fix issues locally
-   - Push fix and retry
+   - Analyze root cause
+   - Apply additional fixes
 
 ---
 
 ## 📝 Build Checklist
 
-- [x] Workflow file fixed (`build-ios.yml`)
-- [x] Pushed to `migrate/v2.6.0.5-master`
-- [x] Run #160 triggered (in_progress)
+- [x] Root cause identified (EventHandlerTree API change)
+- [x] Fix applied (use Parser::parse_in_arena() method)
+- [x] Commit created and pushed
+- [x] Run #163 triggered (in_progress)
 - [ ] CMake configure completes
-- [ ] C++ compilation succeeds
+- [ ] C++ compilation succeeds (YAML.cpp should pass now)
 - [ ] Swift compilation succeeds
 - [ ] IPA generated and signed
 - [ ] IPA uploaded to Releases
@@ -84,4 +109,19 @@
 
 ---
 
-**🎬 Action**: Monitor Run #160 at https://github.com/st4rwhx/AYS2/actions/runs/29463594147
+## 🎬 Live Monitoring
+
+**GitHub Actions Link**: https://github.com/st4rwhx/AYS2/actions/runs/29463594147  
+**Expected Status Timeline**:
+- `in_progress` → ~02:00 UTC
+- `completed` → ~02:15 UTC
+
+**Check Logs** with:
+```bash
+gh run view 163 --repo st4rwhx/AYS2 --log
+```
+
+---
+
+**Status**: LIVE - Waiting for Build #163 to complete with the fix...
+
