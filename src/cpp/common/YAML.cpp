@@ -132,8 +132,7 @@ std::optional<ryml::Tree> ParseYAMLFromString(ryml::csubstr yaml, ryml::csubstr 
 	};
 #endif
 
-	ryml::EventHandlerTree event_handler(callbacks);
-	ryml::Parser parser(&event_handler);
+	ryml::Parser parser(callbacks);
 
 	ryml::Tree tree(callbacks);
 
@@ -143,7 +142,8 @@ std::optional<ryml::Tree> ParseYAMLFromString(ryml::csubstr yaml, ryml::csubstr 
 	if (setjmp(context.env) != 0)
 		return std::nullopt;
 
-	ryml::parse_in_arena(&parser, file_name, yaml, &tree);
+	// AYS2: Use new RapidYAML v0.11+ API - EventHandlerTree removed, use Parser::parse_in_arena() directly
+	parser.parse_in_arena(file_name, yaml, &tree);
 	if (resolve_anchors)
 	{
 		tree.resolve();
