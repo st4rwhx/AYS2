@@ -8,8 +8,11 @@
 #include "common/Error.h"
 
 #ifdef __APPLE__
+// AYS2: IOKit is macOS-only, not available on iOS
+#if !TARGET_OS_IPHONE
 #include <IOKit/storage/IOCDMediaBSDClient.h>
 #include <IOKit/storage/IODVDMediaBSDClient.h>
+#endif
 #endif
 
 #include <fcntl.h>
