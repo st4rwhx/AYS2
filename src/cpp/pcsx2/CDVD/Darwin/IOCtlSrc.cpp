@@ -7,13 +7,11 @@
 #include "common/Console.h"
 #include "common/Error.h"
 
-#ifdef __APPLE__
-// AYS2: IOKit is macOS-only, not available on iOS
-#if !TARGET_OS_IPHONE
+// AYS2: Entire file is macOS-only, not available on iOS
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+
 #include <IOKit/storage/IOCDMediaBSDClient.h>
 #include <IOKit/storage/IODVDMediaBSDClient.h>
-#endif
-#endif
 
 #include <fcntl.h>
 #include <sys/ioctl.h>
@@ -265,3 +263,5 @@ bool IOCtlSrc::DiscReady()
 	return false;
 #endif
 }
+
+#endif  // defined(__APPLE__) && !TARGET_OS_IPHONE

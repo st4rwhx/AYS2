@@ -5,9 +5,9 @@
 
 #include "common/Console.h"
 
-#ifdef __APPLE__
-// AYS2: IOKit is macOS-only, not available on iOS
-#if !TARGET_OS_IPHONE
+// AYS2: Entire file is macOS-only, not available on iOS
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+
 #include <CoreFoundation/CoreFoundation.h>
 
 #include <IOKit/storage/IOMedia.h>
@@ -15,8 +15,6 @@
 #include <IOKit/storage/IODVDMedia.h>
 #include <IOKit/IOBSD.h>
 #include <IOKit/IOKitLib.h>
-#endif
-#endif
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -105,3 +103,5 @@ void GetValidDrive(std::string& drive)
 	if (!drive.empty())
 		DevCon.WriteLn("CDVD: Opening drive '%s'...", drive.c_str());
 }
+
+#endif  // defined(__APPLE__) && !TARGET_OS_IPHONE
