@@ -20,7 +20,6 @@
 #include "common/Path.h"
 #include "common/WindowInfo.h"
 #include "pcsx2/VMManager.h"
-#include "pcsx2/AYS2Diagnostics.h" // AYS2: flight recorder (seam)
 #include "pcsx2/Config.h"
 #include "pcsx2/Host.h"
 #include "pcsx2/GS/GS.h"
@@ -459,6 +458,7 @@ int main(int argc, char* argv[]) {
 #include "common/FileSystem.h"
 #include "common/Path.h"
 #include "pcsx2/VMManager.h"
+#include "pcsx2/AYS2Diagnostics.h" // AYS2: flight recorder (seam)
 #include "pcsx2/GameList.h"
 #include "pcsx2/ImGui/ImGuiManager.h"
 #include "pcsx2/Config.h"
