@@ -14,6 +14,7 @@
 #include "cubeb/cubeb.h"
 #include "fmt/format.h"
 #include "IconsFontAwesome.h"
+#include <TargetConditionals.h>
 
 #ifdef _WIN32
 #include "common/RedtapeWindows.h"
@@ -306,6 +307,7 @@ std::unique_ptr<AudioStream> AudioStream::CreateCubebAudioStream(u32 sample_rate
 	return stream;
 }
 
+#if !TARGET_OS_IPHONE
 std::vector<std::pair<std::string, std::string>> AudioStream::GetCubebDriverNames()
 {
 	std::vector<std::pair<std::string, std::string>> names;
@@ -317,7 +319,16 @@ std::vector<std::pair<std::string, std::string>> AudioStream::GetCubebDriverName
 
 	return names;
 }
+#else
+std::vector<std::pair<std::string, std::string>> AudioStream::GetCubebDriverNames()
+{
+	std::vector<std::pair<std::string, std::string>> names;
+	names.emplace_back(std::string(), TRANSLATE_STR("AudioStream", "Default"));
+	return names;
+}
+#endif
 
+#if !TARGET_OS_IPHONE
 std::vector<AudioStream::DeviceInfo> AudioStream::GetCubebOutputDevices(const char* driver)
 {
 	std::vector<AudioStream::DeviceInfo> ret;
@@ -383,3 +394,11 @@ std::vector<AudioStream::DeviceInfo> AudioStream::GetCubebOutputDevices(const ch
 
 	return ret;
 }
+#else
+std::vector<AudioStream::DeviceInfo> AudioStream::GetCubebOutputDevices(const char* driver)
+{
+	std::vector<AudioStream::DeviceInfo> ret;
+	ret.emplace_back(std::string(), TRANSLATE_STR("AudioStream", "Default"), 0);
+	return ret;
+}
+#endif
