@@ -15,18 +15,18 @@
       "screenshotURLs": [],
       "versions": [
         {
-          "version": "0.1.0",
-          "date": "2026-07-09",
-          "localizedDescription": "Latest development build.",
-          "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/latest/AYS2.ipa",
-          "size": 9245734,
+          "version": "0.1.157",
+          "date": "2026-07-16",
+          "localizedDescription": "What's new in v0.1.157:\n• Latest development build.\n• Performance improvements\n• Bug fixes and stability enhancements",
+          "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/latest/AYS2-0.1.157.ipa",
+          "size": 19309046,
           "minOSVersion": "17.0"
         }
       ],
-      "version": "0.1.0",
-      "versionDate": "2026-07-09",
-      "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/latest/AYS2.ipa",
-      "size": 9245734,
+      "version": "0.1.157",
+      "versionDate": "2026-07-16",
+      "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/latest/AYS2-0.1.157.ipa",
+      "size": 19309046,
       "appPermissions": {}
     }
   ]
