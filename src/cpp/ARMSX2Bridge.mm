@@ -13,6 +13,7 @@ extern "C" bool ARMSX2_IsSDLFullscreen();
 #include "CDVD/CDVDcommon.h"
 #include "VMManager.h"
 #include "pcsx2/MTGS.h"
+#include "pcsx2/AYS2Diagnostics.h" // AYS2: flight recorder (seam)
 #include "Patch.h"
 #include "Achievements.h"
 #include "SIO/Pad/Pad.h"
@@ -2230,6 +2231,47 @@ static std::string ARMSX2PerGameSettingsPath(const std::string& serial, u32 crc)
     NSString *ver = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"?";
     // AYS2: About/version brand (seam)
     return [NSString stringWithFormat:@"AYS2 v%@", ver];
+}
+
+// AYS2: Flight Recorder bridge (seam)
++ (void)setDiagnosticsRecording:(BOOL)enabled {
+    AYS2Diagnostics::SetEnabled(enabled);
+}
+
++ (BOOL)isDiagnosticsRecording {
+    return AYS2Diagnostics::IsEnabled();
+}
+
++ (void)clearDiagnostics {
+    AYS2Diagnostics::Clear();
+}
+
++ (nonnull NSArray<NSDictionary<NSString *, NSNumber *> *> *)diagnosticsSnapshots {
+    std::vector<AYS2Diagnostics::Snapshot> buf(AYS2Diagnostics::kCapacity);
+    const int n = AYS2Diagnostics::CopyRecent(buf.data(), static_cast<int>(buf.size()));
+    NSMutableArray<NSDictionary<NSString *, NSNumber *> *> *out = [NSMutableArray arrayWithCapacity:n];
+    for (int i = 0; i < n; i++) {
+        const AYS2Diagnostics::Snapshot& s = buf[i];
+        [out addObject:@{
+            @"t": @(s.t_seconds),
+            @"fps": @(s.fps),
+            @"internalFps": @(s.internal_fps),
+            @"speed": @(s.speed),
+            @"avgFrameMs": @(s.avg_frame_ms),
+            @"minFrameMs": @(s.min_frame_ms),
+            @"maxFrameMs": @(s.max_frame_ms),
+            @"eePct": @(s.ee_pct),
+            @"gsPct": @(s.gs_pct),
+            @"vuPct": @(s.vu_pct),
+            @"gpuMs": @(s.gpu_ms),
+            @"gpuPct": @(s.gpu_pct),
+            @"ramGb": @(s.ram_gb),
+            @"thermal": @(s.thermal),
+            @"battery": @(s.battery),
+            @"lowPower": @((s.flags & 0x01) != 0 ? 1 : 0),
+        }];
+    }
+    return out;
 }
 
 + (BOOL)isJITAvailable {

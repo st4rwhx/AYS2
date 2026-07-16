@@ -97,6 +97,13 @@ typedef void (^ARMSX2RetroAchievementsCompletion)(BOOL success, NSString * _Nonn
 + (BOOL)isPerformanceOverlayVisible;
 + (void)applyOsdPreset:(int)preset;  // 0=off, 1=simple, 2=detail, 3=full
 
+// AYS2: Flight Recorder (diagnostics). Each snapshot dict carries the raw
+// per-window metrics; interpretation happens in Swift/the knowledge base.
++ (void)setDiagnosticsRecording:(BOOL)enabled;
++ (BOOL)isDiagnosticsRecording;
++ (void)clearDiagnostics;
++ (nonnull NSArray<NSDictionary<NSString *, NSNumber *> *> *)diagnosticsSnapshots;
+
 // Audio
 + (int)emulatorVolumePercent;
 + (void)setEmulatorVolumePercent:(int)value;

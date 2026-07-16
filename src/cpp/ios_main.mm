@@ -20,6 +20,7 @@
 #include "common/Path.h"
 #include "common/WindowInfo.h"
 #include "pcsx2/VMManager.h"
+#include "pcsx2/AYS2Diagnostics.h" // AYS2: flight recorder (seam)
 #include "pcsx2/Config.h"
 #include "pcsx2/Host.h"
 #include "pcsx2/GS/GS.h"
@@ -1167,6 +1168,11 @@ static const ARMSX2IOSDeviceStatsCache& ARMSX2IOSRefreshDeviceStatsCacheLocked()
         }
 
         s_device_stats_cache.line = buffer;
+
+        // AYS2: feed the flight recorder the device state (seam). Thermal enum
+        // maps 1:1 to our 0..3 scale (Nominal/Fair/Serious/Critical).
+        AYS2Diagnostics::SetDeviceState(static_cast<std::uint8_t>(thermal_state),
+            static_cast<float>(app_ram_gb), battery_percent, low_power);
     }
 
     s_device_stats_cache.last_update = now;

@@ -434,6 +434,8 @@ struct SettingsGridView: View {
                                  systemImage: "gearshape") { SystemSettingsView() }
                     SettingsTile(title: "Core Access", subtitle: "Support · Perks · Betas",
                                  systemImage: "crown.fill") { CoreAccessView(showsClose: false) }
+                    SettingsTile(title: "Diagnostics", subtitle: "Flight Recorder · Analysis",
+                                 systemImage: "stethoscope") { DiagnosticsView() }
                 }
                 .padding(16)
             }
