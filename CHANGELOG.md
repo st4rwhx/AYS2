@@ -8,24 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- SideStore integration for one-tap installation
-- Community Discord links
-- GPL-3.0 compliance documentation
-- Comprehensive README with SEO optimization
-- Issue and PR templates for professional contribution workflow
+- Semantic release automation workflow
+- Enhanced release badges with download counts
+- Comprehensive GitHub templates for issues and PRs
 
-### Changed
-- Migrated release publishing from external repo to main repository
-- Updated Worker UI for better user experience
+---
 
-### Fixed
-- PhotosPI → PhotosUI import error in Swift
+## [0.1.0] - 2026-07-16
 
-## [0.1.0] - 2026-07-15
-
-### Initial Release
-
-**AYS2** — PlayStation 2 Emulator for iOS based on ARMSX2
+**🎉 Initial Release**
 
 #### Features
 - Full PS2 emulation on iOS 17.0+
