@@ -226,6 +226,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	endif()
 
 	add_executable(ARMSX2iOS ios_main.mm ARMSX2Bridge.mm ${SWIFT_SOURCES})
+	
+	# Mark the generated Info.plist as a source file so Xcode knows about it
+	set_source_files_properties("${CMAKE_BINARY_DIR}/Info.plist" PROPERTIES
+		GENERATED TRUE
+		MACOSX_PACKAGE_LOCATION .
+		XCODE_FILE_CLASS "text"
+	)
+	target_sources(ARMSX2iOS PRIVATE "${CMAKE_BINARY_DIR}/Info.plist")
+	
 	set_target_properties(ARMSX2iOS PROPERTIES
 		MACOSX_BUNDLE TRUE
 		MACOSX_BUNDLE_GUI_IDENTIFIER "${ARMSX2_BUNDLE_IDENTIFIER}"
