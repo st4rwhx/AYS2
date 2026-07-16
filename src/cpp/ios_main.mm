@@ -458,6 +458,7 @@ int main(int argc, char* argv[]) {
 #include "common/FileSystem.h"
 #include "common/Path.h"
 #include "pcsx2/VMManager.h"
+#include "pcsx2/GameList.h"
 #include "pcsx2/ImGui/ImGuiManager.h"
 #include "pcsx2/Config.h"
 #include "pcsx2/CDVD/CDVD.h"
@@ -493,6 +494,7 @@ struct rc_client_t;
 #import <UIKit/UIKit.h>
 #import <GameController/GameController.h>
 #import <CoreHaptics/CoreHaptics.h>
+#import <AVFoundation/AVFoundation.h>
 #include <mach/mach.h>
 #include <mach-o/dyld.h>
 #include "common/Darwin/DarwinMisc.h"
@@ -747,6 +749,31 @@ static bool ARMSX2GetConfiguredFastBoot()
         s_settings_interface->GetBoolValue("EmuCore", "EnableFastBoot", false));
 }
 
+// Resolves fast boot for an ISO that is about to boot. A per-game override
+// (EmuCore/EnableFastBoot in the game's settings INI) takes precedence;
+// otherwise the configured global value is used. Global settings are never
+// mutated, so a per-game override cannot leak into the global configuration.
+static bool ARMSX2ResolveFastBootForISO(const std::string& isoPath)
+{
+    const bool globalFastBoot = ARMSX2GetConfiguredFastBoot();
+    if (isoPath.empty())
+        return globalFastBoot;
+
+    GameList::Entry entry;
+    if (!GameList::PopulateEntryFromPath(isoPath, &entry) || entry.crc == 0)
+        return globalFastBoot;
+
+    const std::string serial = (entry.type == GameList::EntryType::ELF) ? std::string() : entry.serial;
+    INISettingsInterface si(VMManager::GetGameSettingsPath(serial, entry.crc));
+    if (!si.Load())
+        return globalFastBoot;
+
+    if (si.ContainsValue("EmuCore", "EnableFastBoot"))
+        return si.GetBoolValue("EmuCore", "EnableFastBoot", globalFastBoot);
+
+    return globalFastBoot;
+}
+
 static int ARMSX2GetIOSMajorVersion()
 {
     NSOperatingSystemVersion version = [[NSProcessInfo processInfo] operatingSystemVersion];
@@ -755,13 +782,10 @@ static int ARMSX2GetIOSMajorVersion()
 
 static const char* ARMSX2DefaultJITScriptProtocol()
 {
-    // ELORIS-PRISM: JIT default = legacy brk #0x69 (seam) — StikDebug handshake.
-    // brk #0x69 (the DolphiniOS / StikDebug "Dolphin.js" handshake) is the JIT
-    // registration path that actually works on iOS sideload setups, including
-    // iOS 26. The "universal" brk #0xf00d protocol needs an enabler almost nobody
-    // has, so it SIGTRAPs and boot fails on a normal StikDebug device. Default to
-    // legacy on every iOS version; users with a universal enabler can opt in from
-    // Settings → Emulator → JIT Script.
+    // ELORIS-PRISM: JIT default = legacy brk #0x69 (seam) — the DolphiniOS/StikDebug
+    // handshake that actually works on iOS sideload setups incl. iOS 26. The
+    // universal brk #0xf00d path SIGTRAPs there and blocks boot, so default to
+    // legacy on every version; users can opt into universal from Settings.
     return "legacy";
 }
 
@@ -780,6 +804,8 @@ static void ARMSX2MigrateJITScriptProtocolForIOS(SettingsInterface* si, const ch
     if (!si)
         return;
 
+    // ELORIS-PRISM: JIT migration V2 (seam) — one-time reset of the old "universal"
+    // default that SIGTRAPs on the StikDebug (brk #0x69) enabler most users have.
     const int iosMajor = ARMSX2GetIOSMajorVersion();
     const char* defaultProtocol = ARMSX2DefaultJITScriptProtocol();
     const bool hadProtocol = si->ContainsValue("ARMSX2iOS/JIT", "ScriptProtocol");
@@ -787,10 +813,6 @@ static void ARMSX2MigrateJITScriptProtocolForIOS(SettingsInterface* si, const ch
     const std::string currentProtocol = ARMSX2NormalizeJITScriptProtocol(
         si->GetStringValue("ARMSX2iOS/JIT", "ScriptProtocol", defaultProtocol));
 
-    // Fresh install, or a one-time reset of the old "universal" default that never
-    // worked with the StikDebug / Dolphin.js (brk #0x69) enabler most users have.
-    // The universal brk #0xf00d path SIGTRAPs there and blocks boot entirely, so a
-    // stored "universal" is (almost always) the bad default rather than a choice.
     if (!hadProtocol || (!migrated && currentProtocol == "universal")) {
         si->SetStringValue("ARMSX2iOS/JIT", "ScriptProtocol", defaultProtocol);
         si->SetBoolValue("ARMSX2iOS/Migrations", "JITScriptProtocolByOSV2", true);
@@ -3129,7 +3151,17 @@ namespace Host
     bool ShouldPreferHostFileSelector() { return false; }
     void OnCoverDownloaderOpenRequested() {}
     void OnCreateMemoryCardOpenRequested() {}
-    void OnAchievementsHardcoreModeChanged(bool) { ARMSX2_PostRetroAchievementsStateChanged(); }
+    void OnAchievementsHardcoreModeChanged(bool) {
+        ARMSX2_PostRetroAchievementsStateChanged();
+        // Re-evaluate .pnach enable lists now: ReloadEnabledLists gates cheats and patches on
+        // Hardcore, so previously-enabled entries stop applying (or resume) the moment Hardcore
+        // toggles, without waiting for the next patch reload.
+        if (VMManager::HasValidVM()) {
+            RunOnCPUThread([]() {
+                VMManager::ReloadPatches(false, true, false, true);
+            }, false);
+        }
+    }
     void SetMouseLock(bool) {}
     int LocaleSensitiveCompare(std::string_view lhs, std::string_view rhs) { return lhs.compare(rhs); }
     void OpenURL(std::string_view) {}
@@ -3183,8 +3215,72 @@ extern "C" void ARMSX2_PrepareGameRenderViewForCurrentRenderer(const char* reaso
     }
 }
 
+// RetroAchievements / achievement sound playback. Plays short WAV chimes
+// (unlock/message/lbsubmit) off a dedicated background queue so the main
+// thread and the SPU2/cubeb stream are never touched. AVAudioPlayer.delegate
+// is weak and the player is not otherwise retained by the system, so each
+// delegate strongly owns its player for the duration of playback and is itself
+// held in a static set until playback finishes. Missing files and decode
+// failures fail silently (the core already gates calls behind the Achievements
+// SoundEffects settings).
+@interface ARMSX2AchievementSoundDelegate : NSObject <AVAudioPlayerDelegate>
+@property(nonatomic, strong) AVAudioPlayer* player;
+@end
+
+static NSMutableSet<ARMSX2AchievementSoundDelegate*>* ARMSX2ActiveAchievementSoundDelegates() {
+    static NSMutableSet* set;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ set = [[NSMutableSet alloc] init]; });
+    return set;
+}
+
+static dispatch_queue_t ARMSX2AchievementSoundQueue() {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("armsx2.achievement.sound", DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
+
+@implementation ARMSX2AchievementSoundDelegate
+- (void)audioPlayerDidFinishPlaying:(AVAudioPlayer*)player successfully:(BOOL)flag {
+    self.player = nil;
+    @synchronized(ARMSX2ActiveAchievementSoundDelegates()) {
+        [ARMSX2ActiveAchievementSoundDelegates() removeObject:player.delegate];
+    }
+}
+@end
+
 namespace Common {
-    bool PlaySoundAsync(const char*) { return false; }
+bool PlaySoundAsync(const char* path) {
+    if (!path || path[0] == '\0')
+        return false;
+
+    NSString* nspath = [[NSString alloc] initWithUTF8String:path];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:nspath])
+        return false;
+
+    NSURL* url = [NSURL fileURLWithPath:nspath];
+    dispatch_async(ARMSX2AchievementSoundQueue(), ^{
+        NSError* error = nil;
+        AVAudioPlayer* player = [[AVAudioPlayer alloc] initWithContentsOfURL:url error:&error];
+        if (!player || error) {
+            return;
+        }
+        ARMSX2AchievementSoundDelegate* delegate = [[ARMSX2AchievementSoundDelegate alloc] init];
+        player.delegate = delegate;
+        // The delegate strongly retains the player for the lifetime of playback;
+        // the set strongly retains the delegate. Both release on finish.
+        delegate.player = player;
+        @synchronized(ARMSX2ActiveAchievementSoundDelegates()) {
+            [ARMSX2ActiveAchievementSoundDelegates() addObject:delegate];
+        }
+        [player prepareToPlay];
+        [player play];
+    });
+    return true;
+}
 }
 
 // IOCtlSrc Stubs
@@ -4164,13 +4260,8 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
                 std::string isoDir = EmuFolders::DataRoot + "/iso";
                 std::string defaultISO = "";
                 std::string isoFilename = s_settings_interface->GetStringValue("GameISO", "BootISO", defaultISO.c_str());
-                bool fastBoot = ARMSX2GetConfiguredFastBoot();
                 s_settings_interface->SetStringValue("GameISO", "BootISO", isoFilename.c_str());
-                s_settings_interface->SetBoolValue("GameISO", "FastBoot", fastBoot);
-                s_settings_interface->SetBoolValue("EmuCore", "EnableFastBoot", fastBoot);
                 s_settings_interface->Save();
-                std::fprintf(stderr, "@@BOOT_FASTBOOT_READ@@ selected=%d\n", fastBoot ? 1 : 0);
-                std::fflush(stderr);
                 std::string isoPath = (!isoFilename.empty() && isoFilename.front() == '/') ? isoFilename : (isoDir + "/" + isoFilename);
                 // Fallback: check Documents/ root if not found in iso/.
                 if (!isoFilename.empty() && isoFilename.front() != '/' && !FileSystem::FileExists(isoPath.c_str())) {
@@ -4180,6 +4271,11 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
                         Console.WriteLn("ISO found in Documents/ root: %s", isoPath.c_str());
                     }
                 }
+                // Resolve fast boot from the per-game override if present, otherwise the
+                // configured global value. Global settings are not mutated here.
+                const bool fastBoot = ARMSX2ResolveFastBootForISO(isoPath);
+                std::fprintf(stderr, "@@BOOT_FASTBOOT_READ@@ selected=%d\n", fastBoot ? 1 : 0);
+                std::fflush(stderr);
                 const bool isoExists = !isoFilename.empty() && FileSystem::FileExists(isoPath.c_str());
                 std::fprintf(stderr, "@@BOOT_PARAMS@@ ini_iso=\"%s\" resolved=\"%s\" exists=%d fast_boot=%d\n",
                     isoFilename.c_str(), isoPath.c_str(), isoExists ? 1 : 0, fastBoot ? 1 : 0);
@@ -4511,7 +4607,7 @@ static void SetupIOSDirectories(const std::string& dataRoot)
 #endif
     fprintf(stderr, "@@BUILD_ID@@ ARMSX2_iOS v%s %s %s %s\n",
         ARMSX2_VERSION_STR, ARMSX2_GIT_HASH, __DATE__, __TIME__);
-    fprintf(stderr, "@@TEST_MARKER@@ armsx2_ios_42_ra_hc_ready_not_active_v1\n");
+    fprintf(stderr, "@@TEST_MARKER@@ armsx2_ios_43_v232_metadata_v1\n");
     fprintf(stderr, "@@FF_FIX@@ offspeed_present_skip=1 present_cap60=1 adaptive_backoff=1 drawable_wait_probe=1 vm_pace_probe=1 turbo_only_toggle=1\n");
     fprintf(stderr, "@@DIAG_MODE@@ ee_hotpath=%d\n", ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS);
     

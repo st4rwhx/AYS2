@@ -35,6 +35,8 @@ If a change can live in a new file instead of editing an upstream file, it MUST.
 
 ## 2. The overlay manifest (current)
 
+**Last synced to upstream: ARMSX2 iOSv2.4.0** (app version 2.4.0 / build 240).
+
 ### 2a. Additive files — 100% ours, upstream never has them
 Copied forward untouched on every rebase.
 
@@ -53,7 +55,7 @@ Copied forward untouched on every rebase.
 | File | Seam (what we change) |
 |---|---|
 | `src/swift/Views/RootView.swift` | show `DashboardView()` instead of the tab menu; app color-scheme apply; community welcome sheet |
-| `src/swift/Views/GameScreenView.swift` | pause button icon → pause; pause menu redesigned as tile grid |
+| `src/swift/Views/GameScreenView.swift` | pause button icon → `pause.fill` (menu itself is upstream's QuickMenuView; tile-grid redesign deferred) |
 | `src/swift/Models/SettingsStore.swift` | `AppColorScheme` (system/light/dark) setting |
 | `src/swift/Views/Settings/AppearanceSettingsView.swift` | Theme picker |
 | `src/swift/Views/GameListView.swift` | cover-flow carousel enabled in portrait (drop landscape-only gate) |

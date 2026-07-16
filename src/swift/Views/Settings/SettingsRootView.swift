@@ -11,6 +11,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
     case appearance
     case emulator
     case graphics
+    case audio
     case network
     case memoryCards
     case storage
@@ -34,6 +35,8 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
             return "Emulator"
         case .graphics:
             return "Graphics"
+        case .audio:
+            return "Audio"
         case .network:
             return "Network"
         case .memoryCards:
@@ -67,6 +70,8 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
             return "cpu"
         case .graphics:
             return "paintbrush"
+        case .audio:
+            return "speaker.wave.2"
         case .network:
             return "network"
         case .memoryCards:
@@ -160,6 +165,11 @@ struct SettingsRootView: View {
                     GraphicsSettingsView()
                 } label: {
                     Label(settings.localized("Graphics"), systemImage: "paintbrush")
+                }
+                NavigationLink {
+                    AudioSettingsView()
+                } label: {
+                    Label(settings.localized("Audio"), systemImage: "speaker.wave.2")
                 }
                 NavigationLink {
                     NetworkSettingsView()
@@ -321,6 +331,8 @@ struct SettingsRootView: View {
             EmulatorSettingsView()
         case .graphics:
             GraphicsSettingsView()
+        case .audio:
+            AudioSettingsView()
         case .network:
             NetworkSettingsView()
         case .memoryCards:
@@ -399,10 +411,6 @@ private struct NetworkSettingsView: View {
     @State private var settings = SettingsStore.shared
     @State private var hosts: [DNSHost] = []
 
-    private var ethUsesSockets: Bool {
-        ARMSX2Bridge.getINIString("DEV9/Eth", key: "EthApi", defaultValue: "Sockets") == "Sockets"
-    }
-
     var body: some View {
         Form {
             Section(settings.localized("PS2 HDD")) {
@@ -420,7 +428,7 @@ private struct NetworkSettingsView: View {
                     settings.dev9HddFile = "DEV9hdd.raw"
                 }
 
-                Text(settings.localized("Matches ARMSX2 Android's DEV9 HDD option. Requires a VM restart."))
+                Text(settings.localized("If a compatible HDD image is present in app storage, games that expect an internal hard drive can use it. Requires a VM restart. The image is kept out of iCloud backups."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -451,16 +459,6 @@ private struct NetworkSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-
-            Section(settings.localized("Intercept DHCP")) {
-                Toggle(settings.localized("Intercept DHCP"), isOn: $settings.dev9InterceptDHCP)
-                ipRow(settings.localized("PS2 Address"), $settings.dev9PS2IP)
-                Toggle(settings.localized("Auto Subnet Mask"), isOn: $settings.dev9AutoMask)
-                ipRow(settings.localized("Subnet Mask"), $settings.dev9Mask)
-                Toggle(settings.localized("Auto Gateway"), isOn: $settings.dev9AutoGateway)
-                ipRow(settings.localized("Gateway Address"), $settings.dev9Gateway)
-            }
-            .disabled(!settings.dev9EthernetEnabled || ethUsesSockets)
 
             Section(settings.localized("DNS")) {
                 dnsRow("DNS1", mode: $settings.dev9DNS1Mode, address: $settings.dev9DNS1)
