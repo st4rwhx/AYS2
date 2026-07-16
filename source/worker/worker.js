@@ -1,4 +1,4 @@
-// AYS2 — source proxy + one-tap SideStore install redirect.
+// AYS2 — source proxy + one-tap SideStore/AltStore install redirect.
 // Cloudflare Worker, free tier.
 //
 // Routes:
@@ -7,6 +7,7 @@
 //   /install (or /add)   → a web page that redirects to the SideStore deep link
 //                          `sidestore://source?url=<this feed>`, so a normal
 //                          https link becomes a one-tap "Add to SideStore".
+//   /status              → health check (returns JSON)
 //
 // The IPA/icon download URLs inside source.json still point at GitHub Releases,
 // so only the small JSON is served here — no bandwidth cost.
@@ -14,6 +15,8 @@
 const UPSTREAM =
   "https://github.com/st4rwhx/AYS2/releases/download/latest/source.json";
 const CACHE_TTL = 300; // seconds
+const APP_NAME = "AYS2";
+const APP_SUBTITLE = "PlayStation 2 Emulator";
 
 export default {
   async fetch(request, _env, ctx) {
@@ -24,9 +27,15 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
 
+    // Health check
+    if (path === "/status") {
+      return new Response(JSON.stringify({ status: "ok", app: APP_NAME }), {
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }
+
     // One-tap install / add-source redirect page.
     if (path === "/install" || path === "/add" || path === "/sidestore") {
-      // The source feed is this Worker's own root.
       const feed = `${url.origin}/`;
       return new Response(installPage(feed), {
         headers: {
@@ -72,41 +81,209 @@ function installPage(feed) {
   const enc = encodeURIComponent(feed);
   const sidestore = `sidestore://source?url=${enc}`;
   const altstore = `altstore://source?url=${enc}`;
-  return `<!doctype html><html lang="en"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Add AYS2 to SideStore</title>
-<style>
-  :root{color-scheme:dark}
-  *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;display:grid;place-items:center;padding:28px;
-    font-family:-apple-system,"Segoe UI",system-ui,sans-serif;color:#eaf4ff;
-    background:radial-gradient(120% 80% at 50% -10%,#7cc8f5,#0a5f9c 70%,#062c4a)}
-  .card{width:100%;max-width:420px;text-align:center;padding:30px 24px;border-radius:26px;
-    background:linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,.10));
-    border:1px solid rgba(255,255,255,.6);backdrop-filter:blur(14px);
-    box-shadow:0 24px 60px -22px rgba(4,30,60,.8),inset 0 1px 0 rgba(255,255,255,.8)}
-  h1{margin:6px 0 4px;font-size:24px}
-  p{margin:0 0 22px;color:#dbeeff;font-size:14px;line-height:1.5}
-  a.btn{display:block;text-decoration:none;font-weight:700;font-size:17px;color:#05243c;
-    padding:15px;border-radius:16px;margin-bottom:12px;
-    background:linear-gradient(180deg,#ffffff,#bfe9ff);
-    box-shadow:0 10px 24px -8px rgba(4,40,80,.6),inset 0 1px 0 #fff}
-  a.alt{background:transparent;color:#dff0ff;border:1px solid rgba(255,255,255,.45);
-    box-shadow:none;font-size:14px;padding:12px}
-  .hint{margin-top:16px;font-size:12px;color:#bcdcff}
-  code{background:rgba(0,0,0,.25);padding:2px 6px;border-radius:6px;font-size:11px;word-break:break-all}
-</style></head><body>
-  <div class="card">
-    <h1>Add AYS2</h1>
-    <p>Opening SideStore to add the source. If nothing happens, tap the button.</p>
-    <a class="btn" href="${sidestore}">Add to SideStore</a>
-    <a class="btn alt" href="${altstore}">Use AltStore instead</a>
-    <div class="hint">SideStore must already be installed. Source URL:<br><code>${feed}</code></div>
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0a5f9c">
+  <meta name="description" content="Install ${APP_NAME} - ${APP_SUBTITLE} for iOS">
+  <title>Install ${APP_NAME}</title>
+  <style>
+    * { box-sizing: border-box; }
+    html { color-scheme: dark; }
+    body {
+      margin: 0;
+      padding: 0;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: linear-gradient(135deg, #0a3d7a 0%, #0a5f9c 50%, #062c4a 100%);
+      overflow-x: hidden;
+    }
+    
+    .container {
+      width: 100%;
+      max-width: 480px;
+      padding: 20px;
+    }
+    
+    .card {
+      border-radius: 20px;
+      padding: 32px 24px;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(20px) saturate(180%);
+      box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+      animation: slideIn 0.6s ease-out;
+    }
+    
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 20px;
+      background: linear-gradient(135deg, #7cc8f5, #0a5f9c);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      box-shadow: 0 8px 16px rgba(4, 40, 80, 0.4);
+    }
+    
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 28px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.5px;
+    }
+    
+    .subtitle {
+      color: #bfe9ff;
+      font-size: 14px;
+      margin: 0 0 24px 0;
+      font-weight: 500;
+    }
+    
+    .description {
+      color: #d4e9ff;
+      font-size: 15px;
+      line-height: 1.6;
+      margin: 0 0 28px 0;
+    }
+    
+    .buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    
+    a.btn {
+      display: block;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 16px;
+      padding: 14px 20px;
+      border-radius: 14px;
+      transition: all 0.3s ease;
+      cursor: pointer;
+      border: 2px solid transparent;
+    }
+    
+    a.btn-primary {
+      background: linear-gradient(135deg, #7cc8f5 0%, #5ab3f0 100%);
+      color: #03245a;
+      box-shadow: 0 8px 16px rgba(124, 200, 245, 0.3);
+    }
+    
+    a.btn-primary:active {
+      transform: scale(0.98);
+      box-shadow: 0 4px 8px rgba(124, 200, 245, 0.3);
+    }
+    
+    a.btn-secondary {
+      background: transparent;
+      color: #7cc8f5;
+      border: 2px solid rgba(124, 200, 245, 0.5);
+      font-size: 15px;
+    }
+    
+    a.btn-secondary:active {
+      background: rgba(124, 200, 245, 0.1);
+    }
+    
+    .footer {
+      margin-top: 28px;
+      padding-top: 24px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .hint-title {
+      color: #7cc8f5;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 0 0 8px 0;
+    }
+    
+    .url-box {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      word-break: break-all;
+      font-family: "Monaco", "Courier New", monospace;
+      font-size: 12px;
+      color: #bfe9ff;
+      line-height: 1.4;
+    }
+    
+    .note {
+      font-size: 12px;
+      color: #a0d5ff;
+      margin: 12px 0 0 0;
+    }
+    
+    @media (max-width: 380px) {
+      .card {
+        padding: 24px 18px;
+      }
+      h1 {
+        font-size: 24px;
+      }
+      .icon {
+        width: 64px;
+        height: 64px;
+        font-size: 32px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="icon">📱</div>
+      <h1>${APP_NAME}</h1>
+      <div class="subtitle">${APP_SUBTITLE}</div>
+      <div class="description">
+        Add the source to SideStore or AltStore to get 1-tap installations and automatic updates.
+      </div>
+      
+      <div class="buttons">
+        <a class="btn btn-primary" href="${sidestore}">Add to SideStore</a>
+        <a class="btn btn-secondary" href="${altstore}">or use AltStore</a>
+      </div>
+      
+      <div class="footer">
+        <div class="hint-title">Source URL</div>
+        <div class="url-box">${feed}</div>
+        <div class="note">SideStore / AltStore must be installed to continue.</div>
+      </div>
+    </div>
   </div>
+  
   <script>
-    // Auto-open the SideStore deep link once on load.
-    setTimeout(function(){ location.href = ${JSON.stringify(sidestore)}; }, 350);
+    // Auto-open the SideStore deep link once on load
+    setTimeout(function() {
+      location.href = ${JSON.stringify(sidestore)};
+    }, 400);
   </script>
-</body></html>`;
+</body>
+</html>`;
 }

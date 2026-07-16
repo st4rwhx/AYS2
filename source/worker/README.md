@@ -1,6 +1,6 @@
 # AYS2 — short source URL (free)
 
-Turns the long GitHub release URL into a short, clean SideStore source:
+Turns the long GitHub release URL into a short, clean SideStore/AltStore source:
 
 ```
 before:  https://github.com/st4rwhx/AYS2/releases/download/latest/source.json
@@ -12,57 +12,111 @@ rolling GitHub release. No custom domain, no cost, and it never goes stale —
 every build updates the release, the Worker reflects it within 5 minutes.
 The IPA/icon downloads stay on GitHub Releases, so there's no bandwidth cost.
 
+## Features
+
+- **One-tap install link**: Share `https://aysx2.<your-account>.workers.dev/install`
+  and iOS users get a single tap to add AYS2 to SideStore.
+- **Zero bandwidth cost**: The Worker only proxies the tiny JSON feed (~2KB);
+  the IPA is served by GitHub Releases.
+- **Always fresh**: Cache expires every 5 minutes, so new builds show up immediately.
+- **Automatic fallback**: Works with both SideStore and AltStore.
+
 ## Deploy (one time, ~2 minutes)
 
-1. Create a free Cloudflare account (if you don't have one).
-2. Install Wrangler and log in:
+### 1. Create a Cloudflare account (if you don't have one)
+   - Go to [cloudflare.com](https://cloudflare.com) and sign up (free).
+
+### 2. Install Wrangler
    ```bash
-   npm i -g wrangler
+   npm install -g @cloudflare/wrangler
+   ```
+   Or if you use macOS with Homebrew:
+   ```bash
+   brew install wrangler
+   ```
+
+### 3. Log in
+   ```bash
    wrangler login
    ```
-3. From this folder, deploy:
+   This opens a browser to authenticate.
+
+### 4. Deploy the Worker
+   From this folder:
    ```bash
    cd source/worker
    wrangler deploy
    ```
-4. Wrangler prints the URL, e.g. `https://aysx2.<your-account>.workers.dev`.
-   The `<your-account>` part is your account's workers.dev subdomain (set it once
-   in the Cloudflare dashboard → Workers & Pages → *your subdomain* if prompted).
+
+   Wrangler prints your Worker URL, e.g.:
+   ```
+   Deployed to https://aysx2.<your-account>.workers.dev
+   ```
 
 ## Use it
 
-Add that URL as the source in SideStore. Because the app's bundle id never
-changes, existing installs keep updating whether they use the short URL or the
-GitHub one.
+### Add as a SideStore source
+In the SideStore app:
+1. Tap "Browse" → "Add Source"
+2. Paste: `https://aysx2.<your-account>.workers.dev`
+3. Tap "Add" → AYS2 appears, tap "Get" to install
 
-## One-tap install link (redirect)
-
-The Worker also serves a redirect page that turns a normal `https://` link into
-a one-tap "Add to SideStore":
-
+### Share a one-tap link
+Share this URL (on Discord, your website, bio, etc.):
 ```
 https://aysx2.<your-account>.workers.dev/install
 ```
 
-Share **that** link (bio, Discord, website). On iOS it opens SideStore and
-offers to add the source; it has a visible fallback button and an AltStore
-alternative if the auto-redirect is blocked.
+On iOS, tapping it opens SideStore and immediately offers to add the source.
+(If the app scheme isn't registered, a visible fallback button appears.)
 
-How it works: SideStore registers the URL scheme `sidestore://source?url=<feed>`.
-You can't share that scheme directly (it crashes without the app installed and
-browsers block custom schemes), so the `/install` page redirects to it from a
-normal web page — that's the whole "redirect repo install" trick.
+## Routes
 
-Routes summary:
-- `/` and `/source.json` → the source feed (add this in SideStore)
-- `/install` (or `/add`) → the one-tap redirect page (share this with people)
+- `/` and `/source.json` → the SideStore/AltStore source feed
+- `/install` (or `/add`) → the one-tap redirect page (share this)
+- `/status` → health check (returns JSON)
 
-## If you later buy `aysx2.app`
+## Custom domain (optional)
 
-Add it as a custom domain to this same Worker (Cloudflare dashboard →
-the Worker → Triggers → Custom Domains). The source URL then becomes simply
-`https://aysx2.app`. No code change needed.
+If you buy `aysx2.app` or use an existing domain:
+1. In the Cloudflare dashboard, go to the Worker
+2. Click **Triggers** → **Custom Domains**
+3. Add your domain (e.g., `aysx2.app` or `install.example.com`)
 
-## Note
+The source URL then becomes simply `https://aysx2.app` — no code change needed.
 
-If you fork/rename, update `UPSTREAM` in `worker.js` to your release URL.
+## Update the upstream URL (if you fork)
+
+Edit `UPSTREAM` in `worker.js` to point to your release:
+```javascript
+const UPSTREAM = "https://github.com/your-name/your-fork/releases/download/latest/source.json";
+```
+Then redeploy:
+```bash
+wrangler deploy
+```
+
+## Troubleshooting
+
+### "Workers feature not available"
+Free Cloudflare accounts have Workers enabled by default. If you see this error,
+check that you're logged in with the right email:
+```bash
+wrangler whoami
+```
+
+### "Failed to publish your Worker"
+Make sure you're in the `source/worker` folder:
+```bash
+pwd
+# → should end with "source/worker"
+wrangler deploy
+```
+
+### SideStore says "source invalid"
+The `source.json` file from GitHub Releases might have formatting issues.
+Check that it's valid JSON:
+```bash
+curl https://github.com/st4rwhx/AYS2/releases/download/latest/source.json | jq
+```
+
