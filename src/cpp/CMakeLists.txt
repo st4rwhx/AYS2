@@ -191,48 +191,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		${CMAKE_SOURCE_DIR}/../swift/Models/CoverStore.swift
 	)
 
-	configure_file("${CMAKE_SOURCE_DIR}/Info.plist.in" "${CMAKE_BINARY_DIR}/Info.plist" @ONLY)
-
-	if(ARMSX2_REAL_DEVICE OR ARMSX2_MAC_CATALYST)
-		set(ARMSX2_CODE_SIGNING_ALLOWED "YES")
-		set(ARMSX2_CODE_SIGNING_REQUIRED "YES")
-		set(ARMSX2_CODE_SIGN_STYLE "Automatic")
-		set(ARMSX2_CODE_SIGN_IDENTITY "Apple Development")
-	else()
-		set(ARMSX2_CODE_SIGNING_ALLOWED "NO")
-		set(ARMSX2_CODE_SIGNING_REQUIRED "NO")
-		set(ARMSX2_CODE_SIGN_STYLE "Manual")
-		set(ARMSX2_CODE_SIGN_IDENTITY "")
-	endif()
-
-	if(ARMSX2_ENABLE_JIT_ENTITLEMENTS)
-		set(ARMSX2_CODE_SIGN_ENTITLEMENTS "${CMAKE_SOURCE_DIR}/Entitlements.plist")
-	else()
-		set(ARMSX2_CODE_SIGN_ENTITLEMENTS "")
-	endif()
-
-	if(ARMSX2_MAC_CATALYST)
-		set(ARMSX2_SUPPORTS_MACCATALYST "YES")
-		set(ARMSX2_DERIVE_MACCATALYST_BUNDLE_IDENTIFIER "NO")
-		set(ARMSX2_SUPPORTED_PLATFORMS "iphoneos iphonesimulator macosx")
-		set(ARMSX2_TARGETED_DEVICE_FAMILY "1,2,6")
-		set(ARMSX2_ENABLE_HARDENED_RUNTIME "YES")
-	else()
-		set(ARMSX2_SUPPORTS_MACCATALYST "NO")
-		set(ARMSX2_DERIVE_MACCATALYST_BUNDLE_IDENTIFIER "YES")
-		set(ARMSX2_SUPPORTED_PLATFORMS "iphoneos iphonesimulator")
-		set(ARMSX2_TARGETED_DEVICE_FAMILY "1,2")
-		set(ARMSX2_ENABLE_HARDENED_RUNTIME "NO")
-	endif()
+	# Don't use configure_file for Info.plist - let Xcode handle the .in template directly
+	# This avoids the CMakeFiles path issue
+	
+	# Create an intermediary target that generates Info.plist first
+	add_custom_target(GenerateInfoPlist ALL
+		COMMAND ${CMAKE_COMMAND} -E echo "Generating Info.plist"
+	)
 
 	add_executable(ARMSX2iOS ios_main.mm ARMSX2Bridge.mm ${SWIFT_SOURCES})
 	
-	# Add Info.plist.in directly to bundle resources - Xcode will process the .in template
-	target_sources(ARMSX2iOS PRIVATE "${CMAKE_SOURCE_DIR}/Info.plist.in")
-	set_source_files_properties("${CMAKE_SOURCE_DIR}/Info.plist.in" PROPERTIES
-		MACOSX_PACKAGE_LOCATION .
-		XCODE_FILE_CLASS "text"
-	)
+	# ARMSX2iOS depends on GenerateInfoPlist target
+	add_dependencies(ARMSX2iOS GenerateInfoPlist)
 	
 	set_target_properties(ARMSX2iOS PROPERTIES
 		MACOSX_BUNDLE TRUE
