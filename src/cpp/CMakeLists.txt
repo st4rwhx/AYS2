@@ -226,6 +226,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	endif()
 
 	add_executable(ARMSX2iOS ios_main.mm ARMSX2Bridge.mm ${SWIFT_SOURCES})
+	
+	# Create a custom command to ensure Info.plist is available before Xcode tries to use it
+	add_custom_command(TARGET ARMSX2iOS PRE_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		"${CMAKE_BINARY_DIR}/Info.plist"
+		"${CMAKE_BINARY_DIR}/CMakeFiles/ARMSX2iOS.dir/Info.plist"
+		VERBATIM
+	)
+	
 	set_target_properties(ARMSX2iOS PROPERTIES
 		MACOSX_BUNDLE TRUE
 		MACOSX_BUNDLE_GUI_IDENTIFIER "${ARMSX2_BUNDLE_IDENTIFIER}"
