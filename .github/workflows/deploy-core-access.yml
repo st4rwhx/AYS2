@@ -36,18 +36,46 @@ jobs:
     name: Deploy to Cloudflare Workers
 
     steps:
+      - name: Check required secrets
+        id: check
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "ready=false" >> $GITHUB_OUTPUT
+            echo "## ⏭️ Deployment skipped — setup required" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The \`CLOUDFLARE_API_TOKEN\` secret is not set, so the worker cannot be deployed yet." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**One-time setup:**" >> $GITHUB_STEP_SUMMARY
+            echo "1. Go to https://dash.cloudflare.com/profile/api-tokens" >> $GITHUB_STEP_SUMMARY
+            echo "2. Create Token → template **Edit Cloudflare Workers** → add permission **Workers KV Storage: Edit**" >> $GITHUB_STEP_SUMMARY
+            echo "3. In this repo: Settings → Secrets and variables → Actions → New repository secret" >> $GITHUB_STEP_SUMMARY
+            echo "   - Name: \`CLOUDFLARE_API_TOKEN\`, Value: your token" >> $GITHUB_STEP_SUMMARY
+            echo "4. (Optional, for Stripe webhooks) add \`STRIPE_WEBHOOK_SECRET\` (whsec_...)" >> $GITHUB_STEP_SUMMARY
+            echo "5. Re-run this workflow (Actions → Deploy CORE ACCESS Worker → Run workflow)" >> $GITHUB_STEP_SUMMARY
+            echo "::warning::CLOUDFLARE_API_TOKEN secret is not set — worker deployment skipped. See the run summary for setup steps."
+          else
+            echo "ready=true" >> $GITHUB_OUTPUT
+            echo "✅ CLOUDFLARE_API_TOKEN is set — proceeding with deployment"
+          fi
+
       - name: Checkout
+        if: steps.check.outputs.ready == 'true'
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        if: steps.check.outputs.ready == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install wrangler
+        if: steps.check.outputs.ready == 'true'
         run: npm install -g wrangler
 
       - name: Create or get KV namespace
+        if: steps.check.outputs.ready == 'true'
         id: kv
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -69,6 +97,7 @@ jobs:
           echo "✅ KV namespace ID: $KV_ID"
 
       - name: Inject KV ID into wrangler.toml
+        if: steps.check.outputs.ready == 'true'
         run: |
           cd coreaccess/worker
           KV_ID="${{ steps.kv.outputs.kv_id }}"
@@ -88,15 +117,21 @@ jobs:
           echo "✅ KV binding injected into wrangler.toml"
 
       - name: Set Stripe webhook secret
+        if: steps.check.outputs.ready == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
         run: |
           cd coreaccess/worker
-          echo "$STRIPE_WEBHOOK_SECRET" | wrangler secret put STRIPE_WEBHOOK_SECRET
-          echo "✅ Stripe webhook secret set"
+          if [ -z "$STRIPE_WEBHOOK_SECRET" ]; then
+            echo "::warning::STRIPE_WEBHOOK_SECRET is not set — skipping. Stripe webhook verification will not work until it is added."
+          else
+            echo "$STRIPE_WEBHOOK_SECRET" | wrangler secret put STRIPE_WEBHOOK_SECRET
+            echo "✅ Stripe webhook secret set"
+          fi
 
       - name: Deploy worker
+        if: steps.check.outputs.ready == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
@@ -105,6 +140,7 @@ jobs:
           echo "✅ Worker deployed successfully"
 
       - name: Summary
+        if: steps.check.outputs.ready == 'true'
         run: |
           echo "## ✅ Deployment complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
