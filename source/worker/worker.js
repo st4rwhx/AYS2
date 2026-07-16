@@ -195,6 +195,36 @@ function installPage(feed) {
       color: #707070;
       margin-top: 12px;
     }
+    
+    .footer-links {
+      display: flex;
+      gap: 10px;
+      margin-top: 32px;
+      justify-content: center;
+    }
+    
+    .link-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #909090;
+      text-decoration: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      transition: all 0.2s;
+      border: 1px solid #333333;
+    }
+    
+    .link-btn:hover {
+      color: #d0d0d0;
+      border-color: #505050;
+      background: #1a1a1a;
+    }
+    
+    .link-icon {
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
@@ -215,6 +245,15 @@ function installPage(feed) {
       <div class="source-label">Source URL</div>
       <div class="source-url">${feed}</div>
       <div class="note">SideStore / AltStore must be installed.</div>
+    </div>
+    
+    <div class="footer-links">
+      <a href="https://github.com/st4rwhx/AYS2" class="link-btn">
+        <span class="link-icon">⚙️</span> Source Code
+      </a>
+      <a href="https://discord.gg/AXAzExECSv" class="link-btn">
+        <span class="link-icon">💬</span> Discord
+      </a>
     </div>
   </main>
   
