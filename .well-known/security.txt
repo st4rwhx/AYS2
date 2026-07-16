@@ -1,0 +1,6 @@
+Contact: security@ayanoxkiyotakaxpsycoworld.com
+Expires: 2027-07-16T00:00Z
+Preferred-Languages: en
+Canonical: https://github.com/st4rwhx/AYS2/blob/main/SECURITY.md
+Policy: https://github.com/st4rwhx/AYS2/blob/main/SECURITY.md
+Hiring: https://github.com/st4rwhx/AYS2/discussions
