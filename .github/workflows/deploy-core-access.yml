@@ -24,7 +24,7 @@ name: Deploy CORE ACCESS Worker
 
 on:
   push:
-    branches: [main, claude/ps2-emulator-ios-app-b7uvk6]
+    branches: [main, claude/ps2-emulator-ios-app-b7uvk6, diagnostic-system-architecture]
     paths:
       - 'coreaccess/worker/**'
       - '.github/workflows/deploy-core-access.yml'

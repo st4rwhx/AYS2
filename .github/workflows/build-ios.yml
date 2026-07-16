@@ -3,7 +3,7 @@ name: Build AYS2 iOS
 # Déclenche sur chaque push sur main, ou manuellement depuis l'onglet Actions
 on:
   push:
-    branches: [main, master, "claude/**"]
+    branches: [main, master, "claude/**", diagnostic-system-architecture]
   workflow_dispatch:
 
 permissions:
