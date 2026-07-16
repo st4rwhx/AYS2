@@ -1263,7 +1263,7 @@ target_sources(PCSX2 PRIVATE ${pcsx2USBSources} ${pcsx2USBHeaders})
 
 if(APPLE OR BSD)
 	# AYS2: Exclude IOCtlSrc.cpp on iOS - it requires macOS IOKit which doesn't exist on iOS
-	if(APPLE AND NOT IOS)
+	if(APPLE AND NOT ARMSX2_IOS)
 		target_sources(PCSX2 PRIVATE
 			${pcsx2OSXSources})
 	elseif(BSD)
