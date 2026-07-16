@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 isztld <https://isztld.com/>
 // SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
@@ -325,7 +326,7 @@ static __fi void mVU_EATAN_(mV, const a64::VRegister& PQ, const a64::VRegister& 
 {
 	armAsm->Ins(PQ.V4S(), 0, Fs.V4S(), 0);
 	mvuLdrSS(RQSCRATCH, mVUglob.T1);
-	mVUscalarMulKeep(PQ, PQ, RQSCRATCH);
+	mVUscalarMulKeep(PQ, PQ, RQSCRATCH); // keep Q lanes (see aVU_IR.h)
 	armAsm->Mov(t2.V16B(), Fs.V16B());
 	EATANhelper(mVUglob.T2);
 	EATANhelper(mVUglob.T3);
@@ -335,7 +336,7 @@ static __fi void mVU_EATAN_(mV, const a64::VRegister& PQ, const a64::VRegister& 
 	EATANhelper(mVUglob.T7);
 	EATANhelper(mVUglob.T8);
 	mvuLdrSS(RQSCRATCH, mVUglob.Pi4);
-	mVUscalarAddKeep(PQ, PQ, RQSCRATCH);
+	mVUscalarAddKeep(PQ, PQ, RQSCRATCH); // keep Q lanes (see aVU_IR.h)
 	mVUshufflePS(PQ, PQ, mVUinfo.writeP ? 0x27 : 0xC6);
 }
 
@@ -359,7 +360,7 @@ mVUop(mVU_EATAN)
 		armAsm->Ins(mVU_xmmPQ.V4S(), 0, Fs.V4S(), 0);
 		mvuLdrSS(RQSCRATCH, mVUglob.one);
 		armAsm->Fsub(Fs.S(), Fs.S(), RQSCRATCH.S());
-		mVUscalarAddKeep(mVU_xmmPQ, mVU_xmmPQ, RQSCRATCH);
+		mVUscalarAddKeep(mVU_xmmPQ, mVU_xmmPQ, RQSCRATCH); // keep Q lanes (see aVU_IR.h)
 		SSE_DIVSS(mVU, Fs, mVU_xmmPQ);
 		mVU_EATAN_(mVU, mVU_xmmPQ, Fs, t1, t2);
 		mVU.regAlloc->clearNeeded(Fs);
@@ -460,9 +461,9 @@ mVUop(mVU_EEXP)
 		mVUshufflePS(mVU_xmmPQ, mVU_xmmPQ, mVUinfo.writeP ? 0x27 : 0xC6); // Flip xmmPQ to get Valid P instance
 		armAsm->Ins(mVU_xmmPQ.V4S(), 0, Fs.V4S(), 0);
 		mvuLdrSS(RQSCRATCH, mVUglob.E1);
-		mVUscalarMulKeep(mVU_xmmPQ, mVU_xmmPQ, RQSCRATCH);
+		mVUscalarMulKeep(mVU_xmmPQ, mVU_xmmPQ, RQSCRATCH); // keep Q lanes (see aVU_IR.h)
 		mvuLdrSS(RQSCRATCH, mVUglob.one);
-		mVUscalarAddKeep(mVU_xmmPQ, mVU_xmmPQ, RQSCRATCH);
+		mVUscalarAddKeep(mVU_xmmPQ, mVU_xmmPQ, RQSCRATCH); // keep Q lanes (see aVU_IR.h)
 		armAsm->Mov(t1.V16B(), Fs.V16B());
 		SSE_MULSS(mVU, t1, Fs);
 		armAsm->Mov(t2.V16B(), t1.V16B());
@@ -517,7 +518,7 @@ mVUop(mVU_ELENG)
 		const a64::VRegister Fs = mVU.regAlloc->allocReg(_Fs_, 0, _X_Y_Z_W);
 		mVUshufflePS(mVU_xmmPQ, mVU_xmmPQ, mVUinfo.writeP ? 0x27 : 0xC6); // Flip xmmPQ to get Valid P instance
 		mVU_sumXYZ(mVU, mVU_xmmPQ, Fs);
-		mVUscalarSqrtKeep(mVU_xmmPQ, mVU_xmmPQ);
+		mVUscalarSqrtKeep(mVU_xmmPQ, mVU_xmmPQ); // keep Q lanes (see aVU_IR.h)
 		mVUshufflePS(mVU_xmmPQ, mVU_xmmPQ, mVUinfo.writeP ? 0x27 : 0xC6); // Flip back
 		mVU.regAlloc->clearNeeded(Fs);
 		mVU.profiler.EmitOp(opELENG);
@@ -567,7 +568,7 @@ mVUop(mVU_ERLENG)
 		const a64::VRegister Fs = mVU.regAlloc->allocReg(_Fs_, 0, _X_Y_Z_W);
 		mVUshufflePS(mVU_xmmPQ, mVU_xmmPQ, mVUinfo.writeP ? 0x27 : 0xC6); // Flip xmmPQ to get Valid P instance
 		mVU_sumXYZ(mVU, mVU_xmmPQ, Fs);
-		mVUscalarSqrtKeep(mVU_xmmPQ, mVU_xmmPQ);
+		mVUscalarSqrtKeep(mVU_xmmPQ, mVU_xmmPQ); // keep Q lanes (see aVU_IR.h)
 		mvuLdrSS(Fs, mVUglob.one);
 		SSE_DIVSS(mVU, Fs, mVU_xmmPQ);
 		armAsm->Ins(mVU_xmmPQ.V4S(), 0, Fs.V4S(), 0);
@@ -621,7 +622,7 @@ mVUop(mVU_ERSQRT)
 		mVUshufflePS(mVU_xmmPQ, mVU_xmmPQ, mVUinfo.writeP ? 0x27 : 0xC6); // Flip xmmPQ to get Valid P instance
 		mvuLdrQ(RQSCRATCH, mVUglob.absclip);
 		armAsm->And(Fs.V16B(), Fs.V16B(), RQSCRATCH.V16B());
-		mVUscalarSqrtKeep(mVU_xmmPQ, Fs);
+		mVUscalarSqrtKeep(mVU_xmmPQ, Fs); // keep Q lanes (see aVU_IR.h)
 		mvuLdrSS(Fs, mVUglob.one);
 		SSE_DIVSS(mVU, Fs, mVU_xmmPQ);
 		armAsm->Ins(mVU_xmmPQ.V4S(), 0, Fs.V4S(), 0);
@@ -721,7 +722,7 @@ mVUop(mVU_ESQRT)
 		mVUshufflePS(mVU_xmmPQ, mVU_xmmPQ, mVUinfo.writeP ? 0x27 : 0xC6); // Flip xmmPQ to get Valid P instance
 		mvuLdrQ(RQSCRATCH, mVUglob.absclip);
 		armAsm->And(Fs.V16B(), Fs.V16B(), RQSCRATCH.V16B());
-		mVUscalarSqrtKeep(mVU_xmmPQ, Fs);
+		mVUscalarSqrtKeep(mVU_xmmPQ, Fs); // keep Q lanes (see aVU_IR.h)
 		mVUshufflePS(mVU_xmmPQ, mVU_xmmPQ, mVUinfo.writeP ? 0x27 : 0xC6); // Flip back
 		mVU.regAlloc->clearNeeded(Fs);
 		mVU.profiler.EmitOp(opESQRT);

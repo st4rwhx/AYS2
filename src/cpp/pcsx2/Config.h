@@ -412,6 +412,12 @@ enum class GSCASMode : u8
 	SharpenAndResize,
 };
 
+enum class GSUpscaler : u8
+{
+	Off,           ///< Plain bilinear present-time stretch (default).
+	MetalFXSpatial, ///< Apple MetalFX spatial upscaler (Metal backend, macOS 13+).
+};
+
 enum class GSHWAutoFlushLevel : u8
 {
 	Disabled,
@@ -721,6 +727,7 @@ struct Pcsx2Config
 		static constexpr GSPostBilinearMode DEFAULT_BILINEAR_FILTERING_MODE = GSPostBilinearMode::BilinearSmooth;
 		static constexpr FMVAspectRatioSwitchType DEFAULT_FMV_ASPECT_RATIO = FMVAspectRatioSwitchType::Off;
 		static constexpr GSCASMode DEFAULT_CAS_MODE = GSCASMode::Disabled;
+		static constexpr GSUpscaler DEFAULT_UPSCALER = GSUpscaler::Off;
 
 		static constexpr float DEFAULT_UPSCALE_MULTIPLIER = 1.0f;
 		static constexpr AccBlendLevel DEFAULT_BLENDING_ACCURACY = AccBlendLevel::Basic;
@@ -764,6 +771,7 @@ struct Pcsx2Config
 					UseBlitSwapChain : 1,
 					DisableShaderCache : 1,
 					DisableFramebufferFetch : 1,
+					EnableAdrenoFramebufferFetch : 1,
 					DisableVertexShaderExpand : 1,
 					SkipDuplicateFrames : 1,
 					OsdShowSpeed : 1,
@@ -774,6 +782,7 @@ struct Pcsx2Config
 					OsdShowCPU : 1,
 					OsdShowGPU : 1,
 					OsdShowGPUDebug : 1,
+					OsdShowGPUStats : 1,
 					OsdShowIndicators : 1,
 					OsdShowFrameTimes : 1,
 					OsdShowHardwareInfo : 1,
@@ -869,6 +878,7 @@ struct Pcsx2Config
 		GSDumpCompressionMethod GSDumpCompression = GSDumpCompressionMethod::Zstandard;
 		GSHardwareDownloadMode HWDownloadMode = GSHardwareDownloadMode::Enabled;
 		GSCASMode CASMode = DEFAULT_CAS_MODE;
+		GSUpscaler Upscaler = DEFAULT_UPSCALER;
 		u8 Dithering = 2;
 		u8 MaxAnisotropy = 0;
 		u8 TVShader = 0;
@@ -928,10 +938,10 @@ struct Pcsx2Config
 		int VideoCaptureHeight = DEFAULT_VIDEO_CAPTURE_HEIGHT;
 		int AudioCaptureBitrate = DEFAULT_AUDIO_CAPTURE_BITRATE;
 
-			std::string Adapter;
-			std::string CustomDriverPath;
-			std::string HWDumpDirectory;
-			std::string SWDumpDirectory;
+		std::string Adapter;
+		std::string AndroidGpuProfileOverride = "auto";
+		std::string HWDumpDirectory;
+		std::string SWDumpDirectory;
 
 		GSOptions();
 
@@ -970,7 +980,11 @@ struct Pcsx2Config
 		};
 
 		static constexpr s32 MAX_VOLUME = 200;
+#ifdef __ANDROID__
+		static constexpr AudioBackend DEFAULT_BACKEND = AudioBackend::Oboe;
+#else
 		static constexpr AudioBackend DEFAULT_BACKEND = AudioBackend::Cubeb;
+#endif
 		static constexpr SPU2SyncMode DEFAULT_SYNC_MODE = SPU2SyncMode::TimeStretch;
 
 		static std::optional<SPU2SyncMode> ParseSyncMode(const char* str);

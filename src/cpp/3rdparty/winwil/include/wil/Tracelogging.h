@@ -65,7 +65,7 @@
 #define _wiltlg_STRINGIZE_imp(x) #x
 #define _wiltlg_LSTRINGIZE(x) _wiltlg_LSTRINGIZE_imp1(x)
 #define _wiltlg_LSTRINGIZE_imp1(x) _wiltlg_LSTRINGIZE_imp2(#x)
-#define _wiltlg_LSTRINGIZE_imp2(s) L##s
+#define _wiltlg_LSTRINGIZE_imp2(s) L"" #s
 
 /*
 Macro __TRACELOGGING_DEFINE_PROVIDER_STORAGE_LINK(name1, name2):
@@ -261,7 +261,8 @@ namespace details
     public:
         StoredCallContextInfo() WI_NOEXCEPT
         {
-            ::ZeroMemory(this, sizeof(*this));
+            // Suppress '-Wnontrivial-memcall' with 'static_cast'
+            ::ZeroMemory(static_cast<void*>(this), sizeof(*this));
         }
 
         StoredCallContextInfo(StoredCallContextInfo&& other) WI_NOEXCEPT : StoredCallContextInfo()
@@ -281,7 +282,7 @@ namespace details
             return *this;
         }
 
-        StoredCallContextInfo(StoredCallContextInfo const& other) WI_NOEXCEPT : m_ownsMessage(false)
+        StoredCallContextInfo(StoredCallContextInfo const& other) WI_NOEXCEPT
         {
             contextId = other.contextId;
             contextName = other.contextName;
@@ -295,7 +296,7 @@ namespace details
             }
         }
 
-        StoredCallContextInfo(_In_opt_ PCSTR staticContextName) WI_NOEXCEPT : m_ownsMessage(false)
+        StoredCallContextInfo(_In_opt_ PCSTR staticContextName) WI_NOEXCEPT
         {
             contextId = 0;
             contextName = staticContextName;
@@ -364,7 +365,7 @@ namespace details
             }
         }
 
-        bool m_ownsMessage;
+        bool m_ownsMessage{false};
     };
 
     template <typename TActivity>
@@ -529,8 +530,8 @@ protected:
     static bool WasAlreadyReportedToTelemetry(long failureId) WI_NOEXCEPT
     {
         static long volatile s_lastFailureSeen = -1;
-        auto wasSeen = (s_lastFailureSeen == failureId);
-        s_lastFailureSeen = failureId;
+        long oldValue = InterlockedExchange(&s_lastFailureSeen, failureId);
+        auto wasSeen = (oldValue == failureId);
         return wasSeen;
     }
 
@@ -1510,7 +1511,7 @@ public: \
 
 #define __IMPLEMENT_CALLCONTEXT_CLASS(ActivityClassName) \
 protected: \
-    ActivityClassName(_In_opt_ void**, PCSTR contextName, _In_opt_ _Printf_format_string_ PCSTR formatString, _In_opt_ va_list argList) : \
+    ActivityClassName(_In_opt_ void**, PCSTR contextName, _In_ _Printf_format_string_ PCSTR formatString, _In_opt_ va_list argList) : \
         ActivityBase(contextName) \
     { \
         GetCallContext()->SetMessage(formatString, argList); \
@@ -4730,6 +4731,49 @@ WIL_WARN_DEPRECATED_1612_PRAGMA("IMPLEMENT_TRACELOGGING_CLASS")
         varName8, \
         TraceLoggingKeyword(MICROSOFT_KEYWORD_CRITICAL_DATA), \
         TelemetryPrivacyDataTag(PrivacyTag))
+#define DEFINE_COMPLIANT_CRITICAL_DATA_EVENT_PARAM9( \
+    EventId, \
+    PrivacyTag, \
+    VarType1, \
+    varName1, \
+    VarType2, \
+    varName2, \
+    VarType3, \
+    varName3, \
+    VarType4, \
+    varName4, \
+    VarType5, \
+    varName5, \
+    VarType6, \
+    varName6, \
+    VarType7, \
+    varName7, \
+    VarType8, \
+    varName8, \
+    VarType9, \
+    varName9) \
+    DEFINE_TRACELOGGING_EVENT_PARAM9( \
+        EventId, \
+        VarType1, \
+        varName1, \
+        VarType2, \
+        varName2, \
+        VarType3, \
+        varName3, \
+        VarType4, \
+        varName4, \
+        VarType5, \
+        varName5, \
+        VarType6, \
+        varName6, \
+        VarType7, \
+        varName7, \
+        VarType8, \
+        varName8, \
+        VarType9, \
+        varName9, \
+        TraceLoggingKeyword(MICROSOFT_KEYWORD_CRITICAL_DATA), \
+        TelemetryPrivacyDataTag(PrivacyTag))
 
 #define DEFINE_COMPLIANT_CRITICAL_DATA_EVENT_CV(EventId, PrivacyTag) \
     DEFINE_TRACELOGGING_EVENT_CV(EventId, TraceLoggingKeyword(MICROSOFT_KEYWORD_CRITICAL_DATA), TelemetryPrivacyDataTag(PrivacyTag))
@@ -6444,7 +6488,13 @@ namespace details
 
                     if (*lastNamespaceNode)
                     {
-                        root.swap((*lastNamespaceNode)->next);
+                        // Delete everything from the current root to the lastNamespaceNode
+                        // (inclusive), considering the possibility that they are the same. Continue
+                        // processing from the node following lastNamespaceNode, if any. root will
+                        // be made to point to that.
+                        auto newRoot = wistd::move((*lastNamespaceNode)->next);
+                        const auto toDelete = wistd::move(root);
+                        root = wistd::move(newRoot);
                     }
                     else
                     {

@@ -47,6 +47,7 @@ public:
 		bool vk_khr_shader_non_semantic_info : 1;
 		bool vk_ext_attachment_feedback_loop_layout : 1;
 		bool vk_ext_fragment_shader_interlock : 1;
+		bool vk_khr_push_descriptor : 1;
 	};
 
 	// Global state accessors
@@ -82,6 +83,24 @@ public:
 	/// Returns true if running on an AMD GPU.
 	__fi bool IsDeviceAMD() const { return (m_device_properties.vendorID == 0x1002); }
 
+	/// Returns true if running on an ARM Mali GPU (vendorID 0x13B5).
+	__fi bool IsDeviceMali() const { return (m_device_properties.vendorID == 0x13B5u); }
+
+	/// Returns true if running on a Qualcomm Adreno GPU (vendorID 0x5143).
+	__fi bool IsDeviceAdreno() const { return (m_device_properties.vendorID == 0x5143u); }
+
+	// Adreno-5xx / pre-0x801EA000 driver bug: colorWriteMask is ignored while a depth
+	// test is active (PPSSPP #10421). Cached in CheckFeatures, consumed in CreateTFXPipeline.
+	bool m_broken_colormask_with_depth = false;
+
+	/// Returns true if running on an Imagination PowerVR GPU (vendorID 0x1010).
+	__fi bool IsDevicePowerVR() const { return (m_device_properties.vendorID == 0x1010u); }
+
+	/// Returns true if running on a Samsung Xclipse (Exynos AMD-RDNA2) GPU.
+	/// NOTE: 0x144D (Samsung) is unverified across driver revisions — a real Xclipse tester
+	/// must confirm this fires; if it reports a different vendorID the gate is simply inert.
+	__fi bool IsDeviceXclipse() const { return (m_device_properties.vendorID == 0x144Du); }
+
 	// Creates a simple render pass.
 	VkRenderPass GetRenderPass(VkFormat color_format, VkFormat depth_format,
 		VkAttachmentLoadOp color_load_op = VK_ATTACHMENT_LOAD_OP_LOAD,
@@ -106,6 +125,14 @@ public:
 
 	/// Frees a descriptor set allocated from the global pool.
 	void FreePersistentDescriptorSet(VkDescriptorSet set);
+
+	/// True when the device uses VK_KHR_push_descriptor for texture binding (everything except Mali,
+	/// whose driver crashes inside vkCmdPushDescriptorSetKHR). When false, textures are bound via
+	/// per-frame allocated descriptor sets (vkUpdateDescriptorSets + vkCmdBindDescriptorSets).
+	__fi bool UsePushDescriptors() const { return m_use_push_descriptors; }
+
+	/// Allocates a descriptor set from the current frame's reset-per-frame pool (non-push path only).
+	VkDescriptorSet AllocateFrameDescriptorSet(VkDescriptorSetLayout set_layout);
 
 	// Gets the fence that will be signaled when the currently executing command buffer is
 	// queued and executed. Do not wait for this fence before the buffer is executed.
@@ -209,11 +236,22 @@ private:
 	void CalibrateSpinTimestamp();
 	u64 GetCPUTimestamp();
 
+	// For pipeline statistics
+	enum class QueryState
+	{
+		None,
+		Querying,
+		Ready,
+	};
+
 	struct FrameResources
 	{
 		// [0] - Init (upload) command buffer, [1] - draw command buffer
 		VkCommandPool command_pool = VK_NULL_HANDLE;
 		std::array<VkCommandBuffer, 2> command_buffers{VK_NULL_HANDLE, VK_NULL_HANDLE};
+		// Per-frame texture descriptor pool, reset wholesale each time the frame is reused.
+		// Only created/used on the non-push-descriptor path (Mali workaround).
+		VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
 		VkFence fence = VK_NULL_HANDLE;
 		u64 fence_counter = 0;
 		s32 spin_id = -1;
@@ -221,6 +259,7 @@ private:
 		bool init_buffer_used = false;
 		bool needs_fence_wait = false;
 		bool timestamp_written = false;
+		QueryState pipeline_statistics_query = QueryState::None;
 
 		std::vector<std::function<void()>> cleanup_resources;
 	};
@@ -243,6 +282,20 @@ private:
 	VkCommandBuffer m_current_command_buffer = VK_NULL_HANDLE;
 
 	VkDescriptorPool m_global_descriptor_pool = VK_NULL_HANDLE;
+
+	// Set false for Mali (vendorID 0x13B5) in CreateDevice: its driver crashes inside
+	// vkCmdPushDescriptorSetKHR, so texture binding falls back to per-frame descriptor sets.
+	bool m_use_push_descriptors = true;
+
+	// True when the SoC hints look like MediaTek (Dimensity/Helio). Set in CheckFeatures
+	// from GpuProfileDetector; used to disable the broken Vulkan fbfetch path on their
+	// Mali stacks (zero/stale Cd → black/missing textures). Ported from EmuCoreX.
+	bool m_is_mediatek_soc = false;
+
+	// True when the SoC hints look like MediaTek (Dimensity/Helio). Set in CheckFeatures
+	// from GpuProfileDetector; used to disable the broken Vulkan fbfetch path on their
+	// Mali stacks (zero/stale Cd → black/missing textures). Ported from EmuCoreX.
+	bool m_is_mediatek_soc = false;
 
 	VkQueue m_graphics_queue = VK_NULL_HANDLE;
 	VkQueue m_present_queue = VK_NULL_HANDLE;
@@ -274,6 +327,11 @@ private:
 	float m_accumulated_gpu_time = 0.0f;
 	bool m_gpu_timing_enabled = false;
 	bool m_gpu_timing_supported = false;
+
+	VkQueryPool m_pipeline_statistics_query_pool = VK_NULL_HANDLE;
+	GPUPipelineStatistics m_accumulated_gpu_pipeline_statistics{};
+	bool m_gpu_pipeline_statistics_enabled = false;
+	bool m_gpu_pipeline_statistics_supported = false;
 	bool m_wants_new_timestamp_calibration = false;
 	VkTimeDomainEXT m_calibrated_timestamp_type = VK_TIME_DOMAIN_DEVICE_EXT;
 
@@ -293,6 +351,8 @@ private:
 	VkPhysicalDeviceDriverPropertiesKHR m_device_driver_properties = {};
 	OptionalExtensions m_optional_extensions = {};
 
+	u32 m_max_framebuffer_width = 0;
+	u32 m_max_framebuffer_height = 0;
 public:
 	enum FeedbackLoopFlag : u8
 	{
@@ -445,6 +505,8 @@ private:
 	std::unordered_map<GSHWDrawConfig::PSSelector, VkShaderModule, GSHWDrawConfig::PSSelectorHash>
 		m_tfx_fragment_shaders;
 	std::unordered_map<PipelineSelector, VkPipeline, PipelineSelectorHash> m_tfx_pipelines;
+	u32 m_tfx_pipeline_compile_counter = 0;
+	u32 m_tfx_pipeline_compile_counter = 0;
 
 	VkRenderPass m_utility_color_render_pass_load = VK_NULL_HANDLE;
 	VkRenderPass m_utility_color_render_pass_clear = VK_NULL_HANDLE;
@@ -468,8 +530,7 @@ private:
 
 	std::string m_tfx_source;
 
-	GSTexture* CreateSurface(
-		GSTexture::Type type, int width, int height, int levels, GSTexture::Format format) override;
+	GSTexture* CreateSurface(GSTexture::Usage usage, int width, int height, int levels, GSTexture::Format format) override;
 
 	void DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, const GSRegPMODE& PMODE,
 		const GSRegEXTBUF& EXTBUF, u32 c, const Filter filter) final;
@@ -562,6 +623,9 @@ public:
 	bool SetGPUTimingEnabled(bool enabled) override;
 	float GetAndResetAccumulatedGPUTime() override;
 
+	bool SetGPUPipelineStatisticsEnabled(bool enabled) override;
+	GPUPipelineStatistics GetAndResetAccumulatedGPUPipelineStatistics() override;
+
 	void PushDebugGroup(const char* fmt, ...) override;
 	void PopDebugGroup() override;
 	void InsertDebugMessage(DebugMessageCategory category, const char* fmt, ...) override;
@@ -608,7 +672,7 @@ public:
 	void IASetIndexBuffer(const void* index, size_t count);
 	void VSSetIndexBuffer(const void* index, size_t count);
 
-	void PSSetUnorderedAccess(GSTexture* rt, GSTexture* ds, bool write_rt, bool write_ds);
+	void PSSetROVs(GSTexture* rt, GSTexture* ds, bool write_rt, bool write_ds);
 	void PSSetShaderResource(int i, GSTexture* sr, bool check_state, ResourceType type = ResourceType::SRV);
 	void PSSetSampler(GSHWDrawConfig::SamplerSelector sel);
 

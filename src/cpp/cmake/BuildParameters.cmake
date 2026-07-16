@@ -7,30 +7,39 @@ include(GNUInstallDirs)
 # Misc option
 #-------------------------------------------------------------------------------
 option(ENABLE_TESTS "Enables building the unit tests" ON)
+option(ENABLE_QT_UI "Enables building the PCSX2 Qt interface." ON)
 option(ENABLE_GSRUNNER "Enables building the GSRunner by default.  It can still be built with `make pcsx2-gsrunner` otherwise." OFF)
 option(LTO_PCSX2_CORE "Enable LTO/IPO/LTCG on the subset of pcsx2 that benefits most from it but not anything else")
 option(USE_VTUNE "Plug VTUNE to profile GS JIT.")
 option(PACKAGE_MODE "Use this option to ease packaging of PCSX2 (developer/distribution option)")
+option(BUNDLE_EMOJI_FONT "Bundles Noto Color Emoji for systems whose system emoji font isn't usable by freetype" ON)
+option(POSITION_INDEPENDENT_CODE "Generate position-independent code. It is recommended that you leave this on." ON)
 
 #-------------------------------------------------------------------------------
 # Graphical option
 #-------------------------------------------------------------------------------
-if(NOT APPLE OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+# iOS uses Metal; OpenGL is force-disabled by the top-level iOS CMakeLists.txt
+# (USE_OPENGL OFF). Vulkan is also off (Metal-only). Keep the options declared
+# here for parity with the core's expectations, but they are OFF on iOS.
+if(NOT APPLE)
 	option(USE_OPENGL "Enable OpenGL GS renderer" ON)
 endif()
 option(USE_VULKAN "Enable Vulkan GS renderer" ON)
-if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-	set(USE_VULKAN OFF CACHE BOOL "Enable Vulkan GS renderer" FORCE)
-endif()
 
 #-------------------------------------------------------------------------------
 # Path and lib option
 #-------------------------------------------------------------------------------
-if(UNIX AND NOT APPLE)
+if(IOS)
+	# iOS is a non-desktop frontend: no X11/Wayland/backtrace/setcap.
+	set(X11_API OFF CACHE BOOL "" FORCE)
+	set(WAYLAND_API OFF CACHE BOOL "" FORCE)
+	set(USE_BACKTRACE OFF CACHE BOOL "" FORCE)
+	set(ENABLE_SETCAP OFF CACHE BOOL "" FORCE)
+elseif(UNIX AND NOT APPLE)
 	option(ENABLE_SETCAP "Enable networking capability for DEV9" OFF)
-	option(X11_API "Enable X11 support" OFF)
-	option(WAYLAND_API "Enable Wayland support" OFF)
-	option(USE_BACKTRACE "Enable libbacktrace support" OFF)
+	option(X11_API "Enable X11 support" ON)
+	option(WAYLAND_API "Enable Wayland support" ON)
+	option(USE_BACKTRACE "Enable libbacktrace support" ON)
 endif()
 
 if(UNIX)
@@ -75,20 +84,23 @@ if(CMAKE_CONFIGURATION_TYPES)
 endif()
 mark_as_advanced(CMAKE_C_FLAGS_DEVEL CMAKE_CXX_FLAGS_DEVEL CMAKE_LINKER_FLAGS_DEVEL CMAKE_SHARED_LINKER_FLAGS_DEVEL CMAKE_EXE_LINKER_FLAGS_DEVEL CMAKE_MAP_IMPORTED_CONFIG_DEVEL)
 
-# Architecture bitness detection
-include(TargetArch)
-target_architecture(CMAKE_HOST_SYSTEM_PROCESSOR)
-
 #-------------------------------------------------------------------------------
 # Select the architecture
 #-------------------------------------------------------------------------------
-if("${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "x86_64" OR "${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "amd64" OR
-   "${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "AMD64" OR "${CMAKE_OSX_ARCHITECTURES}" STREQUAL "x86_64")
+# iOS is always cross-compiled (device/simulator); use the target processor.
+if(CMAKE_CROSSCOMPILING)
+	set(_PCSX2_TARGET_PROCESSOR "${CMAKE_SYSTEM_PROCESSOR}")
+else()
+	set(_PCSX2_TARGET_PROCESSOR "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+endif()
+
+if("${_PCSX2_TARGET_PROCESSOR}" STREQUAL "x86_64" OR "${_PCSX2_TARGET_PROCESSOR}" STREQUAL "amd64" OR
+   "${_PCSX2_TARGET_PROCESSOR}" STREQUAL "AMD64" OR "${CMAKE_OSX_ARCHITECTURES}" STREQUAL "x86_64")
 	# Multi-ISA only exists on x86.
 	option(DISABLE_ADVANCE_SIMD "Disable advance use of SIMD (SSE2+ & AVX)" OFF)
 
 	list(APPEND PCSX2_DEFS _M_X86=1)
-	set(_M_X86 TRUE)
+	set(ARCH_X86 TRUE)
 	if(DISABLE_ADVANCE_SIMD)
 		message(STATUS "Building for x86-64 (Multi-ISA).")
 	else()
@@ -109,39 +121,46 @@ if("${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "x86_64" OR "${CMAKE_HOST_SYSTEM_PR
 			add_compile_options("-msse" "-msse2" "-msse4.1" "-mfxsr")
 		else()
 			# Can't use march=native on Apple Silicon.
-			if(NOT APPLE OR "${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "x86_64")
+			if(NOT APPLE OR "${_PCSX2_TARGET_PROCESSOR}" STREQUAL "x86_64")
 				add_compile_options("-march=native")
 			endif()
 		endif()
 	endif()
-elseif("${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "arm64" OR "${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "aarch64" OR
+elseif("${_PCSX2_TARGET_PROCESSOR}" STREQUAL "arm64" OR "${_PCSX2_TARGET_PROCESSOR}" STREQUAL "aarch64" OR
        "${CMAKE_OSX_ARCHITECTURES}" STREQUAL "arm64")
-	message(STATUS "Building for Apple Silicon (ARM64).")
-	list(APPEND PCSX2_DEFS _M_ARM64=1)
-	set(_M_ARM64 TRUE)
 	set(ARCH_ARM64 TRUE)
-#	add_compile_options("-march=armv8.4-a" "-mcpu=apple-m1")
-
-	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-	add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX,OBJC,OBJCXX>:-march=armv8-a+crc>")
+	if(APPLE)
+		message(STATUS "Building for Apple Silicon (ARM64).")
+		# Min spec is an M1. iOS devices and Apple Silicon Macs (Catalyst) share this.
+		add_compile_options("-march=armv8.4-a" "-mcpu=apple-m1")
+	elseif(ANDROID)
+		message(STATUS "Building for Android (ARM64).")
+		# ARMv8.0-a is the baseline for Android arm64-v8a
+		add_compile_options("-march=armv8-a")
+	else()
+		message(STATUS "Building for ARM64.")
+		# Require atomic rmw instructions
+		add_compile_options("-march=armv8.1-a")
+	endif()
 
 	# If we're running on Linux, we need to detect the page/cache line size.
 	# It could be a virtual machine with 4K pages, or 16K with Asahi.
+	# (iOS is APPLE, so this is skipped — page size is fixed by the iOS SDK.)
 	if(LINUX)
 		detect_page_size()
 		list(APPEND PCSX2_DEFS OVERRIDE_HOST_PAGE_SIZE=${HOST_PAGE_SIZE})
 		detect_cache_line_size()
 		list(APPEND PCSX2_DEFS OVERRIDE_HOST_CACHE_LINE_SIZE=${HOST_CACHE_LINE_SIZE})
 	endif()
-	
-	# Windows page/cache line size seems to match x68-64 
+
+	# Windows page/cache line size seems to match x68-64
 	if(WIN32)
 		list(APPEND PCSX2_DEFS OVERRIDE_HOST_PAGE_SIZE=0x1000)
 		# Value of std::hardware_destructive_interference_size for ARM64 on MSVC toolset 14.40.33807
 		list(APPEND PCSX2_DEFS OVERRIDE_HOST_CACHE_LINE_SIZE=64)
 	endif()
 else()
-	message(FATAL_ERROR "Unsupported architecture: ${CMAKE_HOST_SYSTEM_PROCESSOR}")
+	message(FATAL_ERROR "Unsupported architecture: ${_PCSX2_TARGET_PROCESSOR}")
 endif()
 
 # Require C++20.
@@ -163,11 +182,7 @@ if(MSVC)
 	# Disable Exceptions
 	string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
 else()
-	add_compile_options(
-		"$<$<COMPILE_LANGUAGE:C,CXX,OBJC,OBJCXX>:-pipe>"
-		"$<$<COMPILE_LANGUAGE:C,CXX,OBJC,OBJCXX>:-fvisibility=hidden>"
-		"$<$<COMPILE_LANGUAGE:C,CXX,OBJC,OBJCXX>:-pthread>"
-	)
+	add_compile_options(-pipe -fvisibility=hidden -pthread)
 	add_compile_options(
 		"$<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>"
 	)
@@ -255,21 +270,9 @@ else()
 	set(DEFAULT_WARNINGS -Wall -Wextra -Wno-unused-function -Wno-unused-parameter -Wno-missing-field-initializers)
 endif()
 
-if (USE_PGO_GENERATE OR USE_PGO_OPTIMIZE)
-	add_compile_options("-fprofile-dir=${CMAKE_SOURCE_DIR}/profile")
-endif()
-
-if (USE_PGO_GENERATE)
-	add_compile_options(-fprofile-generate)
-endif()
-
-if(USE_PGO_OPTIMIZE)
-	add_compile_options(-fprofile-use)
-endif()
-
 list(APPEND PCSX2_DEFS
-	"$<$<CONFIG:Debug>:PCSX2_DEVBUILD;PCSX2_DEBUG;_DEBUG>"
-	"$<$<CONFIG:Devel>:PCSX2_DEVBUILD;_DEVEL>")
+	"$<$<CONFIG:Debug>:PCSX2_DEBUG;_DEBUG>"
+	"$<$<CONFIG:Devel>:_DEVEL>")
 
 if (USE_ASAN)
 	add_compile_options(-fsanitize=address)
@@ -283,8 +286,36 @@ endif()
 
 set(PCSX2_WARNINGS ${DEFAULT_WARNINGS})
 
+if(POSITION_INDEPENDENT_CODE)
+	# Make sure position-independent code is enabled properly.
+	# Without this check, on some platforms (e.g. Fedora 43) the right flags
+	# won't be passed to the linker, resulting in a broken build when link time
+	# optimization is enabled (even with a cmake version >= 3.14).
+	if(NOT MSVC AND NOT ANDROID)
+		include(CheckPIESupported)
+		check_pie_supported(OUTPUT_VARIABLE PIE_SUPPORTED_OUTPUT LANGUAGES C CXX)
+
+		if((NOT CMAKE_C_LINK_PIE_SUPPORTED) OR (NOT CMAKE_CXX_LINK_PIE_SUPPORTED))
+			message(WARNING
+				"The POSITION_INDEPENDENT_CODE option is enabled but is not "
+				"supported at link time:\n${PIE_SUPPORTED_OUTPUT}")
+		endif()
+	endif()
+
+	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+else()
+	if(CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+		message(WARNING
+			"The CMAKE_INTERPROCEDURAL_OPTIMIZATION option is enabled but the "
+			"CMAKE_POSITION_INDEPENDENT_CODE option is disabled. This has been "
+			"found to result in broken builds on certain platforms.")
+	endif()
+
+	set(CMAKE_POSITION_INDEPENDENT_CODE OFF)
+endif()
+
 #-------------------------------------------------------------------------------
-# MacOS-specific things
+# MacOS/iOS-specific things
 #-------------------------------------------------------------------------------
 
 if(NOT CMAKE_GENERATOR MATCHES "Xcode")

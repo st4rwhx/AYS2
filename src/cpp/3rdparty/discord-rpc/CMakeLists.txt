@@ -24,19 +24,15 @@ if(WIN32)
 		src/connection_win.cpp
 		src/discord_register_win.cpp
 	)
-elseif(APPLE)
+elseif(APPLE AND IOS)
 	target_sources(discord-rpc PRIVATE
 		src/connection_unix.cpp
 	)
-	if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-		target_sources(discord-rpc PRIVATE
-			src/discord_register_ios.m
-		)
-	else()
-		target_sources(discord-rpc PRIVATE
-			src/discord_register_osx.m
-		)
-	endif()
+elseif(APPLE)
+	target_sources(discord-rpc PRIVATE
+		src/connection_unix.cpp
+		src/discord_register_osx.m
+	)
 elseif(UNIX)
 	target_sources(discord-rpc PRIVATE
 		src/connection_unix.cpp

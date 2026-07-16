@@ -20,18 +20,28 @@
 #include <winreg.h>
 #include <objbase.h>
 
-// detect std::bit_cast
-#ifdef __has_include
-#if (__cplusplus >= 202002L || _MSVC_LANG >= 202002L) && __has_include(<bit>)
+#include "common.h"
+
+#if WIL_USE_STL
+#include <string>
+#if (__WI_LIBCPP_STD_VER >= 17) && WI_HAS_INCLUDE(<string_view>, 1) // Assume present if C++17
+#include <string_view>
+#endif
+#if (__WI_LIBCPP_STD_VER >= 20)
+#if WI_HAS_INCLUDE(<bit>, 1) // Assume present if C++20
 #include <bit>
+#endif
+#if WI_HAS_INCLUDE(<compare>, 1) // Assume present if C++20
+#include <compare>
+#endif
 #endif
 #endif
 
 /// @cond
-#if __cpp_lib_bit_cast >= 201806L
+#if WIL_USE_STL && (__cpp_lib_bit_cast >= 201806L)
 #define __WI_CONSTEXPR_BIT_CAST constexpr
 #else
-#define __WI_CONSTEXPR_BIT_CAST inline
+#define __WI_CONSTEXPR_BIT_CAST // All uses are templates, which is implicitly inline
 #endif
 /// @endcond
 
@@ -40,25 +50,16 @@
 #include "wistd_functional.h"
 #include "wistd_type_traits.h"
 
-/// @cond
-#if _HAS_CXX20 && defined(_STRING_VIEW_) && defined(_COMPARE_)
-// If we're using c++20, then <compare> must be included to use the string ordinal functions
-#define __WI_DEFINE_STRING_ORDINAL_FUNCTIONS
-#elif !_HAS_CXX20 && defined(_STRING_VIEW_)
-#define __WI_DEFINE_STRING_ORDINAL_FUNCTIONS
-#endif
-/// @endcond
+EXTERN_C IMAGE_DOS_HEADER __ImageBase;
 
 /// @cond
 namespace wistd
 {
-#if defined(__WI_DEFINE_STRING_ORDINAL_FUNCTIONS)
-
-#if _HAS_CXX20
+#if WIL_USE_STL && (__cpp_lib_three_way_comparison >= 201907L)
 
 using weak_ordering = std::weak_ordering;
 
-#else // _HAS_CXX20
+#else
 
 struct weak_ordering
 {
@@ -129,13 +130,11 @@ struct weak_ordering
     signed char m_value;
 };
 
-inline constexpr weak_ordering weak_ordering::less{static_cast<signed char>(-1)};
-inline constexpr weak_ordering weak_ordering::equivalent{static_cast<signed char>(0)};
-inline constexpr weak_ordering weak_ordering::greater{static_cast<signed char>(1)};
+__WI_LIBCPP_INLINE_VAR constexpr weak_ordering weak_ordering::less{static_cast<signed char>(-1)};
+__WI_LIBCPP_INLINE_VAR constexpr weak_ordering weak_ordering::equivalent{static_cast<signed char>(0)};
+__WI_LIBCPP_INLINE_VAR constexpr weak_ordering weak_ordering::greater{static_cast<signed char>(1)};
 
-#endif // !_HAS_CXX20
-
-#endif // defined(__WI_DEFINE_STRING_ORDINAL_FUNCTIONS)
+#endif
 } // namespace wistd
 /// @endcond
 
@@ -165,8 +164,7 @@ constexpr size_t guid_string_length = 38;
 // Indentifiers require a locale-less (ordinal), and often case-insensitive, comparison (filenames, registry keys, XML node names,
 // etc). DO NOT use locale-sensitive (lexical) comparisons for resource identifiers (e.g.wcs*() functions in the CRT).
 
-#if defined(__WI_DEFINE_STRING_ORDINAL_FUNCTIONS) || defined(WIL_DOXYGEN)
-
+#if WIL_USE_STL && (__cpp_lib_string_view >= 201606L)
 /// @cond
 namespace details
 {
@@ -192,8 +190,7 @@ namespace details
         return wistd::weak_ordering::equivalent;
     }
 }
-
-#endif // defined(__WI_DEFINE_STRING_ORDINAL_FUNCTIONS)
+#endif
 
 #pragma endregion
 
@@ -206,47 +203,60 @@ namespace filetime_duration
     long long const one_minute = 10000000LL * 60;        // 600000000    or 600000000LL
     long long const one_hour = 10000000LL * 60 * 60;     // 36000000000  or 36000000000LL
     long long const one_day = 10000000LL * 60 * 60 * 24; // 864000000000 or 864000000000LL
-};                                                       // namespace filetime_duration
+}; // namespace filetime_duration
 
 namespace filetime
 {
-    constexpr unsigned long long to_int64(const FILETIME& ft) WI_NOEXCEPT
+    template <typename Int64 = unsigned long long, wistd::enable_if_t<wistd::is_integral_v<Int64> && (sizeof(Int64) == sizeof(FILETIME)), int> = 0>
+    constexpr Int64 to_int64(const FILETIME& val) WI_NOEXCEPT
     {
-#if __cpp_lib_bit_cast >= 201806L
-        return std::bit_cast<unsigned long long>(ft);
+#if WIL_USE_STL && (__cpp_lib_bit_cast >= 201806L)
+        return std::bit_cast<Int64>(val);
 #else
-        // Cannot reinterpret_cast FILETIME* to unsigned long long*
-        // due to alignment differences.
-        return (static_cast<unsigned long long>(ft.dwHighDateTime) << 32) + ft.dwLowDateTime;
+        // Cannot reinterpret_cast FILETIME* to Int64* due to alignment differences.
+        return (static_cast<Int64>(val.dwHighDateTime) << 32) + val.dwLowDateTime;
 #endif
     }
 
-    __WI_CONSTEXPR_BIT_CAST FILETIME from_int64(unsigned long long i64) WI_NOEXCEPT
+    namespace details
     {
-#if __cpp_lib_bit_cast >= 201806L
+        template <typename Int>
+        using select_int64 =
+            wistd::conditional_t<sizeof(Int) == 8, Int, wistd::conditional_t<wistd::is_signed_v<Int>, long long, unsigned long long>>;
+    }
+
+    template <typename Int, wistd::enable_if_t<wistd::is_integral_v<Int> && (sizeof(Int) <= sizeof(FILETIME)), int> = 0>
+    __WI_CONSTEXPR_BIT_CAST FILETIME from_int64(Int val) WI_NOEXCEPT
+    {
+        using Int64 = details::select_int64<Int>;
+        auto i64 = static_cast<Int64>(val);
+
+#if WIL_USE_STL && (__cpp_lib_bit_cast >= 201806L)
         return std::bit_cast<FILETIME>(i64);
 #else
         static_assert(sizeof(i64) == sizeof(FILETIME), "sizes don't match");
-        static_assert(__alignof(unsigned long long) >= __alignof(FILETIME), "alignment not compatible with type pun");
+        static_assert(__alignof(Int64) >= __alignof(FILETIME), "alignment not compatible with type pun");
         return *reinterpret_cast<FILETIME*>(&i64);
 #endif
     }
 
-    __WI_CONSTEXPR_BIT_CAST FILETIME add(_In_ FILETIME const& ft, long long delta100ns) WI_NOEXCEPT
+    template <typename Int, wistd::enable_if_t<wistd::is_integral_v<Int> && (sizeof(Int) <= sizeof(FILETIME)), int> = 0>
+    __WI_CONSTEXPR_BIT_CAST FILETIME add(FILETIME const& baseTime, Int delta100ns) WI_NOEXCEPT
     {
-        return from_int64(to_int64(ft) + delta100ns);
+        using Int64 = details::select_int64<Int>;
+        return from_int64(to_int64<Int64>(baseTime) + delta100ns);
     }
 
-    constexpr bool is_empty(const FILETIME& ft) WI_NOEXCEPT
+    constexpr bool is_empty(const FILETIME& val) WI_NOEXCEPT
     {
-        return (ft.dwHighDateTime == 0) && (ft.dwLowDateTime == 0);
+        return (val.dwHighDateTime == 0) && (val.dwLowDateTime == 0);
     }
 
     inline FILETIME get_system_time() WI_NOEXCEPT
     {
-        FILETIME ft;
-        GetSystemTimeAsFileTime(&ft);
-        return ft;
+        FILETIME now;
+        GetSystemTimeAsFileTime(&now);
+        return now;
     }
 
     /// Convert time as units of 100 nanoseconds to milliseconds. Fractional milliseconds are truncated.
@@ -343,7 +353,7 @@ constexpr rect_type rect_from_size(length_type x, length_type y, length_type wid
 // Adjust stackBufferLength based on typical result sizes to optimize use and
 // to test the boundary cases.
 template <typename string_type, size_t stackBufferLength = 256>
-HRESULT AdaptFixedSizeToAllocatedResult(string_type& result, wistd::function<HRESULT(PWSTR, size_t, size_t*)> callback) WI_NOEXCEPT
+HRESULT AdaptFixedSizeToAllocatedResult(string_type& result, const wistd::function<HRESULT(PWSTR, size_t, size_t*)>& callback) WI_NOEXCEPT
 {
     details::string_maker<string_type> maker;
 
@@ -654,38 +664,75 @@ string_type QueryFullProcessImageNameW(HANDLE processHandle = GetCurrentProcess(
     THROW_IF_FAILED((wil::QueryFullProcessImageNameW<string_type, stackBufferLength>(processHandle, flags, result)));
     return result;
 }
+#endif // WIL_ENABLE_EXCEPTIONS
 
 #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
 
-// Lookup a DWORD value under HKLM\...\Image File Execution Options\<current process name>
+namespace details
+{
+    // Lookup a DWORD value under HKLM\...\Image File Execution Options\<current process name>
+    inline HRESULT GetCurrentProcessExecutionOptionNoThrow(PCWSTR valueName, DWORD defaultValue, DWORD* result)
+    {
+        *result = defaultValue;
+
+        wil::unique_cotaskmem_string filePath;
+        RETURN_IF_FAILED(wil::GetModuleFileNameW<wil::unique_cotaskmem_string>(nullptr, filePath));
+        if (auto lastSlash = wcsrchr(filePath.get(), L'\\'))
+        {
+            const auto fileName = lastSlash + 1;
+            wil::unique_cotaskmem_string keyPath;
+            RETURN_IF_FAILED(wil::str_concat_nothrow<wil::unique_cotaskmem_string>(
+                keyPath, LR"(SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\)", fileName));
+            DWORD value{};
+            DWORD sizeofValue = sizeof(value);
+            if (::RegGetValueW(
+                    HKEY_LOCAL_MACHINE,
+                    keyPath.get(),
+                    valueName,
+#ifdef RRF_SUBKEY_WOW6464KEY
+                    RRF_RT_REG_DWORD | RRF_SUBKEY_WOW6464KEY,
+#else
+                    RRF_RT_REG_DWORD,
+#endif
+                    nullptr,
+                    &value,
+                    &sizeofValue) == ERROR_SUCCESS)
+            {
+                *result = value;
+            }
+        }
+        return S_OK;
+    }
+} // namespace details
+
+#ifdef WIL_ENABLE_EXCEPTIONS
 inline DWORD GetCurrentProcessExecutionOption(PCWSTR valueName, DWORD defaultValue = 0)
 {
-    auto filePath = wil::GetModuleFileNameW<wil::unique_cotaskmem_string>();
-    if (auto lastSlash = wcsrchr(filePath.get(), L'\\'))
+    DWORD result{};
+    THROW_IF_FAILED(details::GetCurrentProcessExecutionOptionNoThrow(valueName, defaultValue, &result));
+    return result;
+}
+#endif // WIL_ENABLE_EXCEPTIONS
+
+// No easy return mechanism for err_returncode_policy so skipping it.
+inline DWORD GetCurrentProcessExecutionOptionNoThrow(PCWSTR valueName, DWORD defaultValue = 0)
+{
+    DWORD result{};
+    if (FAILED(details::GetCurrentProcessExecutionOptionNoThrow(valueName, defaultValue, &result)))
     {
-        const auto fileName = lastSlash + 1;
-        auto keyPath = wil::str_concat<wil::unique_cotaskmem_string>(
-            LR"(SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\)", fileName);
-        DWORD value{}, sizeofValue = sizeof(value);
-        if (::RegGetValueW(
-                HKEY_LOCAL_MACHINE,
-                keyPath.get(),
-                valueName,
-#ifdef RRF_SUBKEY_WOW6464KEY
-                RRF_RT_REG_DWORD | RRF_SUBKEY_WOW6464KEY,
-#else
-                RRF_RT_REG_DWORD,
-#endif
-                nullptr,
-                &value,
-                &sizeofValue) == ERROR_SUCCESS)
-        {
-            return value;
-        }
+        return defaultValue;
     }
-    return defaultValue;
+    return result;
 }
 
+inline DWORD GetCurrentProcessExecutionOptionFailFast(PCWSTR valueName, DWORD defaultValue = 0)
+{
+    DWORD result{};
+    FAIL_FAST_IF_FAILED(details::GetCurrentProcessExecutionOptionNoThrow(valueName, defaultValue, &result));
+    return result;
+}
+
+#ifndef DebugBreak // Some code defines 'DebugBreak' to garbage to force build breaks in release builds
 // Waits for a debugger to attach to the current process based on registry configuration.
 //
 // Example:
@@ -696,35 +743,62 @@ inline DWORD GetCurrentProcessExecutionOption(PCWSTR valueName, DWORD defaultVal
 //     missing or 0 -> don't break
 //     1 -> wait for the debugger, continue execution once it is attached
 //     2 -> wait for the debugger, break here once attached.
+namespace details
+{
+    template <typename error_policy>
+    inline void WaitForDebuggerPresent(bool checkRegistryConfig)
+    {
+        for (;;)
+        {
+            DWORD configValue{1};
+            if (checkRegistryConfig)
+            {
+                // err_returncode_policy will continue running after this line on failure.  The default value of zero
+                // will apply in that case so we will still behave reasonably.
+                error_policy::HResult(details::GetCurrentProcessExecutionOptionNoThrow(L"WaitForDebuggerPresent", 0, &configValue));
+            }
+
+            if (configValue == 0)
+            {
+                return; // not configured, don't wait
+            }
+
+            if (IsDebuggerPresent())
+            {
+                if (configValue == 2)
+                {
+                    DebugBreak(); // debugger attached, SHIFT+F11 to return to the caller
+                }
+                return; // debugger now attached, continue executing
+            }
+            Sleep(500);
+        }
+    }
+} // namespace details
+
+#ifdef WIL_ENABLE_EXCEPTIONS
 inline void WaitForDebuggerPresent(bool checkRegistryConfig = true)
 {
-    for (;;)
-    {
-        auto configValue = checkRegistryConfig ? GetCurrentProcessExecutionOption(L"WaitForDebuggerPresent") : 1;
-        if (configValue == 0)
-        {
-            return; // not configured, don't wait
-        }
-
-        if (IsDebuggerPresent())
-        {
-            if (configValue == 2)
-            {
-                DebugBreak(); // debugger attached, SHIFT+F11 to return to the caller
-            }
-            return; // debugger now attached, continue executing
-        }
-        Sleep(500);
-    }
+    details::WaitForDebuggerPresent<err_exception_policy>(checkRegistryConfig);
 }
-#endif // WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
+#endif // WIL_ENABLE_EXCEPTIONS
 
-#endif
+inline void WaitForDebuggerPresentNoThrow(bool checkRegistryConfig = true)
+{
+    details::WaitForDebuggerPresent<err_returncode_policy>(checkRegistryConfig);
+}
+
+inline void WaitForDebuggerPresentFailFast(bool checkRegistryConfig = true)
+{
+    details::WaitForDebuggerPresent<err_failfast_policy>(checkRegistryConfig);
+}
+
+#endif // DebugBreak
+#endif // WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
 
 /** Retrieve the HINSTANCE for the current DLL or EXE using this symbol that
 the linker provides for every module. This avoids the need for a global HINSTANCE variable
 and provides access to this value for static libraries. */
-EXTERN_C IMAGE_DOS_HEADER __ImageBase;
 inline HINSTANCE GetModuleInstanceHandle() WI_NOEXCEPT
 {
     return reinterpret_cast<HINSTANCE>(&__ImageBase);
@@ -888,12 +962,274 @@ bool init_once(_Inout_ INIT_ONCE& initOnce, T func)
         completion.success();
         return true;
     }
-    else
-    {
-        return false;
-    }
+
+    return false;
 }
 #endif // WIL_ENABLE_EXCEPTIONS
+
+#if WIL_USE_STL && defined(WIL_ENABLE_EXCEPTIONS) && (__cpp_lib_string_view >= 201606L)
+/// @cond
+namespace details
+{
+    // NOTE: We can't have a 'using std::begin' at class scope, hence the workaround for handling both 'begin' with ADL
+    // and 'std::begin' separately. We want to handle both because there's no guarantee the type has a 'begin' method
+    template <typename RangeT>
+    struct deduce_char_type_from_string_range_traits
+    {
+        template <typename U>
+        static std::true_type deduce_has_adl_begin(U&& range, std::void_t<decltype((*begin(range))[0])>*);
+        template <typename U>
+        static std::false_type deduce_has_adl_begin(U&&, ...);
+
+        template <typename U>
+        static std::true_type deduce_has_std_begin(U&& range, std::void_t<decltype((*std::begin(range))[0])>*);
+        template <typename U>
+        static std::false_type deduce_has_std_begin(U&&, ...);
+
+        static constexpr bool has_adl_begin = decltype(deduce_has_adl_begin(std::declval<RangeT>(), nullptr))::value;
+        static constexpr bool has_std_begin = decltype(deduce_has_std_begin(std::declval<RangeT>(), nullptr))::value;
+    };
+
+    template <typename RangeT, bool hasAdlBegin = deduce_char_type_from_string_range_traits<RangeT>::has_adl_begin, bool hasStdBegin = deduce_char_type_from_string_range_traits<RangeT>::has_std_begin>
+    struct deduce_char_type_from_string_range
+    {
+    };
+
+    template <typename RangeT, bool hasStdBegin>
+    struct deduce_char_type_from_string_range<RangeT, true, hasStdBegin>
+    {
+        using type = std::decay_t<decltype((*begin(std::declval<RangeT>()))[0])>;
+    };
+
+    template <typename RangeT>
+    struct deduce_char_type_from_string_range<RangeT, false, true>
+    {
+        using type = std::decay_t<decltype((*std::begin(std::declval<RangeT>()))[0])>;
+    };
+
+    template <typename RangeT>
+    using deduce_char_type_from_string_range_t = typename deduce_char_type_from_string_range<RangeT>::type;
+
+    // Internal helper span-like type for passing arrays as an iterable collection
+    template <typename T>
+    struct iterable_span
+    {
+        T* pointer;
+        size_t size;
+
+        constexpr T* begin() const noexcept
+        {
+            return pointer;
+        }
+
+        constexpr T* end() const noexcept
+        {
+            return pointer + size;
+        }
+    };
+} // namespace details
+/// @endcond
+
+//! Flags that control the behavior of `ArgvToCommandLine`
+enum class ArgvToCommandLineFlags : uint8_t
+{
+    None = 0,
+
+    //! By default, arguments are only surrounded by quotes when necessary (i.e. the argument contains a space). When
+    //! this flag is specified, all arguments are surrounded with quotes, regardless of whether or not they contain
+    //! space(s). This is an optimization as it means that we are not required to search for spaces in each argument and
+    //! we don't need to potentially go back and insert a quotation character in the middle of the string after we've
+    //! already written part of the argument to the result. That said, wrapping all arguments with quotes can have some
+    //! adverse effects with some applications, most notably cmd.exe, which do their own command line processing.
+    ForceQuotes = 0x01 << 0,
+
+    //! `CommandLineToArgvW` has an "optimization" that assumes that the first argument is the path to an executable.
+    //! Because valid NTFS paths cannot contain quotation characters, `CommandLineToArgvW` disables its quote escaping
+    //! logic for the first argument. By default, `ArgvToCommandLine` aims to ensure that an argv array can "round trip"
+    //! to a string and back, meaning it tries to replicate this logic in reverse. This flag disables this logic and
+    //! escapes backslashes and quotes the same for all arguments, including the first one. This is useful if the output
+    //! string is only an intermediate command line string (e.g. if the executable path is prepended later).
+    FirstArgumentIsNotPath = 0x01 << 1,
+};
+DEFINE_ENUM_FLAG_OPERATORS(ArgvToCommandLineFlags);
+
+//! Performs the reverse operation of CommandLineToArgvW.
+//! Converts an argv array to a command line string that is guaranteed to "round trip" with CommandLineToArgvW. That is,
+//! a call to wil::ArgvToCommandLine followed by a call to ArgvToCommandLineW will produce the same array that was
+//! passed to wil::ArgvToCommandLine. Note that the reverse is not true. I.e. calling ArgvToCommandLineW followed by
+//! wil::ArgvToCommandLine will not produce the original string due to the optionality of of quotes in the command line
+//! string. This functionality is useful in a number of scenarios, most notably:
+//!     1.  When implementing a "driver" application. That is, an application that consumes some command line arguments,
+//!         translates others into new arguments, and preserves the rest, "forwarding" the resulting command line to a
+//!         separate application.
+//!     2.  When reading command line arguments from some data storage, e.g. from a JSON array, which then need to get
+//!         compiled into a command line string that's used for creating a new process.
+//! Unlike CommandLineToArgvW, this function accepts both "narrow" and "wide" strings to support calling both
+//! CreateProcessW and CreateProcessA with the result. See the values in @ref wil::ArgvToCommandLineFlags for more
+//! information on how to control the behavior of this function as well as scenarios when you may want to use each one.
+template <typename RangeT, typename CharT = details::deduce_char_type_from_string_range_t<RangeT>>
+inline std::basic_string<CharT> ArgvToCommandLine(RangeT&& range, ArgvToCommandLineFlags flags = ArgvToCommandLineFlags::None)
+{
+    using string_type = std::basic_string<CharT>;
+    using string_view_type = std::basic_string_view<CharT>;
+
+    // Somewhat of a hack to avoid the fact that we can't conditionalize a string literal on a template
+    static constexpr const CharT empty_string[] = {'\0'};
+    static constexpr const CharT single_quote_string[] = {'"', '\0'};
+    static constexpr const CharT double_quote_string[] = {'"', '"', '\0'};
+    static constexpr const CharT space_string[] = {' ', '\0'};
+    static constexpr const CharT quoted_space_string[] = {'"', ' ', '"', '\0'};
+
+    static constexpr const CharT search_string_no_space[] = {'\\', '"', '\0'};
+    static constexpr const CharT search_string_with_space[] = {'\\', '"', ' ', '\t', '\0'};
+
+    const bool forceQuotes = WI_IsFlagSet(flags, ArgvToCommandLineFlags::ForceQuotes);
+    const CharT* const initialSearchString = forceQuotes ? search_string_no_space : search_string_with_space;
+    const CharT* prefix = forceQuotes ? single_quote_string : empty_string;
+    const CharT* const nextPrefix = forceQuotes ? quoted_space_string : space_string;
+
+    string_type result;
+    int index = 0;
+    for (auto&& strRaw : range)
+    {
+        auto currentIndex = index++;
+        result += prefix;
+        prefix = nextPrefix;
+
+        const CharT* searchString = initialSearchString;
+
+        // Info just in case we need to come back and insert quotes
+        auto startPos = result.size();
+        bool terminateWithQuotes = false; // With forceQuotes == true, this is baked into the prefix
+
+        // We need to escape any quotes and CONDITIONALLY any backslashes
+        string_view_type str(strRaw);
+        if (str.empty() && !forceQuotes)
+        {
+            // The argument is empty. If we want to preserve it in the command line string, we need to manually insert
+            // a pair of quotes since normal parsing won't handle this case
+            result.append(double_quote_string);
+            continue;
+        }
+
+        size_t pos = 0;
+        while (pos < str.size())
+        {
+            auto nextPos = str.find_first_of(searchString, pos);
+            if ((nextPos != str.npos) && ((str[nextPos] == ' ') || (str[nextPos] == '\t')))
+            {
+                // Insert the quote now since we'll need to otherwise stomp over data we're about to write
+                // NOTE: By updating the search string here, we don't need to worry about manually inserting the
+                // character later since we'll just include it in our next iteration
+                WI_ASSERT(!forceQuotes);               // Otherwise, shouldn't be part of our search string
+                searchString = search_string_no_space; // We're already adding a quote; don't do it again
+                result.insert(startPos, 1, '"');
+                terminateWithQuotes = true;
+            }
+
+            result.append(str, pos, nextPos - pos);
+            pos = nextPos;
+            if (pos == str.npos)
+            {
+                break;
+            }
+
+            if (str[pos] == '"')
+            {
+                // Kinda easy case; just escape the quotes, *unless* this is the first argument and we assume a path
+                if ((currentIndex > 0) || WI_IsFlagSet(flags, ArgvToCommandLineFlags::FirstArgumentIsNotPath))
+                {
+                    result.append({'\\', '"'}); // Escape case
+                }
+                else
+                {
+                    // Realistically, this likely signals a bug since paths cannot contain quotes. That said, the
+                    // behavior of CommandLineToArgvW is to just preserve "interior" quotes, so we do that.
+                    // NOTE: 'CommandLineToArgvW' treats "interior" quotes as terminating quotes when the executable
+                    // path begins with a quote, even if the next character is not a space. This assert won't catch all
+                    // of such issues as we may detect a space, and therefore the need to surroud the argument with
+                    // quotes, later in the string; this is best effort. Such arguments wouldn't be valid and are not
+                    // representable anyway
+                    WI_ASSERT((pos > 0) && !WI_IsFlagSet(flags, ArgvToCommandLineFlags::ForceQuotes) && !terminateWithQuotes);
+                    result.push_back('"'); // Not escaping case
+                }
+                ++pos; // Skip past quote on next search
+            }
+            else if (str[pos] == '\\')
+            {
+                // More complex case... Only need to escape if followed by 0+ backslashes and then either a quote or
+                // the end of the string and we're adding quotes
+                nextPos = str.find_first_not_of(L'\\', pos);
+
+                // NOTE: This is an optimization taking advantage of the fact that doing a double append of 1+
+                // backslashes will be functionally equivalent to escaping each one. This copies all of the backslashes
+                // once. We _might_ do it again later
+                result.append(str, pos, nextPos - pos);
+
+                // If this is the first argument and is being interpreted as a path, we never escape slashes
+                if ((currentIndex == 0) && !WI_IsFlagSet(flags, ArgvToCommandLineFlags::FirstArgumentIsNotPath))
+                {
+                    pos = nextPos;
+                    continue;
+                }
+
+                if ((nextPos != str.npos) && (str[nextPos] != L'"'))
+                {
+                    // Simplest case... don't need to escape when followed by a non-quote character
+                    pos = nextPos;
+                    continue;
+                }
+
+                // If this is the end of the string and we're not appending a quotation to the end, we're in the
+                // same boat as the above where we don't need to escape
+                if ((nextPos == str.npos) && !forceQuotes && !terminateWithQuotes)
+                {
+                    pos = nextPos;
+                    continue;
+                }
+
+                // Otherwise, we need to escape all backslashes. See above; this can be done with another append
+                result.append(str, pos, nextPos - pos);
+                pos = nextPos;
+                if (pos != str.npos)
+                {
+                    // Must be followed by a quote; make sure we escape it, too. NOTE: We should have already early
+                    // exited if this argument is being interpreted as an executable path
+                    WI_ASSERT(str[pos] == '"');
+                    result.append({'\\', '"'});
+                    ++pos;
+                }
+            }
+            else
+            {
+                // Otherwise space, which we handled above
+                WI_ASSERT((str[pos] == ' ') || (str[pos] == '\t'));
+            }
+        }
+
+        if (terminateWithQuotes)
+        {
+            result.push_back('"');
+        }
+    }
+
+    // NOTE: We optimize the force quotes case by including them in the prefix string. We're not appending a prefix
+    // anymore, so we need to make sure we close off the string
+    if (forceQuotes)
+    {
+        result.push_back(L'\"');
+    }
+
+    return result;
+}
+
+template <typename CharT>
+inline std::basic_string<wistd::remove_cv_t<CharT>> ArgvToCommandLine(
+    int argc, CharT* const* argv, ArgvToCommandLineFlags flags = ArgvToCommandLineFlags::None)
+{
+    return ArgvToCommandLine(details::iterable_span<CharT* const>{argv, static_cast<size_t>(argc)}, flags);
+}
+#endif
 } // namespace wil
 
 // Macro for calling GetProcAddress(), with type safety for C++ clients
@@ -908,6 +1244,6 @@ bool init_once(_Inout_ INIT_ONCE& initOnce, T func)
 //    sendMail(0, 0, pmm, MAPI_USE_DEFAULT, 0);
 // }
 //  Declaration
-#define GetProcAddressByFunctionDeclaration(hinst, fn) reinterpret_cast<decltype(::fn)*>(GetProcAddress(hinst, #fn))
+#define GetProcAddressByFunctionDeclaration(hinst, fn) (reinterpret_cast<decltype(::fn)*>(GetProcAddress(hinst, #fn)))
 
 #endif // __WIL_WIN32_HELPERS_INCLUDED

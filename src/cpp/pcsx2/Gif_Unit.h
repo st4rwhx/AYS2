@@ -8,7 +8,6 @@
 #include "GS.h"
 #include "GS/GSRegs.h"
 #include "MTGS.h"
-#include <atomic>
 
 // FIXME common path ?
 #include "common/boost_spsc_queue.hpp"
@@ -267,8 +266,6 @@ struct Gif_Path
 	bool isDone() const { return isMTVU() ? !mtvu.fakePackets : (!hasDataRemaining() && (state == GIF_PATH_IDLE || state == GIF_PATH_WAIT)); }
 
 	// Waits on the MTGS to process gs packets
-	// PC PCSX2 baseline restored. P23 yield loop removed — sched_yield on Apple Silicon
-	// causes busy-wait (82% of freeze time) without giving MTGS CPU time.
 	void mtgsReadWait()
 	{
 		if (IsDevBuild)
@@ -565,7 +562,7 @@ struct Gif_Unit
 		if (vif1Regs.stat.VGW)
 		{
 			if (!(cpuRegs.interrupt & (1 << DMAC_VIF1)))
-				CPU_INT(DMAC_VIF1, 1, EE_VIF1_SRC_GIF_UNIT);
+				CPU_INT(DMAC_VIF1, 1);
 		}
 	}
 
@@ -601,13 +598,7 @@ struct Gif_Unit
 			incTag(offset, curSize, 16 + gifTag.len); // Tag + Data length
 			if (pathIdx == GIF_PATH_1 && curSize >= 0x4000)
 			{
-				{
-					static int s_gs_pkt_warn = 0;
-					if (s_gs_pkt_warn < 50)
-					{
-						DevCon.Warning("Gif Unit - GS packet size exceeded VU memory size! (n=%d)", ++s_gs_pkt_warn);
-					}
-				}
+				DevCon.Warning("Gif Unit - GS packet size exceeded VU memory size!");
 				return 0; // Bios does this... (Fixed if you delay vu1's xgkick by 103 vu cycles)
 			}
 			if (curSize >= size)
@@ -835,7 +826,7 @@ struct Gif_Unit
 					{
 						// Check if VIF is in a cycle or is currently "idle" waiting for GIF to come back.
 						if (!(cpuRegs.interrupt & (1 << DMAC_VIF1)))
-							CPU_INT(DMAC_VIF1, 1, EE_VIF1_SRC_GIF_UNIT);
+							CPU_INT(DMAC_VIF1, 1);
 					}
 
 					stat.APATH = 0;

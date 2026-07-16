@@ -62,9 +62,9 @@
 #include "fmt/format.h"
 
 #include <atomic>
-#include <cstdio>
 #include <mutex>
 #include <sstream>
+#include <common/RedtapeWilCom.h>
 
 #ifdef _WIN32
 #include "common/RedtapeWindows.h"
@@ -76,8 +76,8 @@
 #endif
 
 #ifdef __APPLE__
-#include "common/Darwin/DarwinMisc.h"
 #include <TargetConditionals.h>
+#include "common/Darwin/DarwinMisc.h"
 #endif
 
 namespace VMManager
@@ -420,6 +420,18 @@ bool VMManager::Internal::CPUThreadInitialize()
 	// This also sorts out input sources.
 	LoadSettings();
 
+	// LoadSettings() re-reads EnableFastmem from the INI, clobbering the runtime
+	// disable that vtlb_Core_Alloc applied when the 4 GB fastmem area failed to
+	// allocate on low-VA devices (e.g. iPhone SE 2). Re-apply the disable from
+	// the sticky flag so the EE recompiler does not emit fastmem load/store
+	// against a null base. The flag is process-lifetime: once the area fails,
+	// it stays failed.
+	if (vtlb_FastmemAreaUnavailable() && EmuConfig.Cpu.Recompiler.EnableFastmem)
+	{
+		EmuConfig.Cpu.Recompiler.EnableFastmem = false;
+		Console.Warning("Fastmem re-disabled after settings reload (area allocation previously failed)");
+	}
+
 	if (EmuConfig.Achievements.Enabled)
 		Achievements::Initialize();
 
@@ -465,6 +477,17 @@ void VMManager::Internal::CPUThreadShutdown()
 	Log::SetFileOutputLevel(LOGLEVEL_NONE, std::string());
 
 	R5900SymbolImporter.ShutdownWorkerThread();
+}
+
+u64 VMManager::Internal::GetPerformanceClusterAffinityMask()
+{
+	// TODO(android-monorepo): full impl (in the known-good core) unions the CPU
+	// clusters of the EE/VU/GS target processors via ClusterAffinityMaskForOSId(),
+	// which isn't ported into this core yet. Returning 0 leaves adjacent helper
+	// threads (Oboe audio callback) on the kernel's default affinity — correct,
+	// just not big-cluster-pinned. Wire up when the thread-affinity subsystem is
+	// reconciled.
+	return 0;
 }
 
 void VMManager::Internal::SetFileLogPath(std::string path)
@@ -587,7 +610,7 @@ void VMManager::SetDefaultSettings(
 		temp_config.LoadSave(ssw);
 
 		// Settings not part of the Pcsx2Config struct.
-		si.SetBoolValue("EmuCore", "EnableFastBoot", false);
+		si.SetBoolValue("EmuCore", "EnableFastBoot", true);
 
 		SetHardwareDependentDefaultSettings(si);
 		SetDefaultLoggingSettings(si);
@@ -724,94 +747,14 @@ void VMManager::WarnAboutUnconfiguredController()
 	if (!si || HasAnyBindingsForPad(*si, 0))
 		return;
 
+	// Android and iOS inject pad state directly through the platform bridge,
+	// bypassing InputManager bindings, so this warning is always a false
+	// positive on mobile. Desktop platforms keep it.
+#if !defined(__ANDROID__) && !(defined(__APPLE__) && TARGET_OS_IPHONE)
 	Host::AddIconOSDMessage("ControllerNotConfigured", ICON_FA_GAMEPAD,
 		TRANSLATE_STR("VMManager", "Controller 1 has no input bindings configured."), Host::OSD_WARNING_DURATION);
-}
-
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-static void RestoreIOSMetalNativeGSHardwareFixes(const GameDatabaseSchema::GameEntry& game, Pcsx2Config::GSOptions& gs)
-{
-	if (gs.Renderer != GSRendererType::Metal || gs.UpscaleMultiplier > 1.0f)
-		return;
-
-	bool restored = false;
-	for (const auto& [id, value] : game.gsHWFixes)
-	{
-		switch (id)
-		{
-			case GameDatabaseSchema::GSHWFixId::AlignSprite:
-				gs.UserHacks_AlignSpriteX = (value > 0);
-				restored = true;
-				break;
-
-			case GameDatabaseSchema::GSHWFixId::MergeSprite:
-				gs.UserHacks_MergePPSprite = (value > 0);
-				restored = true;
-				break;
-
-			case GameDatabaseSchema::GSHWFixId::ForceEvenSpritePosition:
-				gs.UserHacks_ForceEvenSpritePosition = (value > 0);
-				restored = true;
-				break;
-
-			case GameDatabaseSchema::GSHWFixId::BilinearUpscale:
-				if (value >= 0 && value < static_cast<int>(GSBilinearDirtyMode::MaxCount))
-				{
-					gs.UserHacks_BilinearHack = static_cast<GSBilinearDirtyMode>(value);
-					restored = true;
-				}
-				break;
-
-			case GameDatabaseSchema::GSHWFixId::NativePaletteDraw:
-				gs.UserHacks_NativePaletteDraw = (value > 0);
-				restored = true;
-				break;
-
-			case GameDatabaseSchema::GSHWFixId::HalfPixelOffset:
-				if (value >= 0 && value < static_cast<int>(GSHalfPixelOffset::MaxCount))
-				{
-					gs.UserHacks_HalfPixelOffset = static_cast<GSHalfPixelOffset>(value);
-					restored = true;
-				}
-				break;
-
-			case GameDatabaseSchema::GSHWFixId::RoundSprite:
-				gs.UserHacks_RoundSprite = static_cast<s8>(value);
-				restored = true;
-				break;
-
-			case GameDatabaseSchema::GSHWFixId::NativeScaling:
-			{
-				int applied_value = value;
-				if (applied_value >= static_cast<int>(GSNativeScaling::Aggressive))
-					applied_value = static_cast<int>(GSNativeScaling::Normal);
-
-				if (applied_value >= 0 && applied_value < static_cast<int>(GSNativeScaling::MaxCount))
-				{
-					gs.UserHacks_NativeScaling = static_cast<GSNativeScaling>(applied_value);
-					restored = true;
-				}
-			}
-			break;
-
-			default:
-				break;
-		}
-	}
-
-	if (!restored)
-		return;
-
-	std::fprintf(stderr,
-		"@@IOS_METAL_NATIVE_GS_RESTORE@@ serial=\"%s\" game=\"%s\" halfPixelOffset=%d roundSprite=%d nativeScaling=%d alignSprite=%d mergeSprite=%d forceEvenSprite=%d bilinear=%d nativePalette=%d\n",
-		s_disc_serial.c_str(), game.name.c_str(), static_cast<int>(gs.UserHacks_HalfPixelOffset),
-		static_cast<int>(gs.UserHacks_RoundSprite), static_cast<int>(gs.UserHacks_NativeScaling),
-		gs.UserHacks_AlignSpriteX ? 1 : 0, gs.UserHacks_MergePPSprite ? 1 : 0,
-		gs.UserHacks_ForceEvenSpritePosition ? 1 : 0, static_cast<int>(gs.UserHacks_BilinearHack),
-		gs.UserHacks_NativePaletteDraw ? 1 : 0);
-	std::fflush(stderr);
-}
 #endif
+}
 
 void VMManager::ApplyGameFixes()
 {
@@ -822,45 +765,10 @@ void VMManager::ApplyGameFixes()
 
 		// Disable user's manual hardware fixes, it might be problematic.
 		EmuConfig.GS.ManualUserHacks = false;
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-		std::fprintf(stderr,
-			"@@IOS_GAMEFIX_APPLY_SKIP@@ reason=no_booted_elf_or_dump serial=\"%s\" disc_crc=0x%08x current_crc=0x%08x renderer=%s manualUserHacks=%d\n",
-			s_disc_serial.c_str(), s_disc_crc, s_current_crc, Pcsx2Config::GSOptions::GetRendererName(EmuConfig.GS.Renderer),
-			EmuConfig.GS.ManualUserHacks ? 1 : 0);
-		std::fflush(stderr);
-#endif
 		return;
 	}
 
 	const GameDatabaseSchema::GameEntry* game = GameDatabase::findGame(s_disc_serial);
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-	if (game)
-	{
-		const bool forced_gamefixes = !EmuConfig.EnableGameFixes;
-		const bool forced_gs_hw = EmuConfig.GS.ManualUserHacks;
-		if (forced_gamefixes)
-			EmuConfig.EnableGameFixes = true;
-		if (forced_gs_hw)
-			EmuConfig.GS.ManualUserHacks = false;
-
-		if (forced_gamefixes || forced_gs_hw)
-		{
-			std::fprintf(stderr,
-				"@@IOS_GAMEFIX_FORCE_ENABLE@@ serial=\"%s\" disc_crc=0x%08x forced_gamefixes=%d forced_manual_gs=%d renderer=%s\n",
-				s_disc_serial.c_str(), s_disc_crc, forced_gamefixes ? 1 : 0, forced_gs_hw ? 1 : 0,
-				Pcsx2Config::GSOptions::GetRendererName(EmuConfig.GS.Renderer));
-			std::fflush(stderr);
-		}
-	}
-#endif
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-	std::fprintf(stderr,
-		"@@IOS_GAMEFIX_APPLY_BEGIN@@ serial=\"%s\" disc_crc=0x%08x current_crc=0x%08x found=%d enableGameFixes=%d renderer=%s manualUserHacks=%d upscale=%.2f gamedb_entries=%zu\n",
-		s_disc_serial.c_str(), s_disc_crc, s_current_crc, game ? 1 : 0, EmuConfig.EnableGameFixes ? 1 : 0,
-		Pcsx2Config::GSOptions::GetRendererName(EmuConfig.GS.Renderer), EmuConfig.GS.ManualUserHacks ? 1 : 0,
-		EmuConfig.GS.UpscaleMultiplier, GameDatabase::entryCount());
-	std::fflush(stderr);
-#endif
 	if (!game)
 		return;
 
@@ -870,21 +778,6 @@ void VMManager::ApplyGameFixes()
 	// Re-remove upscaling fixes, make sure they don't apply at native res.
 	// We do this in LoadCoreSettings(), but game fixes get applied afterwards because of the unsafe warning.
 	EmuConfig.GS.MaskUpscalingHacks();
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-	RestoreIOSMetalNativeGSHardwareFixes(*game, EmuConfig.GS);
-#endif
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-	std::fprintf(stderr,
-		"@@IOS_GAMEFIX_APPLY_END@@ serial=\"%s\" disc_crc=0x%08x current_crc=0x%08x renderer=%s autoFlush=%d halfPixelOffset=%d alignSprite=%d nativeScaling=%d manualUserHacks=%d upscale=%.2f eeClamp=%u vuClamp=%u mvuFlag=%d instantVU1=%d mtvu=%d\n",
-		s_disc_serial.c_str(), s_disc_crc, s_current_crc, Pcsx2Config::GSOptions::GetRendererName(EmuConfig.GS.Renderer),
-		static_cast<int>(EmuConfig.GS.UserHacks_AutoFlush), static_cast<int>(EmuConfig.GS.UserHacks_HalfPixelOffset),
-		EmuConfig.GS.UserHacks_AlignSpriteX ? 1 : 0, static_cast<int>(EmuConfig.GS.UserHacks_NativeScaling),
-		EmuConfig.GS.ManualUserHacks ? 1 : 0,
-		EmuConfig.GS.UpscaleMultiplier, EmuConfig.Cpu.Recompiler.GetEEClampMode(),
-		EmuConfig.Cpu.Recompiler.GetVUClampMode(), EmuConfig.Speedhacks.vuFlagHack ? 1 : 0,
-		EmuConfig.Speedhacks.vu1Instant ? 1 : 0, EmuConfig.Speedhacks.vuThread ? 1 : 0);
-	std::fflush(stderr);
-#endif
 }
 
 void VMManager::ApplySettings()
@@ -905,6 +798,9 @@ void VMManager::ApplySettings()
 	EmuConfig = Pcsx2Config();
 	EmuConfig.CopyRuntimeConfig(old_config);
 	LoadSettings();
+	// Re-apply the sticky fastmem-area-unavailable disable (see CPUThreadInitialize).
+	if (vtlb_FastmemAreaUnavailable() && EmuConfig.Cpu.Recompiler.EnableFastmem)
+		EmuConfig.Cpu.Recompiler.EnableFastmem = false;
 	CheckForConfigChanges(old_config);
 }
 
@@ -973,14 +869,6 @@ std::string VMManager::GetDiscOverrideFromGameSettings(const std::string& elf_pa
 		if (si.Load())
 		{
 			iso_path = si.GetStringValue("EmuCore", "DiscPath");
-			if (!iso_path.empty() && !Path::IsAbsolute(iso_path))
-			{
-				std::string resolved(Path::Combine(EmuFolders::DataRoot, iso_path));
-				if (!FileSystem::FileExists(resolved.c_str()))
-					resolved = Path::Combine(EmuFolders::DataRoot, "iso/" + iso_path);
-				if (FileSystem::FileExists(resolved.c_str()))
-					iso_path = std::move(resolved);
-			}
 			if (!iso_path.empty())
 				Console.WriteLn(fmt::format("Disc override for ELF at '{}' is '{}'", elf_path, iso_path));
 		}
@@ -1137,22 +1025,6 @@ bool VMManager::UpdateGameSettingsLayer()
 				Console.Error("Failed to parse game settings ini '%s'", new_interface->GetFileName().c_str());
 				new_interface.reset();
 			}
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-			else if (new_interface->ContainsValue("EmuCore/Speedhacks", "vuThread") &&
-					 !new_interface->GetBoolValue("EmuCore/Speedhacks", "vuThread", true) &&
-					 (!new_interface->GetBoolValue("ARMSX2iOS/PerGame", "ManualMTVU", false) ||
-					  new_interface->GetIntValue("ARMSX2iOS/PerGame", "ManualMTVUVersion", 0) < 3))
-			{
-				new_interface->DeleteValue("ARMSX2iOS/PerGame", "ManualMTVU");
-				new_interface->DeleteValue("ARMSX2iOS/PerGame", "ManualMTVUVersion");
-				new_interface->DeleteValue("EmuCore/Speedhacks", "vuThread");
-				Error save_error;
-				const bool saved = new_interface->Save(&save_error);
-				std::fprintf(stderr, "@@IOS_PERGAME_MTVU_REPAIR@@ file=\"%s\" removed_stale_false=1 saved=%d error=\"%s\"\n",
-					new_interface->GetFileName().c_str(), saved ? 1 : 0, save_error.GetDescription().c_str());
-				std::fflush(stderr);
-			}
-#endif
 		}
 		else
 		{
@@ -2020,7 +1892,9 @@ std::string VMManager::GetSaveStateFileName(const char* game_serial, u32 game_cr
 	std::string filename;
 	if (std::strlen(game_serial) > 0)
 	{
-		if (slot < 0)
+		if (slot == SAVESTATE_SLOT_AUTOSAVE)
+			filename = fmt::format("{} ({:08X}).autosave.p2s", game_serial, game_crc);
+		else if (slot < 0)
 			filename = fmt::format("{} ({:08X}).resume.p2s", game_serial, game_crc);
 		else if (backup)
 			filename = fmt::format("{} ({:08X}).{:02d}.p2s.backup", game_serial, game_crc, slot);
@@ -2149,6 +2023,18 @@ void VMManager::ZipSaveState(std::unique_ptr<ArchiveEntryList> elist,
 		Host::AddIconOSDMessage(fmt::format("SaveStateSlot{}", slot_for_message), ICON_FA_FLOPPY_DISK,
 			fmt::format(TRANSLATE_FS("VMManager", "Saved state to slot {}."), slot_for_message),
 			Host::OSD_QUICK_DURATION);
+	}
+	else if (slot_for_message < 0)
+	{
+		// Autosave / resume slots (negative, e.g. SAVESTATE_SLOT_AUTOSAVE = -2)
+		// get no "Saved to slot N" toast, but SaveStateToSlot posted a keyed
+		// "Saving state to slot N..." progress message under this same key. The
+		// completion callback only fires on error, so on success that keyed
+		// message is never cleared — it lingers for its full 60s duration AND
+		// survives VM shutdown, so it reappears stuck in the corner the next time
+		// you boot a game (the "Save State And Exit then it's stuck saving on the
+		// next boot" symptom). Clear it explicitly here.
+		Host::RemoveKeyedOSDMessage(fmt::format("SaveStateSlot{}", slot_for_message));
 	}
 
 	DevCon.WriteLn("Zipping save state to '%s' took %.2f ms", filename, timer.GetTimeMilliseconds());
@@ -2433,16 +2319,6 @@ void VMManager::ResetFrameLimiter()
 	s_limiter_frame_start = GetCPUTicks();
 }
 
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-// Tester probe (@@VM_PACE@@): per-window count of VM frames that overran their
-// budget (couldn't reach the target speed — EE/VU/GS bound) vs time the limiter
-// slept off (host has headroom). Printed once per 1024 frames while running
-// off-speed; otherwise just a couple of counter increments per frame.
-static u32 s_vm_pace_frames = 0;
-static u32 s_vm_pace_overruns = 0;
-static u64 s_vm_pace_slept_ms = 0;
-#endif
-
 void VMManager::Internal::Throttle()
 {
 	if (s_target_speed == 0.0f || s_use_vsync_for_timing)
@@ -2454,23 +2330,9 @@ void VMManager::Internal::Throttle()
 	const u64 iEnd = GetCPUTicks(); // The current tick we actually stopped on.
 	const s64 sDeltaTime = iEnd - uExpectedEnd; // The diff between when we stopped and when we expected to.
 
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-	if ((++s_vm_pace_frames & 0x3FFu) == 0 && s_target_speed != 1.0f)
-	{
-		std::fprintf(stderr, "@@VM_PACE@@ target=%.2f window=1024 overruns=%u slept_ms=%llu\n",
-			s_target_speed, s_vm_pace_overruns, static_cast<unsigned long long>(s_vm_pace_slept_ms));
-		std::fflush(stderr);
-		s_vm_pace_overruns = 0;
-		s_vm_pace_slept_ms = 0;
-	}
-#endif
-
 	// If frame ran too long...
 	if (sDeltaTime >= s_limiter_ticks_per_frame)
 	{
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-		s_vm_pace_overruns++;
-#endif
 		// ... Fudge the next frame start over a bit. Prevents fast forward zoomies.
 		s_limiter_frame_start += (sDeltaTime / s_limiter_ticks_per_frame) * s_limiter_ticks_per_frame;
 		return;
@@ -2484,9 +2346,6 @@ void VMManager::Internal::Throttle()
 	// further testing suggests instead that this was utter bullshit.
 	if (msec > 1)
 	{
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-		s_vm_pace_slept_ms += static_cast<u64>(msec - 1);
-#endif
 		Threading::Sleep(msec - 1);
 	}
 
@@ -2687,13 +2546,13 @@ void LogGPUCapabilities()
 {
 	Console.WriteLn(Color_StrongBlack, "Graphics Adapters Detected:");
 #if defined(_WIN32)
-	IDXGIFactory1* pFactory = nullptr;
-	if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)&pFactory)))
+	wil::com_ptr_nothrow<IDXGIFactory1> pFactory;
+	if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(pFactory.put()))))
 		return;
 
 	UINT i = 0;
-	IDXGIAdapter* pAdapter = nullptr;
-	while (pFactory->EnumAdapters(i, &pAdapter) != DXGI_ERROR_NOT_FOUND)
+	wil::com_ptr_nothrow<IDXGIAdapter> pAdapter;
+	while (pFactory->EnumAdapters(i, pAdapter.put()) != DXGI_ERROR_NOT_FOUND)
 	{
 		DXGI_ADAPTER_DESC desc;
 		LARGE_INTEGER umdver;
@@ -2709,21 +2568,12 @@ void LogGPUCapabilities()
 				umdver.QuadPart & 0xFFFF);
 
 			i++;
-			pAdapter->Release();
-			pAdapter = nullptr;
 		}
 		else
 		{
-			pAdapter->Release();
-			pAdapter = nullptr;
-
 			break;
 		}
 	}
-
-	if (pAdapter)
-		pAdapter->Release();
-	pFactory->Release();
 #else
 	// Credits to neofetch for the following (modified) script
 	std::string gpu_script = R"gpu_script(
@@ -2984,29 +2834,8 @@ void VMManager::Execute()
 		vtlb_ResetFastmem();
 	}
 
-	static int s_execute_log_count = 0;
-	const bool log_execute = (s_execute_log_count < 8);
-	if (log_execute)
-	{
-		std::fprintf(stderr,
-			"@@VM_EXEC_CALL@@ idx=%d state=%d cpu=%p rec=%d pc=0x%08x cycle=%lld next=%lld impl_changed=%d\n",
-			s_execute_log_count, static_cast<int>(GetState()), Cpu, Cpu == &recCpu ? 1 : 0,
-			cpuRegs.pc, static_cast<long long>(cpuRegs.cycle),
-			static_cast<long long>(cpuRegs.nextEventCycle), s_cpu_implementation_changed ? 1 : 0);
-		std::fflush(stderr);
-		s_execute_log_count++;
-	}
-
 	// Execute until we're asked to stop.
 	Cpu->Execute();
-	if (log_execute)
-	{
-		std::fprintf(stderr,
-			"@@VM_EXEC_RETURN@@ state=%d pc=0x%08x cycle=%lld next=%lld\n",
-			static_cast<int>(GetState()), cpuRegs.pc, static_cast<long long>(cpuRegs.cycle),
-			static_cast<long long>(cpuRegs.nextEventCycle));
-		std::fflush(stderr);
-	}
 }
 
 void VMManager::IdlePollUpdate()
@@ -3121,13 +2950,6 @@ void VMManager::Internal::EntryPointCompilingOnCPUThread()
 		return;
 
 	const bool reset_speed_limiter = (EmuConfig.EnableFastBootFastForward && IsFastBootInProgress());
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-	std::fprintf(stderr,
-		"@@IOS_ELF_ENTRY_BEGIN@@ elf=\"%s\" entry=0x%08x serial=\"%s\" disc_crc=0x%08x current_crc=0x%08x fastboot_requested=%d fastboot_in_progress=%d reset_speed=%d\n",
-		s_elf_path.c_str(), s_elf_entry_point, s_disc_serial.c_str(), s_disc_crc, s_current_crc,
-		s_fast_boot_requested ? 1 : 0, IsFastBootInProgress() ? 1 : 0, reset_speed_limiter ? 1 : 0);
-	std::fflush(stderr);
-#endif
 
 	Console.WriteLn(
 		Color_StrongGreen, fmt::format("ELF {} with entry point at 0x{:08X} is executing.", s_elf_path, s_elf_entry_point));
@@ -3140,15 +2962,6 @@ void VMManager::Internal::EntryPointCompilingOnCPUThread()
 	}
 
 	HandleELFChange(true);
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-	std::fprintf(stderr,
-		"@@IOS_ELF_ENTRY_END@@ elf=\"%s\" entry=0x%08x serial=\"%s\" disc_crc=0x%08x current_crc=0x%08x fastboot_requested=%d fastboot_in_progress=%d renderer=%s enableGameFixes=%d\n",
-		s_elf_path.c_str(), s_elf_entry_point, s_disc_serial.c_str(), s_disc_crc, s_current_crc,
-		s_fast_boot_requested ? 1 : 0, IsFastBootInProgress() ? 1 : 0,
-		Pcsx2Config::GSOptions::GetRendererName(EmuConfig.GS.Renderer),
-		EmuConfig.EnableGameFixes ? 1 : 0);
-	std::fflush(stderr);
-#endif
 
 	Patch::ApplyBootPatches();
 
@@ -3579,6 +3392,9 @@ void VMManager::WarnAboutUnsafeSettings()
 			append(ICON_FA_TV,
 				TRANSLATE_SV("VMManager", "Integer scaling is enabled. This may shrink the image."));
 		}
+#if !(defined(__APPLE__) && TARGET_OS_IPHONE)
+		// iOS always renders with Metal; "Automatic" is not a meaningful choice
+		// there, so this desktop-only warning is a false positive and is omitted.
 		static bool render_change_warn = false;
 		if (EmuConfig.GS.Renderer != GSRendererType::Auto && EmuConfig.GS.Renderer != GSRendererType::SW && !render_change_warn)
 		{
@@ -3588,6 +3404,7 @@ void VMManager::WarnAboutUnsafeSettings()
 			append(ICON_FA_CIRCLE_EXCLAMATION,
 				TRANSLATE_SV("VMManager", "Graphics API is not set to Automatic. This may cause performance problems and graphical issues."));
 		}
+#endif
 	}
 	if (EmuConfig.GS.DumpGSData)
 	{
@@ -3894,39 +3711,23 @@ static void InitializeProcessorList()
 	}
 }
 
-	void VMManager::SetHardwareDependentDefaultSettings(SettingsInterface& si)
+void VMManager::SetHardwareDependentDefaultSettings(SettingsInterface& si)
+{
+	VMManager::EnsureCPUInfoInitialized();
+
+	Console.WriteLn("Detected %u big cores", s_big_cores);
+
+	if (s_big_cores >= 3)
 	{
-		VMManager::EnsureCPUInfoInitialized();
-
-#if TARGET_OS_IPHONE
-		const u32 total_physical_cores = s_big_cores + s_small_cores;
-		Console.WriteLn("Detected %u big cores and %u small cores", s_big_cores, s_small_cores);
-
-		if (total_physical_cores >= 3)
-		{
-			Console.WriteLn("  So enabling MTVU.");
-			si.SetBoolValue("EmuCore/Speedhacks", "vuThread", true);
-		}
-		else
-		{
-			Console.WriteLn("  So disabling MTVU.");
-			si.SetBoolValue("EmuCore/Speedhacks", "vuThread", false);
-		}
-#else
-		Console.WriteLn("Detected %u big cores", s_big_cores);
-
-		if (s_big_cores >= 3)
-		{
-			Console.WriteLn("  So enabling MTVU.");
-			si.SetBoolValue("EmuCore/Speedhacks", "vuThread", true);
-		}
-		else
-		{
-			Console.WriteLn("  So disabling MTVU.");
-			si.SetBoolValue("EmuCore/Speedhacks", "vuThread", false);
-		}
-#endif
+		Console.WriteLn("  So enabling MTVU.");
+		si.SetBoolValue("EmuCore/Speedhacks", "vuThread", true);
 	}
+	else
+	{
+		Console.WriteLn("  So disabling MTVU.");
+		si.SetBoolValue("EmuCore/Speedhacks", "vuThread", false);
+	}
+}
 
 #else
 
@@ -3949,11 +3750,31 @@ void VMManager::EnsureCPUInfoInitialized()
 
 void VMManager::SetEmuThreadAffinities()
 {
+#if defined(__ANDROID__)
+	// Android: never hard-pin the emu threads to fixed cores. Under Android's EAS
+	// scheduler the busiest thread (VU1 sits at ~99% in VU-bound titles like GoW2)
+	// is placed on the highest-capacity core — the prime (Cortex-X3). The desktop
+	// pinning path (used when a stale EnableThreadPinning=1 is in the ini) instead
+	// hands the prime to EE via s_processor_list[0] and locks VU onto a mid-tier big
+	// core (measured: VU pinned to an A7xx runs ~1.4x slower than floating to the X3,
+	// which slams GoW2). cpuinfo also can't read per-core frequency on many Android
+	// devices (all clusters report 0 MHz), so the frequency-ordered pin is unreliable
+	// anyway. Release any affinity so the scheduler can use the prime for VU.
+	MTGS::GetThreadHandle().SetAffinity(0);
+	vu1Thread.GetThreadHandle().SetAffinity(0);
+	s_vm_thread_handle.SetAffinity(0);
+	s_software_renderer_processor_list = {};
+	s_thread_affinities_set = false;
+	return;
+#else
 	const bool new_pin_enable = (GetState() != VMState::Shutdown && EmuConfig.EnableThreadPinning);
 	if (s_thread_affinities_set == new_pin_enable)
 		return;
 
-	s_thread_affinities_set = EmuConfig.EnableThreadPinning;
+	// Track whether pinning is *currently effective*, not just EmuConfig.EnableThreadPinning
+	// (matches refresh-experimental — a shutdown call with pinning enabled must not leave this
+	// flag true while the affinity + SW-renderer proc list get cleared).
+	s_thread_affinities_set = new_pin_enable;
 
 	EnsureCPUInfoInitialized();
 
@@ -4001,6 +3822,16 @@ void VMManager::SetEmuThreadAffinities()
 	INFO_LOG("  GS thread is on processor {} (0x{:x})", gs_index, gs_affinity);
 	MTGS::GetThreadHandle().SetAffinity(gs_affinity);
 
+#ifdef __ANDROID__
+	// Bump the emu-critical threads slightly above default so Android's
+	// scheduler favors them over app/UI housekeeping under load. EPERM is
+	// tolerated inside SetNicePriority (rlimit may forbid negative nice).
+	s_vm_thread_handle.SetNicePriority(-1);
+	if (EmuConfig.Speedhacks.vuThread)
+		vu1Thread.GetThreadHandle().SetNicePriority(-1);
+	MTGS::GetThreadHandle().SetNicePriority(-1);
+#endif
+
 	// Try to find some threads for the software renderer.
 	// They should be in the same cluster as the main GS thread. If they're not, for example,
 	// we had 4 P cores and 6 E cores, let the OS schedule them instead.
@@ -4019,12 +3850,46 @@ void VMManager::SetEmuThreadAffinities()
 
 		s_software_renderer_processor_list.push_back(proc_index);
 	}
+#endif // __ANDROID__ (else branch of the top-level guard)
 }
 
 const std::vector<u32>& VMManager::Internal::GetSoftwareRendererProcessorList()
 {
 	EnsureCPUInfoInitialized();
 	return s_software_renderer_processor_list;
+}
+
+std::string VMManager::Internal::GetThreadPlacementDebug()
+{
+	const auto describe = [](const char* name, const Threading::ThreadHandle& h) {
+		const int cpu = h.GetCurrentCpu();
+		const u64 mask = h.GetAffinity();
+		return fmt::format("{}=c{}/m{:x}", name, cpu, mask);
+	};
+
+	std::string out = describe("EE", s_vm_thread_handle);
+	out += ' ';
+	out += describe("VU", vu1Thread.GetThreadHandle());
+	out += ' ';
+	out += describe("GS", MTGS::GetThreadHandle());
+
+#if defined(__linux__) || defined(_WIN32)
+	if (cpuinfo_initialize())
+	{
+		const u32 clusters = cpuinfo_get_clusters_count();
+		out += " |";
+		for (u32 i = 0; i < clusters; i++)
+		{
+			const cpuinfo_cluster* cl = cpuinfo_get_cluster(i);
+			if (!cl)
+				continue;
+			// cpuinfo frequency is in Hz; show MHz (0 = cpuinfo couldn't read sysfs cpufreq).
+			out += fmt::format(" {}x{}MHz", cl->processor_count, static_cast<u32>(cl->frequency / 1000000));
+		}
+	}
+#endif
+
+	return out;
 }
 
 void VMManager::ReloadPINE()

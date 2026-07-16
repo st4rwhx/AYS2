@@ -316,9 +316,16 @@ set(pcsx2DEV9Sources
 	DEV9/sockets.cpp
 	DEV9/DEV9.cpp
 	DEV9/flash.cpp
-	DEV9/pcap_io.cpp
 	DEV9/net.cpp
 	)
+
+# libpcap is unavailable on Android; DEV9 uses Android/AndroidPcapStubs.cpp (the
+# stub PCAPAdapter) instead, so the real pcap_io.cpp must NOT be compiled there
+# (it references pcap_findalldevs/pcap_open_live/... -> undefined at link, which
+# LTO release builds surface even though a debug build's --gc-sections hides it).
+if(NOT ANDROID AND NOT IOS)
+	list(APPEND pcsx2DEV9Sources DEV9/pcap_io.cpp)
+endif()
 
 # DEV9 headers
 set(pcsx2DEV9Headers
@@ -650,6 +657,10 @@ if(USE_VULKAN)
 	)
 	target_link_libraries(PCSX2_FLAGS INTERFACE vulkan-headers)
 	target_include_directories(PCSX2_FLAGS INTERFACE ${SHADERC_INCLUDE_DIR})
+	if(ANDROID AND CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+		# VKLoader.cpp's adrenotools_open_libvulkan splice needs adrenotools/driver.h.
+		target_link_libraries(PCSX2_FLAGS INTERFACE adrenotools)
+	endif()
 endif()
 
 set(pcsx2GSMetalShaders
@@ -711,7 +722,7 @@ elseif(LINUX)
 	list(APPEND pcsx2USBHeaders
 		USB/usb-eyetoy/cam-linux.h
 	)
-elseif(APPLE)
+elseif(APPLE AND NOT IOS)
 	list(APPEND pcsx2USBSources
 		USB/usb-eyetoy/cam-macos.mm
 	)
@@ -1049,12 +1060,14 @@ set(pcsx2x86Headers
 	)
 
 # ARM64
-set(pcsx2arm64Sources
-	arm64/AsmHelpers.cpp
-	arm64/Vif_Dynarec.cpp
-	arm64/Vif_UnpackNEON.cpp
-	arm64/RecStubs.cpp
-	arm64/aR3000A.cpp
+#
+# EE recompiler (aR5900*): a SINGLE canonical Phase-7 backend for every arm64 target
+# (PC macOS/Linux/Windows + Android). The Android mac-port graft fork was dropped after a
+# device A/B (canonical EE+VU + force-float, PGO tuned for the mac-port so rigged against
+# canonical) showed canonical EE at refresh parity on Android — GoW2 combat EE ~12.8ms,
+# 100% speed / 60fps. The real Android perf lever is the force-float in
+# VMManager::SetEmuThreadAffinities, not the recompiler backend. See REFACTOR_STATUS.md.
+set(pcsx2arm64EESources
 	arm64/aR5900.cpp
 	arm64/aR5900Analysis.cpp
 	arm64/aR5900LoadStore.cpp
@@ -1063,6 +1076,15 @@ set(pcsx2arm64Sources
 	arm64/aR5900Branch.cpp
 	arm64/aR5900FPU.cpp
 	arm64/aR5900MMI.cpp
+	)
+
+set(pcsx2arm64Sources
+	arm64/AsmHelpers.cpp
+	arm64/Vif_Dynarec.cpp
+	arm64/Vif_UnpackNEON.cpp
+	arm64/RecStubs.cpp
+	arm64/aR3000A.cpp
+	${pcsx2arm64EESources}
 	arm64/aVU.cpp
 	)
 
@@ -1079,12 +1101,75 @@ set(pcsx2arm64Headers
 	arm64/aVU_Misc.inl
 	arm64/aVU_Upper.inl
 	arm64/aVU_Lower.inl
-	arm64/aVU_Macro.inl
 	arm64/aVU_Tables.inl
 	arm64/aVU_Flags.inl
 	arm64/aVU_Branch.inl
 	arm64/aVU_Compile.inl
 )
+
+# Mobile (arm64) platform sources, relocated from the former android/iOS core
+# forks (refresh-experimental / iOS-refresh). Source wiring only: real NDK /
+# Xcode builds are required to validate include paths and link deps.
+# See REFACTOR_STATUS.md.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+	set(ARMSX2_IOS TRUE)
+endif()
+
+# NEON-optimised SPU2 mixer/reverb: shared by all arm64 mobile targets.
+if(ANDROID OR ARMSX2_IOS)
+	list(APPEND pcsx2SPU2Sources
+		SPU2/spu2_neon.cpp)
+	list(APPEND pcsx2SPU2Headers
+		SPU2/spu2_neon.h
+		SPU2/spu2_neon_dcfilter.h
+		SPU2/spu2_neon_mixer.h
+		SPU2/spu2_neon_reverb_ex.h
+		SPU2/spu2_optimize.h
+		SPU2/spu2_sve2_fir.h
+		SPU2/spu2_mt6899_tuning.h)
+endif()
+
+if(ANDROID)
+	list(APPEND pcsx2HostSources
+		Host/OboeAudioStream.cpp)
+	list(APPEND pcsx2GSSources
+		GS/Renderers/OpenGL/GLContextEGL.cpp
+		GS/Renderers/OpenGL/GLContextEGLAndroid.cpp
+		GS/Renderers/Common/GSGPUProfile.cpp)
+	list(APPEND pcsx2GSHeaders
+		GS/Renderers/OpenGL/GLContextEGL.h
+		GS/Renderers/OpenGL/GLContextEGLAndroid.h
+		GS/Renderers/Common/GSGPUProfile.h)
+	list(APPEND pcsx2Sources
+		Android/AndroidStubs.cpp
+		Android/AndroidPcapStubs.cpp
+		VU1Fingerprint.cpp
+		EEDiffVerify.cpp)
+	list(APPEND pcsx2Headers
+		VU1Fingerprint.h
+		EEDiffVerify.h
+		AndroidEEOpHist.h
+		AndroidPerfBuckets.h
+		PS1DrvTrace.h)
+	# Oboe is the Android audio backend consumed by Host/OboeAudioStream.cpp.
+	# The `oboe` target (created in SearchForStuff.cmake) exports its `include/`
+	# dir as PUBLIC, so linking it into PCSX2_FLAGS propagates <oboe/Oboe.h> to
+	# the PCSX2 translation units. (android/log libs are already linked on the
+	# emucore target in the Android entry CMakeLists, so only oboe is needed here.)
+	target_link_libraries(PCSX2_FLAGS INTERFACE
+		oboe)
+endif()
+
+if(ARMSX2_IOS)
+	list(APPEND pcsx2Sources
+		MacOSStubs.cpp
+		QAProbe.cpp
+		TestHarness.cpp)
+	list(APPEND pcsx2Headers
+		QAProbe.h
+		TestHarness.h
+		SifRingBuffer.h)
+endif()
 
 # These ones benefit a lot from LTO
 set(pcsx2LTOSources
@@ -1161,21 +1246,15 @@ endif()
 target_sources(PCSX2 PRIVATE ${pcsx2USBSources} ${pcsx2USBHeaders})
 
 if(APPLE OR BSD)
-	if(APPLE)
+	if(APPLE AND NOT IOS)
 		target_sources(PCSX2 PRIVATE
 			${pcsx2OSXSources})
-	else()
+	elseif(BSD)
 		target_sources(PCSX2 PRIVATE
 			${pcsx2FreeBSDSources})
 	endif()
 	target_sources(PCSX2 PRIVATE
 		${pcsx2LinuxHeaders})
-endif()
-
-if(CMAKE_SYSTEM_NAME STREQUAL "iOS" OR iPSX2_MACOS_BUILD)
-	set(PNG_LINK "")
-else()
-	set(PNG_LINK PNG::PNG)
 endif()
 
 target_link_libraries(PCSX2_FLAGS INTERFACE
@@ -1195,7 +1274,8 @@ target_link_libraries(PCSX2_FLAGS INTERFACE
 	ZLIB::ZLIB
 	LZ4::LZ4
 	SoundTouch::SoundTouch
-	${PNG_LINK}
+	JPEG::JPEG
+	PNG::PNG
 	LZMA::LZMA
 	Zstd::Zstd
 	demanglegnu
@@ -1228,12 +1308,12 @@ if(WIN32)
 		dwmapi.lib
 		OneCore.lib
 	)
-else()
-	if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT iPSX2_MACOS_BUILD)
-		target_link_libraries(PCSX2_FLAGS INTERFACE
-			PCAP::PCAP
-		)
-	endif()
+elseif(NOT ANDROID AND NOT IOS)
+	# Android has no system libpcap; DEV9 uses Android/AndroidPcapStubs.cpp instead,
+	# so it must NOT link PCAP::PCAP (a bare else() here caught Android and broke it).
+	target_link_libraries(PCSX2_FLAGS INTERFACE
+		PCAP::PCAP
+	)
 endif()
 
 # additonal include directories
@@ -1281,29 +1361,33 @@ fixup_file_properties(PCSX2)
 # To ensure the dependency build script's headers are preferred, push any directories that look like */local/include to the end.
 force_include_last(PCSX2_FLAGS "/(usr|local)/include/?$")
 
-if (APPLE)
+if(APPLE AND NOT IOS)
+	# macOS desktop: AppKit + IOKit are available.
+	find_library(APPKIT_LIBRARY AppKit)
 	find_library(IOKIT_LIBRARY IOKit)
 	find_library(METAL_LIBRARY Metal)
 	find_library(QUARTZCORE_LIBRARY QuartzCore)
 	find_library(AVFOUNDATION_LIBRARY AVFoundation)
 	find_library(COREMEDIA_LIBRARY CoreMedia)
-	if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-		find_library(UIKIT_LIBRARY UIKit)
-	else()
-		find_library(APPKIT_LIBRARY AppKit)
-	endif()
 	target_link_libraries(PCSX2_FLAGS INTERFACE
+		${APPKIT_LIBRARY}
 		${IOKIT_LIBRARY}
 		${METAL_LIBRARY}
 		${QUARTZCORE_LIBRARY}
 		${AVFOUNDATION_LIBRARY}
 		${COREMEDIA_LIBRARY}
 	)
-	if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-		target_link_libraries(PCSX2_FLAGS INTERFACE ${UIKIT_LIBRARY})
-	else()
-		target_link_libraries(PCSX2_FLAGS INTERFACE ${APPKIT_LIBRARY})
-	endif()
+	# MetalFX (spatial upscaler) is macOS 13.0+. Weak-link it so the binary still
+	# loads on older systems; every use is guarded with @available(macOS 13, *).
+	target_link_options(PCSX2_FLAGS INTERFACE "SHELL:-weak_framework MetalFX")
+elseif(IOS)
+	# iOS: Metal + QuartzCore (CAMetalLayer) are available; AppKit/IOKit are not.
+	find_library(METAL_LIBRARY Metal)
+	find_library(QUARTZCORE_LIBRARY QuartzCore)
+	target_link_libraries(PCSX2_FLAGS INTERFACE
+		${METAL_LIBRARY}
+		${QUARTZCORE_LIBRARY}
+	)
 endif()
 
 set_property(GLOBAL PROPERTY PCSX2_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})

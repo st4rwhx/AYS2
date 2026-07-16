@@ -33,10 +33,6 @@
 #endif
 #endif
 
-#if ANDROID
-#include "common/Android/Adapter.h"
-#endif
-
 using namespace PacketReader;
 using namespace PacketReader::IP;
 
@@ -292,28 +288,6 @@ std::optional<MAC_Address> AdapterUtils::GetAdapterMAC(const Adapter* adapter)
 
 	return std::nullopt;
 }
-#elif ANDROID
-extern std::string generateUniqueMacFromJava();
-
-std::optional<MAC_Address> AdapterUtils::GetAdapterMAC(const Adapter* adapter) {
-	MAC_Address macAddr{};
-
-    // Android don't support to extract Physical MAC address
-	std::string macStr = generateUniqueMacFromJava();
-	Console.WriteLn("Adapter MAC: %s", macStr.c_str());
-
-	int values[6];
-
-    if (sscanf(macStr.c_str(), "%x:%x:%x:%x:%x:%x",
-               &values[0], &values[1], &values[2],
-               &values[3], &values[4], &values[5]) == 6)
-    {
-        for (int i = 0; i < 6; i++)
-            macAddr.bytes[i] = static_cast<uint8_t>(values[i]);
-    }
-
-    return macAddr;
-}
 #elif defined(__APPLE__) && TARGET_OS_IPHONE
 std::optional<MAC_Address> AdapterUtils::GetAdapterMAC(const Adapter* adapter)
 {
@@ -442,19 +416,6 @@ std::vector<IP_Address> AdapterUtils::GetGateways(const Adapter* adapter)
 	}
 
 	return collection;
-}
-#elif ANDROID
-std::vector<IP_Address> AdapterUtils::GetGateways(const Adapter* adapter)
-{
-    std::vector<IP_Address> collection;
-
-    std::vector<std::string> gateways = Android::getAdapterGateways(adapter->ifa_name);
-
-    for(auto gateway : gateways) {
-        collection.push_back(Android::ParseIpString(gateway));
-    }
-
-    return collection;
 }
 #elif defined(__POSIX__)
 #ifdef __linux__
@@ -612,23 +573,6 @@ std::vector<IP_Address> AdapterUtils::GetDNS(const Adapter* adapter)
 
 	return collection;
 }
-#elif ANDROID
-std::vector<IP_Address> AdapterUtils::GetDNS(const Adapter* adapter) {
-    if (adapter == nullptr)
-        return {};
-
-    std::vector<IP_Address> collection;
-
-	auto dns = Android::getAdapterDNS(adapter->ifa_name);
-	Console.WriteLn("%s -> DNS1: %s, DNS2: %s\n", adapter->ifa_name, dns.first.c_str(), dns.second.c_str());
-
-    if (!dns.first.empty())
-        collection.push_back(Android::ParseIpString(dns.first));
-    if (!dns.second.empty())
-        collection.push_back(Android::ParseIpString(dns.second));
-
-    return collection;
-}
 #elif defined(__POSIX__)
 std::vector<IP_Address> AdapterUtils::GetDNS(const Adapter* adapter)
 {
@@ -648,8 +592,17 @@ std::vector<IP_Address> AdapterUtils::GetDNS(const Adapter* adapter)
 	if (servers.fail())
 	{
 		servers.close();
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+		// iOS app sandbox has no /etc/resolv.conf; fall back to public resolvers so the
+		// emulated PS2 gets a working DNS list. Overrideable via Network settings.
+		Console.WriteLn("DEV9: no /etc/resolv.conf on iOS; using public DNS fallback 1.1.1.1 / 8.8.8.8");
+		collection.push_back(IP_Address{{{1, 1, 1, 1}}});
+		collection.push_back(IP_Address{{{8, 8, 8, 8}}});
+		return collection;
+#else
 		Console.Error("DEV9: Failed to open /etc/resolv.conf");
 		return collection;
+#endif
 	}
 
 	std::string line;

@@ -2,11 +2,25 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #import "ARMSX2Bridge.h"
+
+// Xcode names the generated Swift bridge header after the Swift module.
+#if __has_include("ARMSX2iOS-Swift.h")
+#import "ARMSX2iOS-Swift.h"
+#define ARMSX2_HAS_SWIFTUI_HOST 1
+#elif __has_include("ARMSX2-Swift.h")
+#import "ARMSX2-Swift.h"
+#define ARMSX2_HAS_SWIFTUI_HOST 1
+#else
+#define ARMSX2_HAS_SWIFTUI_HOST 0
+#endif
+
 #include "common/Darwin/DarwinMisc.h"
 #include <SDL3/SDL.h>
 
 extern "C" void ARMSX2_SetSDLFullscreen(bool enabled);
 extern "C" bool ARMSX2_IsSDLFullscreen();
+extern "C" void ARMSX2_iOSCopyDeviceStats(int* outBatteryPercent, int* outThermalState,
+                                          double* outRamGB, bool* outLowPower);
 #include "Common.h"
 #include "Config.h"
 #include "CDVD/CDVD.h"
@@ -37,7 +51,6 @@ extern "C" bool ARMSX2_IsSDLFullscreen();
 #include <cstdio>
 #include <cstring>
 #include <functional>
-#include <future>
 #include <limits>
 #include <optional>
 #include <string_view>
@@ -50,6 +63,37 @@ extern INISettingsInterface* g_p44_settings_interface;
 extern "C" void ARMSX2_PrepareGameRenderViewForCurrentRenderer(const char* reason);
 extern "C" void ARMSX2_PostRuntimeMenuStateChanged(void);
 extern "C" void ARMSX2_iOSTestGamepadRumble(void);
+
+// Coalesce base-settings INI writes so rapid changes (slider drags, preset bursts,
+// repeated toggles) persist to disk once per short window instead of once per call.
+// The in-memory interface is updated immediately, so reads always observe the latest
+// value; only disk persistence is deferred. ARMSX2FlushINISave() forces a write now.
+static BOOL s_ini_save_scheduled = NO;
+static NSUInteger s_ini_save_generation = 0;
+
+static void ARMSX2ScheduleINISave()
+{
+    if (!g_p44_settings_interface || s_ini_save_scheduled)
+        return;
+    s_ini_save_scheduled = YES;
+    s_ini_save_generation++;
+    const NSUInteger scheduled_generation = s_ini_save_generation;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+        dispatch_get_main_queue(),
+        ^{
+            s_ini_save_scheduled = NO;
+            if (scheduled_generation == s_ini_save_generation && g_p44_settings_interface)
+                g_p44_settings_interface->Save();
+        });
+}
+
+static void ARMSX2FlushINISave()
+{
+    s_ini_save_generation++;
+    s_ini_save_scheduled = NO;
+    if (g_p44_settings_interface)
+        g_p44_settings_interface->Save();
+}
 
 static NSDate* s_lastNVMSaveDate = nil;
 static NSDictionary<NSString*, id>* s_pendingRetroAchievementsNotification = nil;
@@ -1367,6 +1411,13 @@ static void ARMSX2ApplyLiveGSIntSetting(const char* section, const char* key, in
         const int clamped = std::clamp(value, static_cast<int>(OsdOverlayPos::None), static_cast<int>(OsdOverlayPos::TopRight));
         EmuConfig.GS.OsdPerformancePos = static_cast<OsdOverlayPos>(clamped);
         GSConfig.OsdPerformancePos = static_cast<OsdOverlayPos>(clamped);
+    } else if (std::strcmp(key, "OsdMessagesPos") == 0) {
+        // Toggles the transient OSD message queue (shader-compilation, save,
+        // settings-applied, etc.) without touching performance counters or the
+        // separate SwiftUI alert path used for critical errors.
+        const int clamped = std::clamp(value, static_cast<int>(OsdOverlayPos::None), static_cast<int>(OsdOverlayPos::TopRight));
+        EmuConfig.GS.OsdMessagesPos = static_cast<OsdOverlayPos>(clamped);
+        GSConfig.OsdMessagesPos = static_cast<OsdOverlayPos>(clamped);
     } else if (std::strcmp(key, "texture_preloading") == 0) {
         const int clamped = std::clamp(value, 0, static_cast<int>(TexturePreloadingLevel::Full));
         EmuConfig.GS.TexturePreloading = static_cast<TexturePreloadingLevel>(clamped);
@@ -1682,6 +1733,90 @@ static void ARMSX2ApplyPerGameSettingsOverrides(NSMutableDictionary<NSString*, i
     result[@"eeCycleRate"] = @(ARMSX2ClampInt(si.GetIntValue("EmuCore/Speedhacks", "EECycleRate", [result[@"eeCycleRate"] intValue]), -3, 3));
     result[@"hasFastBootOverride"] = @(si.ContainsValue("EmuCore", "EnableFastBoot"));
     result[@"fastBoot"] = @(si.GetBoolValue("EmuCore", "EnableFastBoot", [result[@"fastBoot"] boolValue]));
+
+    // Per-game compatibility overrides. Returning these from the single INI that is
+    // already loaded here lets the settings panel open without re-parsing the file
+    // once per override key. Only present overrides are included; absent keys fall
+    // back to the global value on the caller side.
+    {
+        NSMutableDictionary<NSString*, NSNumber*>* perGameFixes = [NSMutableDictionary dictionary];
+        static constexpr const char* kARMSX2GameFixKeys[] = {
+            "VuAddSubHack", "FpuMulHack", "XgKickHack", "EETimingHack", "InstantDMAHack",
+            "SoftwareRendererFMVHack", "SkipMPEGHack", "OPHFlagHack", "DMABusyHack",
+            "VIF1StallHack", "GIFFIFOHack", "GoemonTlbHack", "IbitHack", "VUSyncHack",
+            "VUOverflowHack", "BlitInternalFPSHack", "FullVU0SyncHack"
+        };
+        for (const char* gameFixKey : kARMSX2GameFixKeys)
+        {
+            if (si.ContainsValue("EmuCore/Gamefixes", gameFixKey))
+            {
+                perGameFixes[[NSString stringWithUTF8String:gameFixKey]] =
+                    @(si.GetBoolValue("EmuCore/Gamefixes", gameFixKey, false) ? 1 : 0);
+            }
+        }
+        result[@"perGameFixes"] = perGameFixes;
+
+        const bool hasPerGameAAT = si.ContainsValue("EmuCore/GS", "HWAccurateAlphaTest");
+        result[@"hasPerGameAAT"] = @(hasPerGameAAT);
+        result[@"perGameAAT"] = @((hasPerGameAAT && si.GetBoolValue("EmuCore/GS", "HWAccurateAlphaTest", false)) ? 1 : 0);
+
+        const bool hasPerGameTextureInsideRt = si.ContainsValue("EmuCore/GS", "UserHacks_TextureInsideRt");
+        result[@"hasPerGameTextureInsideRt"] = @(hasPerGameTextureInsideRt);
+        result[@"perGameTextureInsideRt"] =
+            @(hasPerGameTextureInsideRt ? si.GetIntValue("EmuCore/GS", "UserHacks_TextureInsideRt", 0) : 0);
+
+        const bool hasPerGameRenderer = si.ContainsValue("EmuCore/GS", "Renderer");
+        result[@"hasPerGameRenderer"] = @(hasPerGameRenderer);
+        result[@"perGameRenderer"] = @(hasPerGameRenderer ? si.GetIntValue("EmuCore/GS", "Renderer", 17) : 17);
+
+        const bool hasPerGameFXAA = si.ContainsValue("EmuCore/GS", "fxaa");
+        result[@"hasPerGameFXAA"] = @(hasPerGameFXAA);
+        result[@"perGameFXAA"] = @((hasPerGameFXAA && si.GetBoolValue("EmuCore/GS", "fxaa", false)) ? 1 : 0);
+
+        const bool hasPerGameShadeBoost = si.ContainsValue("EmuCore/GS", "ShadeBoost");
+        result[@"hasPerGameShadeBoost"] = @(hasPerGameShadeBoost);
+        result[@"perGameShadeBoost"] = @((hasPerGameShadeBoost && si.GetBoolValue("EmuCore/GS", "ShadeBoost", false)) ? 1 : 0);
+
+        const bool hasPerGameTVShader = si.ContainsValue("EmuCore/GS", "TVShader");
+        result[@"hasPerGameTVShader"] = @(hasPerGameTVShader);
+        result[@"perGameTVShader"] = @(hasPerGameTVShader ? si.GetIntValue("EmuCore/GS", "TVShader", 0) : 0);
+
+        const bool hasPerGameCASMode = si.ContainsValue("EmuCore/GS", "CASMode");
+        result[@"hasPerGameCASMode"] = @(hasPerGameCASMode);
+        result[@"perGameCASMode"] = @(hasPerGameCASMode ? si.GetIntValue("EmuCore/GS", "CASMode", 0) : 0);
+
+        const bool hasPerGameMaxAnisotropy = si.ContainsValue("EmuCore/GS", "MaxAnisotropy");
+        result[@"hasPerGameMaxAnisotropy"] = @(hasPerGameMaxAnisotropy);
+        result[@"perGameMaxAnisotropy"] = @(hasPerGameMaxAnisotropy ? si.GetIntValue("EmuCore/GS", "MaxAnisotropy", 0) : 0);
+
+        const bool hasPerGameCASSharpness = si.ContainsValue("EmuCore/GS", "CASSharpness");
+        result[@"hasPerGameCASSharpness"] = @(hasPerGameCASSharpness);
+        result[@"perGameCASSharpness"] = @(hasPerGameCASSharpness ? si.GetIntValue("EmuCore/GS", "CASSharpness", 50) : 50);
+
+        const bool hasPerGamePCRTCOffsets = si.ContainsValue("EmuCore/GS", "pcrtc_offsets");
+        result[@"hasPerGamePCRTCOffsets"] = @(hasPerGamePCRTCOffsets);
+        result[@"perGamePCRTCOffsets"] = @((hasPerGamePCRTCOffsets && si.GetBoolValue("EmuCore/GS", "pcrtc_offsets", false)) ? 1 : 0);
+
+        const bool hasPerGameIntegerScaling = si.ContainsValue("EmuCore/GS", "IntegerScaling");
+        result[@"hasPerGameIntegerScaling"] = @(hasPerGameIntegerScaling);
+        result[@"perGameIntegerScaling"] = @((hasPerGameIntegerScaling && si.GetBoolValue("EmuCore/GS", "IntegerScaling", false)) ? 1 : 0);
+
+        const bool hasPerGameSkipDupFrames = si.ContainsValue("EmuCore/GS", "SkipDuplicateFrames");
+        result[@"hasPerGameSkipDupFrames"] = @(hasPerGameSkipDupFrames);
+        result[@"perGameSkipDupFrames"] = @((hasPerGameSkipDupFrames && si.GetBoolValue("EmuCore/GS", "SkipDuplicateFrames", true)) ? 1 : 0);
+
+        const bool hasPerGamePCRTCOverscan = si.ContainsValue("EmuCore/GS", "pcrtc_overscan");
+        result[@"hasPerGamePCRTCOverscan"] = @(hasPerGamePCRTCOverscan);
+        result[@"perGamePCRTCOverscan"] = @((hasPerGamePCRTCOverscan && si.GetBoolValue("EmuCore/GS", "pcrtc_overscan", false)) ? 1 : 0);
+
+        const bool hasPerGamePCRTCAntiBlur = si.ContainsValue("EmuCore/GS", "pcrtc_antiblur");
+        result[@"hasPerGamePCRTCAntiBlur"] = @(hasPerGamePCRTCAntiBlur);
+        result[@"perGamePCRTCAntiBlur"] = @((hasPerGamePCRTCAntiBlur && si.GetBoolValue("EmuCore/GS", "pcrtc_antiblur", true)) ? 1 : 0);
+
+        const bool hasPerGameDisableInterlaceOffset = si.ContainsValue("EmuCore/GS", "disable_interlace_offset");
+        result[@"hasPerGameDisableInterlaceOffset"] = @(hasPerGameDisableInterlaceOffset);
+        result[@"perGameDisableInterlaceOffset"] = @((hasPerGameDisableInterlaceOffset && si.GetBoolValue("EmuCore/GS", "disable_interlace_offset", false)) ? 1 : 0);
+    }
 }
 
 static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
@@ -1876,6 +2011,88 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
         NSLog(@"[ARMSX2Bridge] Game settings save error: %@", ARMSX2NSStringFromStdString(error.GetDescription()));
 }
 
+static NSArray<NSString*>* ARMSX2PatchEnableListForIdentity(const std::string& serial, u32 crc,
+                                                             NSString* section, NSString* key)
+{
+    if (serial.empty() || crc == 0)
+        return @[];
+
+    const std::string settingsPath = VMManager::GetGameSettingsPath(serial, crc);
+    INISettingsInterface si(settingsPath);
+    if (!si.Load())
+        return @[];
+
+    const std::vector<std::string> values = si.GetStringList(section.UTF8String ?: "", key.UTF8String ?: "");
+    NSMutableArray<NSString*>* result = [NSMutableArray arrayWithCapacity:values.size()];
+    for (const std::string& value : values)
+    {
+        NSString* name = ARMSX2NSStringFromStdString(value);
+        if (name.length > 0)
+            [result addObject:name];
+    }
+    return result;
+}
+
+static void ARMSX2SetPatchEnableListForIdentity(NSArray<NSString*>* values, const std::string& serial, u32 crc,
+                                                NSString* section, NSString* key)
+{
+    if (serial.empty() || crc == 0)
+        return;
+
+    FileSystem::CreateDirectoryPath(EmuFolders::GameSettings.c_str(), false);
+    const std::string settingsPath = VMManager::GetGameSettingsPath(serial, crc);
+    INISettingsInterface si(settingsPath);
+    si.Load();
+
+    std::vector<std::string> list;
+    list.reserve(values.count);
+    for (NSString* value in values)
+    {
+        if (value.length > 0)
+            list.push_back(value.UTF8String);
+    }
+
+    if (list.empty())
+        si.DeleteValue(section.UTF8String ?: "", key.UTF8String ?: "");
+    else
+        si.SetStringList(section.UTF8String ?: "", key.UTF8String ?: "", list);
+
+    Error error;
+    si.Save(&error);
+    // NSLog(@"[ARMSX2Bridge] Patch enable list saved serial=%@ crc=%08X section=%@ count=%lu",
+    //       ARMSX2NSStringFromStdString(serial), (unsigned int)crc, section, (unsigned long)list.size());
+}
+
+// Resolve a per-game identity (serial, crc) for a library ISO. Returns NO if the ISO
+// cannot be resolved or has no CRC. ELFs have no serial (empty), matching the
+// game-settings writer.
+static BOOL ARMSX2PerGameIdentityForISO(NSString* isoName, std::string* serial, u32* crc)
+{
+    GameList::Entry entry;
+    NSString* resolvedPath = nil;
+    if (!ARMSX2PopulateGameListEntryForISO(isoName, &entry, &resolvedPath) || entry.crc == 0)
+        return NO;
+    *serial = (entry.type == GameList::EntryType::ELF) ? std::string() : entry.serial;
+    *crc = entry.crc;
+    return YES;
+}
+
+// Resolve a per-game identity for the running game. Returns NO with no valid VM/CRC.
+static BOOL ARMSX2PerGameIdentityForCurrentGame(std::string* serial, u32* crc)
+{
+    if (!VMManager::HasValidVM())
+        return NO;
+    *serial = VMManager::GetSerialForGameSettings();
+    *crc = VMManager::GetDiscCRC();
+    return *crc != 0;
+}
+
+static std::string ARMSX2PerGameSettingsPath(const std::string& serial, u32 crc)
+{
+    FileSystem::CreateDirectoryPath(EmuFolders::GameSettings.c_str(), false);
+    return VMManager::GetGameSettingsPath(serial, crc);
+}
+
 @implementation ARMSX2Bridge
 
 + (UIView *)gameRenderView {
@@ -1907,22 +2124,6 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
 
 + (BOOL)isRunning {
     return VMManager::GetState() == VMState::Running;
-}
-
-+ (nullable NSDate *)lastNVMSaveDate {
-    return s_lastNVMSaveDate;
-}
-
-+ (nullable NSString *)nvmFilePath {
-    // NVM path is BIOS path with .nvm extension
-    // We can't easily access BiosPath from here, so return nil for now
-    return nil;
-}
-
-+ (BOOL)nvmFileExists {
-    NSString* path = [self nvmFilePath];
-    if (!path) return NO;
-    return [[NSFileManager defaultManager] fileExistsAtPath:path];
 }
 
 + (void)setPadButton:(ARMSX2PadButton)button pressed:(BOOL)pressed {
@@ -2041,8 +2242,7 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
 
 + (nonnull NSString *)buildVersion {
     NSString *ver = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"?";
-    // AYS2: About/version brand (seam)
-    return [NSString stringWithFormat:@"AYS2 v%@", ver];
+    return [NSString stringWithFormat:@"ARMSX2 iOS v%@", ver];
 }
 
 + (BOOL)isJITAvailable {
@@ -2123,6 +2323,252 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
     NSLog(@"[ARMSX2 iOS Skins] Extracted %lu skin file(s) from %@",
           static_cast<unsigned long>(extracted.count), archiveURL.lastPathComponent);
     return extracted;
+}
+
++ (nullable NSData *)peekSkinManifestDataAtURL:(NSURL *)archiveURL {
+    if (!archiveURL.isFileURL) {
+        return nil;
+    }
+
+    zip_error_t ze = {};
+    auto zf = zip_open_managed(archiveURL.path.UTF8String, ZIP_RDONLY, &ze);
+    if (!zf) {
+        return nil;
+    }
+
+    const zip_int64_t count = zip_get_num_entries(zf.get(), 0);
+    if (count > 512) {
+        return nil;
+    }
+
+    // Prefer info.json, then manifest.json. Read raw bytes without extracting.
+    for (NSString* wanted in @[@"info.json", @"manifest.json"]) {
+        for (zip_uint64_t i = 0; i < static_cast<zip_uint64_t>(std::max<zip_int64_t>(count, 0)); i++) {
+            zip_stat_t stat = {};
+            if (zip_stat_index(zf.get(), i, ZIP_FL_ENC_GUESS, &stat) != 0 || !stat.name) {
+                continue;
+            }
+            NSString* entryName = [NSString stringWithUTF8String:stat.name];
+            if (entryName.length == 0 || [entryName hasSuffix:@"/"]) {
+                continue;
+            }
+            if ([entryName containsString:@"__MACOSX"] || [entryName containsString:@".."]) {
+                continue;
+            }
+            if (![entryName.lastPathComponent.lowercaseString isEqualToString:wanted]) {
+                continue;
+            }
+            if ((stat.valid & ZIP_STAT_SIZE) && stat.size > 16 * 1024 * 1024) {
+                continue;
+            }
+            auto file = zip_fopen_index_managed(zf.get(), i, ZIP_FL_ENC_GUESS);
+            if (!file) {
+                continue;
+            }
+            std::optional<std::vector<u8>> data = ReadBinaryFileInZip(file.get());
+            if (!data.has_value() || data->empty()) {
+                continue;
+            }
+            return [NSData dataWithBytes:data->data() length:data->size()];
+        }
+    }
+    return nil;
+}
+
++ (nonnull NSArray<NSURL *> *)extractSkinPackageArchiveAtURL:(NSURL *)archiveURL
+                                                  toDirectory:(NSURL *)destinationDirectory {
+    static const zip_uint64_t kMaxPackageEntryBytes = 16 * 1024 * 1024;
+    static const NSUInteger kMaxPackageExtractedEntries = 128;
+    static const zip_int64_t kMaxPackageTotalEntries = 512;
+    static NSArray<NSString*>* kAllowedPackageExtensions;
+
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        kAllowedPackageExtensions = @[@"png", @"jpg", @"jpeg", @"webp", @"pdf", @"json"];
+    });
+
+    NSMutableArray<NSURL*>* extracted = [NSMutableArray array];
+    if (!archiveURL.isFileURL || !destinationDirectory.isFileURL) {
+        return extracted;
+    }
+
+    NSError* directoryError = nil;
+    if (![[NSFileManager defaultManager] createDirectoryAtURL:destinationDirectory
+                                  withIntermediateDirectories:YES
+                                                   attributes:nil
+                                                        error:&directoryError]) {
+        NSLog(@"[ARMSX2 iOS Skins] Could not create package directory %@: %@",
+              destinationDirectory.path, directoryError.localizedDescription);
+        return extracted;
+    }
+
+    zip_error_t ze = {};
+    auto zf = zip_open_managed(archiveURL.path.UTF8String, ZIP_RDONLY, &ze);
+    if (!zf) {
+        NSLog(@"[ARMSX2 iOS Skins] Could not open skin package %@: %s",
+              archiveURL.lastPathComponent, zip_error_strerror(&ze));
+        return extracted;
+    }
+
+    const zip_int64_t count = zip_get_num_entries(zf.get(), 0);
+    if (count > kMaxPackageTotalEntries) {
+        NSLog(@"[ARMSX2 iOS Skins] Skin package has too many entries (%lld); skipping %@.",
+              static_cast<long long>(count), archiveURL.lastPathComponent);
+        return extracted;
+    }
+
+    NSString* basePath = destinationDirectory.path;
+    NSCharacterSet* allowed = [NSCharacterSet characterSetWithCharactersInString:
+        @"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"];
+
+    for (zip_uint64_t i = 0; i < static_cast<zip_uint64_t>(std::max<zip_int64_t>(count, 0)); i++) {
+        if (extracted.count >= kMaxPackageExtractedEntries) {
+            break;
+        }
+
+        zip_stat_t stat = {};
+        if (zip_stat_index(zf.get(), i, ZIP_FL_ENC_GUESS, &stat) != 0 || !stat.name) {
+            continue;
+        }
+        if ((stat.valid & ZIP_STAT_SIZE) && stat.size > kMaxPackageEntryBytes) {
+            continue;
+        }
+
+        NSString* entryName = [NSString stringWithUTF8String:stat.name];
+        if (entryName.length == 0 || [entryName hasSuffix:@"/"]) {
+            continue;
+        }
+        if ([entryName containsString:@"__MACOSX"]) {
+            continue;
+        }
+
+        NSString* extension = entryName.pathExtension.lowercaseString;
+        if (extension.length == 0 || ![kAllowedPackageExtensions containsObject:extension]) {
+            continue;
+        }
+
+        // Build a safe relative path: reject any absolute/".."/"."/hidden
+        // component, then sanitize each component to filesystem-safe characters.
+        NSArray* components = [entryName componentsSeparatedByString:@"/"];
+        BOOL rejected = NO;
+        for (NSString* component in components) {
+            if ([component isEqualToString:@".."] || [component isEqualToString:@"."] || [component hasPrefix:@"."]) {
+                rejected = YES;
+                break;
+            }
+        }
+        if (rejected) {
+            continue;
+        }
+
+        NSURL* destinationURL = destinationDirectory;
+        for (NSString* component in components) {
+            NSMutableString* sanitized = [NSMutableString stringWithCapacity:component.length];
+            for (NSUInteger c = 0; c < component.length; c++) {
+                unichar ch = [component characterAtIndex:c];
+                [sanitized appendString:[allowed characterIsMember:ch] ? [NSString stringWithCharacters:&ch length:1] : @"_"];
+            }
+            if (sanitized.length > 0) {
+                destinationURL = [destinationURL URLByAppendingPathComponent:sanitized];
+            }
+        }
+
+        // Defense-in-depth against path traversal: the resolved path must
+        // remain inside the destination directory.
+        NSString* resolvedPath = destinationURL.path;
+        if (![resolvedPath hasPrefix:[basePath stringByAppendingString:@"/"]]) {
+            continue;
+        }
+
+        auto file = zip_fopen_index_managed(zf.get(), i, ZIP_FL_ENC_GUESS);
+        if (!file) {
+            continue;
+        }
+        std::optional<std::vector<u8>> data = ReadBinaryFileInZip(file.get());
+        if (!data.has_value() || data->empty()) {
+            continue;
+        }
+
+        NSString* parentPath = destinationURL.URLByDeletingLastPathComponent.path;
+        [[NSFileManager defaultManager] createDirectoryAtPath:parentPath
+                                  withIntermediateDirectories:YES
+                                                   attributes:nil
+                                                        error:nil];
+        NSData* nsdata = [NSData dataWithBytes:data->data() length:data->size()];
+        if ([nsdata writeToURL:destinationURL atomically:YES]) {
+            [extracted addObject:destinationURL];
+        }
+    }
+
+    NSLog(@"[ARMSX2 iOS Skins] Extracted %lu package file(s) from %@",
+          static_cast<unsigned long>(extracted.count), archiveURL.lastPathComponent);
+    return extracted;
+}
+
++ (nullable NSString *)extractMemoryCardArchiveAtURL:(nonnull NSURL *)archiveURL {
+    static const zip_uint64_t kMaxMemcardEntryBytes = 128 * 1024 * 1024;
+    static const zip_int64_t kMaxMemcardTotalEntries = 64;
+
+    if (!archiveURL.isFileURL) {
+        return nil;
+    }
+
+    zip_error_t ze = {};
+    auto zf = zip_open_managed(archiveURL.path.UTF8String, ZIP_RDONLY, &ze);
+    if (!zf) {
+        NSLog(@"[ARMSX2 iOS Memcards] Could not open archive %@: %s",
+              archiveURL.lastPathComponent, zip_error_strerror(&ze));
+        return nil;
+    }
+
+    const zip_int64_t count = zip_get_num_entries(zf.get(), 0);
+    if (count > kMaxMemcardTotalEntries) {
+        NSLog(@"[ARMSX2 iOS Memcards] Archive has too many entries (%lld); skipping %@.",
+              static_cast<long long>(count), archiveURL.lastPathComponent);
+        return nil;
+    }
+
+    NSString *memcardDir = [self memoryCardDirectory];
+    for (zip_uint64_t i = 0; i < static_cast<zip_uint64_t>(std::max<zip_int64_t>(count, 0)); i++) {
+        zip_stat_t stat = {};
+        if (zip_stat_index(zf.get(), i, ZIP_FL_ENC_GUESS, &stat) != 0 || !stat.name)
+            continue;
+        if ((stat.valid & ZIP_STAT_SIZE) && stat.size > kMaxMemcardEntryBytes)
+            continue;
+
+        NSString *entryName = [NSString stringWithUTF8String:stat.name];
+        if (entryName.length == 0 || [entryName hasSuffix:@"/"])
+            continue;
+        if ([entryName containsString:@"__MACOSX"] || [entryName containsString:@".."])
+            continue;
+        if (![entryName.pathExtension.lowercaseString isEqualToString:@"ps2"])
+            continue;
+
+        NSString *safeName = entryName.lastPathComponent;
+        if ([safeName hasPrefix:@"."])
+            continue;
+
+        auto file = zip_fopen_index_managed(zf.get(), i, ZIP_FL_ENC_GUESS);
+        if (!file)
+            continue;
+        std::optional<std::vector<u8>> data = ReadBinaryFileInZip(file.get());
+        if (!data.has_value() || data->empty())
+            continue;
+
+        NSString *destinationPath = [memcardDir stringByAppendingPathComponent:safeName];
+        if (![destinationPath hasPrefix:[memcardDir stringByAppendingString:@"/"]])
+            continue;
+
+        NSData *nsdata = [NSData dataWithBytes:data->data() length:data->size()];
+        if ([nsdata writeToFile:destinationPath atomically:YES]) {
+            NSLog(@"[ARMSX2 iOS Memcards] Extracted %@ from %@", safeName, archiveURL.lastPathComponent);
+            return safeName;
+        }
+    }
+
+    NSLog(@"[ARMSX2 iOS Memcards] No .ps2 memory card found in %@",
+          archiveURL.lastPathComponent);
+    return nil;
 }
 
 + (nullable NSString *)currentISOPath {
@@ -2717,6 +3163,37 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
     return GSConfig.OsdPerformancePos != OsdOverlayPos::None;
 }
 
++ (nonnull NSDictionary<NSString *, id> *)deviceStatsForAccessibility {
+    int battery = -1, severity = 0;
+    double ramGB = 0.0;
+    bool lowPower = false;
+    ARMSX2_iOSCopyDeviceStats(&battery, &severity, &ramGB, &lowPower);
+    NSString* thermal;
+    switch (severity) {
+        case 2:  thermal = @"Serious"; break;
+        case 1:  thermal = @"Fair"; break;
+        default: thermal = @"Nominal"; break;
+    }
+    return @{
+        @"battery": @(battery),
+        @"thermalState": thermal,
+        @"ramGB": @(ramGB),
+        @"lowPower": @(lowPower),
+    };
+}
+
++ (void)triggerDeviceHapticLarge:(NSUInteger)large small:(NSUInteger)small {
+    // GameEventHaptics is @MainActor-isolated; dispatch to the main queue.
+    dispatch_async(dispatch_get_main_queue(), ^{
+#if ARMSX2_HAS_SWIFTUI_HOST
+        [SwiftUIHost triggerDeviceHapticWithLarge:large small:small];
+#else
+        (void)large;
+        (void)small;
+#endif
+    });
+}
+
 // Apply OSD preset — sets ALL GSConfig flags to match the preset
 + (void)applyOsdPreset:(int)preset {
     // Clear everything first
@@ -2801,7 +3278,7 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
     const int clampedValue = ARMSX2ClampInt(value, 0, ARMSX2DefaultAudioVolumePercent);
     g_p44_settings_interface->SetIntValue("SPU2/Output", "StandardVolume", clampedValue);
     g_p44_settings_interface->SetIntValue("SPU2/Output", "FastForwardVolume", clampedValue);
-    g_p44_settings_interface->Save();
+    ARMSX2ScheduleINISave();
 
     if (!VMManager::HasValidVM())
         return;
@@ -2844,6 +3321,7 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
 		std::fflush(stderr);
 		return;
 	}
+	ARMSX2FlushINISave(); // persist deferred base-setting writes before booting
 	NSString* resolvedPath = ARMSX2ResolveISOPath(isoName);
 	NSString* bootValue = isoName.isAbsolutePath ? (resolvedPath ?: isoName) : isoName;
 	if (bootValue.isAbsolutePath) {
@@ -2876,14 +3354,6 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
     return biosDir;
 }
 
-+ (nonnull NSArray<NSString *> *)availableBIOSes {
-    NSArray<ARMSX2BIOSInfo *> *infos = [self availableBIOSInfos];
-    NSMutableArray<NSString *> *bioses = [NSMutableArray arrayWithCapacity:infos.count];
-    for (ARMSX2BIOSInfo *info in infos)
-        [bioses addObject:info.fileName];
-    return bioses;
-}
-
 + (nonnull NSArray<ARMSX2BIOSInfo *> *)availableBIOSInfos {
     NSFileManager *fm = [NSFileManager defaultManager];
     NSMutableSet *seen = [NSMutableSet set];
@@ -2914,10 +3384,6 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
         return [lhs.fileName localizedCaseInsensitiveCompare:rhs.fileName];
     }];
     return bioses;
-}
-
-+ (nonnull ARMSX2BIOSInfo *)biosInfoForName:(nonnull NSString *)biosName {
-    return ARMSX2MakeBIOSInfo(biosName, [self biosDirectory]);
 }
 
 + (nonnull NSString *)defaultBIOSName {
@@ -2979,7 +3445,7 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
         value = 0;
     }
     g_p44_settings_interface->SetIntValue(section.UTF8String, key.UTF8String, value);
-    g_p44_settings_interface->Save();
+    ARMSX2ScheduleINISave();
     ARMSX2ApplyLiveGSIntSetting(section.UTF8String, key.UTF8String, value);
 }
 
@@ -2988,7 +3454,7 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
     if (ARMSX2ShouldBlockRetroAchievementsHardcoreBoolSetting(section.UTF8String, key.UTF8String, value))
         value = NO;
     g_p44_settings_interface->SetBoolValue(section.UTF8String, key.UTF8String, value);
-    g_p44_settings_interface->Save();
+    ARMSX2ScheduleINISave();
     ARMSX2ApplyLiveGSBoolSetting(section.UTF8String, key.UTF8String, value);
 }
 
@@ -3000,20 +3466,195 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
         valueToStore = ARMSX2NormalizeIOSNominalScalar(valueToStore);
 
     g_p44_settings_interface->SetFloatValue(section.UTF8String, key.UTF8String, valueToStore);
-    g_p44_settings_interface->Save();
+    ARMSX2ScheduleINISave();
     ARMSX2ApplyLiveFloatSetting(section.UTF8String, key.UTF8String, valueToStore);
 }
 
 + (void)setINIString:(nonnull NSString *)section key:(nonnull NSString *)key value:(nonnull NSString *)value {
     if (!g_p44_settings_interface) return;
     g_p44_settings_interface->SetStringValue(section.UTF8String, key.UTF8String, value.UTF8String);
-    g_p44_settings_interface->Save();
+    ARMSX2ScheduleINISave();
 }
 
 + (void)clearINISection:(nonnull NSString *)section {
     if (!g_p44_settings_interface) return;
     g_p44_settings_interface->ClearSection(section.UTF8String);
-    g_p44_settings_interface->Save();
+    ARMSX2ScheduleINISave();
+}
+
+// Reloads settings into the running VM and pushes graphics options to the GS
+// thread so visual changes take effect without restarting the game. Safe to call
+// when no VM/GS is open (it returns without doing anything).
++ (void)applyGraphicsSettingsNow
+{
+    if (!VMManager::HasValidVM())
+        return;
+
+    VMManager::ApplySettings();
+    if (MTGS::IsOpen())
+        MTGS::ApplySettings();
+}
+
+// Force any deferred base-settings INI write to disk immediately.
++ (void)flushINISettings
+{
+    ARMSX2FlushINISave();
+}
+
+#pragma mark - Per-game INI getter/setter
+// Reads/writes the per-game INI at VMManager::GetGameSettingsPath(serial,crc), the
+// same file the game-settings and patch-enable-list helpers use. The "for current
+// game" write/delete variants live-apply via VMManager::ReloadGameSettings().
+
++ (BOOL)hasPerGameINIValue:(nonnull NSString *)section key:(nonnull NSString *)key forISO:(nonnull NSString *)isoName {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForISO(isoName, &serial, &crc))
+        return NO;
+    INISettingsInterface si(ARMSX2PerGameSettingsPath(serial, crc));
+    if (!si.Load())
+        return NO;
+    return si.ContainsValue(section.UTF8String, key.UTF8String);
+}
+
++ (int)getPerGameINIInt:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(int)def forISO:(nonnull NSString *)isoName {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForISO(isoName, &serial, &crc))
+        return def;
+    INISettingsInterface si(ARMSX2PerGameSettingsPath(serial, crc));
+    if (!si.Load())
+        return def;
+    return si.GetIntValue(section.UTF8String, key.UTF8String, def);
+}
+
++ (BOOL)getPerGameINIBool:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(BOOL)def forISO:(nonnull NSString *)isoName {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForISO(isoName, &serial, &crc))
+        return def;
+    INISettingsInterface si(ARMSX2PerGameSettingsPath(serial, crc));
+    if (!si.Load())
+        return def;
+    return si.GetBoolValue(section.UTF8String, key.UTF8String, def);
+}
+
++ (void)setPerGameINIInt:(nonnull NSString *)section key:(nonnull NSString *)key value:(int)value forISO:(nonnull NSString *)isoName {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForISO(isoName, &serial, &crc))
+        return;
+    INISettingsInterface si(ARMSX2PerGameSettingsPath(serial, crc));
+    si.Load();
+    si.SetIntValue(section.UTF8String, key.UTF8String, value);
+    Error error;
+    si.Save(&error);
+}
+
++ (void)setPerGameINIBool:(nonnull NSString *)section key:(nonnull NSString *)key value:(BOOL)value forISO:(nonnull NSString *)isoName {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForISO(isoName, &serial, &crc))
+        return;
+    INISettingsInterface si(ARMSX2PerGameSettingsPath(serial, crc));
+    si.Load();
+    si.SetBoolValue(section.UTF8String, key.UTF8String, value);
+    Error error;
+    si.Save(&error);
+}
+
++ (void)deletePerGameINIValue:(nonnull NSString *)section key:(nonnull NSString *)key forISO:(nonnull NSString *)isoName {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForISO(isoName, &serial, &crc))
+        return;
+    INISettingsInterface si(ARMSX2PerGameSettingsPath(serial, crc));
+    if (!si.Load())
+        return;
+    si.DeleteValue(section.UTF8String, key.UTF8String);
+    si.RemoveEmptySections();
+    Error error;
+    si.Save(&error);
+}
+
++ (BOOL)hasPerGameINIValueForCurrentGame:(nonnull NSString *)section key:(nonnull NSString *)key {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForCurrentGame(&serial, &crc))
+        return NO;
+    INISettingsInterface si(ARMSX2PerGameSettingsPath(serial, crc));
+    if (!si.Load())
+        return NO;
+    return si.ContainsValue(section.UTF8String, key.UTF8String);
+}
+
++ (int)getPerGameINIIntForCurrentGame:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(int)def {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForCurrentGame(&serial, &crc))
+        return def;
+    INISettingsInterface si(ARMSX2PerGameSettingsPath(serial, crc));
+    if (!si.Load())
+        return def;
+    return si.GetIntValue(section.UTF8String, key.UTF8String, def);
+}
+
++ (BOOL)getPerGameINIBoolForCurrentGame:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(BOOL)def {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForCurrentGame(&serial, &crc))
+        return def;
+    INISettingsInterface si(ARMSX2PerGameSettingsPath(serial, crc));
+    if (!si.Load())
+        return def;
+    return si.GetBoolValue(section.UTF8String, key.UTF8String, def);
+}
+
++ (void)setPerGameINIIntForCurrentGame:(nonnull NSString *)section key:(nonnull NSString *)key value:(int)value {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForCurrentGame(&serial, &crc))
+        return;
+    INISettingsInterface si(ARMSX2PerGameSettingsPath(serial, crc));
+    si.Load();
+    si.SetIntValue(section.UTF8String, key.UTF8String, value);
+    Error error;
+    si.Save(&error);
+    VMManager::ReloadGameSettings();
+    if (MTGS::IsOpen())
+        MTGS::ApplySettings();
+}
+
++ (void)setPerGameINIBoolForCurrentGame:(nonnull NSString *)section key:(nonnull NSString *)key value:(BOOL)value {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForCurrentGame(&serial, &crc))
+        return;
+    INISettingsInterface si(ARMSX2PerGameSettingsPath(serial, crc));
+    si.Load();
+    si.SetBoolValue(section.UTF8String, key.UTF8String, value);
+    Error error;
+    si.Save(&error);
+    VMManager::ReloadGameSettings();
+    if (MTGS::IsOpen())
+        MTGS::ApplySettings();
+}
+
++ (void)deletePerGameINIValueForCurrentGame:(nonnull NSString *)section key:(nonnull NSString *)key {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForCurrentGame(&serial, &crc))
+        return;
+    INISettingsInterface si(ARMSX2PerGameSettingsPath(serial, crc));
+    if (!si.Load())
+        return;
+    si.DeleteValue(section.UTF8String, key.UTF8String);
+    si.RemoveEmptySections();
+    Error error;
+    si.Save(&error);
+    VMManager::ReloadGameSettings();
+    if (MTGS::IsOpen())
+        MTGS::ApplySettings();
 }
 
 + (int)limiterMode
@@ -3282,21 +3923,6 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
     [[NSNotificationCenter defaultCenter] postNotificationName:@"ARMSX2iOSRequestVMShutdown" object:nil];
 }
 
-+ (void)resetVM {
-    if (!VMManager::HasValidVM()) {
-        NSLog(@"[ARMSX2Bridge] Reset VM rejected: no valid VM");
-        return;
-    }
-
-    Host::RunOnCPUThread([]() {
-        if (!VMManager::HasValidVM())
-            return;
-
-        NSLog(@"[ARMSX2Bridge] Reset VM requested");
-        VMManager::Reset();
-    }, false);
-}
-
 + (void)testControllerRumble {
     ARMSX2_iOSTestGamepadRumble();
 }
@@ -3462,10 +4088,9 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
 #pragma mark - PNACH cheats/patches
 
 + (nullable NSString *)pnachPathForCurrentGameAsCheat:(BOOL)asCheat {
-    if (asCheat && (ARMSX2RetroAchievementsHardcoreActive() || EmuConfig.Achievements.HardcoreMode)) {
-        ARMSX2LogRetroAchievementsHardcoreBlock("pnach_cheat_import_current_game");
-        return nil;
-    }
+    // Note: Hardcore Mode does not block locating/creating cheat files here. Cheat
+    // download/import only stores the file; the PCSX2 core refuses to apply cheats
+    // while Hardcore is active, and the Swift toggle gates enabling them.
 
     std::string serial;
     u32 crc = 0;
@@ -3478,10 +4103,8 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
 }
 
 + (nullable NSString *)pnachPathForISO:(nonnull NSString *)isoName asCheat:(BOOL)asCheat {
-    if (asCheat && (ARMSX2RetroAchievementsHardcoreActive() || EmuConfig.Achievements.HardcoreMode)) {
-        ARMSX2LogRetroAchievementsHardcoreBlock("pnach_cheat_import_game");
-        return nil;
-    }
+    // Note: Hardcore Mode does not block locating/creating cheat files here. See
+    // pnachPathForCurrentGameAsCheat: above; the core gates application, not storage.
 
     NSString* path = ARMSX2ResolveISOPath(isoName);
     if (path.length == 0) {
@@ -3508,6 +4131,38 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
         Patch::ReloadPatches(serial, crc, true, true, true, true);
         Patch::UpdateActivePatches(true, true, true, true);
     }, false);
+}
+
++ (NSArray<NSString *> *)patchEnableListForISO:(NSString *)isoName section:(NSString *)section key:(NSString *)key {
+    NSString* path = ARMSX2ResolveISOPath(isoName);
+    if (path.length == 0) return @[];
+
+    GameList::Entry entry;
+    if (!GameList::PopulateEntryFromPath(path.UTF8String, &entry) || entry.crc == 0) return @[];
+    return ARMSX2PatchEnableListForIdentity(entry.serial, entry.crc, section, key);
+}
+
++ (NSArray<NSString *> *)patchEnableListForCurrentGameSection:(NSString *)section key:(NSString *)key {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2GetCurrentSaveStateIdentity(&serial, &crc)) return @[];
+    return ARMSX2PatchEnableListForIdentity(serial, crc, section, key);
+}
+
++ (void)setPatchEnableList:(NSArray<NSString *> *)values forISO:(NSString *)isoName section:(NSString *)section key:(NSString *)key {
+    NSString* path = ARMSX2ResolveISOPath(isoName);
+    if (path.length == 0) return;
+
+    GameList::Entry entry;
+    if (!GameList::PopulateEntryFromPath(path.UTF8String, &entry) || entry.crc == 0) return;
+    ARMSX2SetPatchEnableListForIdentity(values, entry.serial, entry.crc, section, key);
+}
+
++ (void)setPatchEnableListForCurrentGame:(NSArray<NSString *> *)values section:(NSString *)section key:(NSString *)key {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2GetCurrentSaveStateIdentity(&serial, &crc)) return;
+    ARMSX2SetPatchEnableListForIdentity(values, serial, crc, section, key);
 }
 
 #pragma mark - Memory cards
@@ -3599,6 +4254,41 @@ static void ARMSX2WriteGameSettingsForIdentity(const std::string& serial,
     NSLog(@"[ARMSX2Bridge] MemoryCard create name=%@ folder=%d size=%ld result=%d",
           sanitized, folder ? 1 : 0, static_cast<long>(sizeMB), result ? 1 : 0);
     return result ? YES : NO;
+}
+
++ (BOOL)deleteMemoryCardNamed:(nonnull NSString *)name {
+    [self memoryCardDirectory];
+
+    const std::string nativeName(name.UTF8String ?: "");
+    // Reject anything that looks like a path; names are single on-disk entries in the cards dir.
+    if (nativeName.empty() ||
+        nativeName.find('/') != std::string::npos ||
+        nativeName.find('\\') != std::string::npos ||
+        nativeName.find("..") != std::string::npos) {
+        return NO;
+    }
+
+    const std::string fullPath(Path::Combine(EmuFolders::MemoryCards, nativeName));
+
+    bool ok = false;
+    if (FileSystem::FileExists(fullPath.c_str()))
+        ok = FileSystem::DeleteFilePath(fullPath.c_str());
+    else if (FileSystem::DirectoryExists(fullPath.c_str()))
+        ok = FileSystem::RecursiveDeleteDirectory(fullPath.c_str());
+    else
+        return YES; // already gone — treat as success
+
+    // Self-heal: clear any slot still pointing at the deleted card so it does not
+    // reference a stale filename at the next VM boot.
+    if (ok) {
+        for (uint slot = 0; slot < sizeof(EmuConfig.Mcd) / sizeof(EmuConfig.Mcd[0]); slot++) {
+            if (EmuConfig.Mcd[slot].Filename == nativeName)
+                [self setMemoryCardName:@"" forSlot:static_cast<NSInteger>(slot + 1) enabled:NO];
+        }
+    }
+
+    NSLog(@"[ARMSX2Bridge] MemoryCard delete name=%@ result=%d", name, ok ? 1 : 0);
+    return ok ? YES : NO;
 }
 
 #pragma mark - DEV9 / Network

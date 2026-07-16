@@ -9,10 +9,6 @@
 #include "Vif.h"
 #include "Vif_Dma.h"
 
-#ifndef ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-#define ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS 0
-#endif
-
 //////////////////////////////////////////////////////////////////////////
 /////////////////////////// Quick & dirty FIFO :D ////////////////////////
 //////////////////////////////////////////////////////////////////////////
@@ -33,13 +29,7 @@ void ReadFIFO_VIF1(mem128_t* out)
 		DevCon.Warning("Reading from vif1 fifo when stalled");
 
 	ZeroQWC(out); // Clear first in case no data gets written...
-	// [iter216] Soft-fail: corrupted vtlb mappings may trigger unexpected FIFO reads.
-	if (vif1Regs.stat.FQC == 0) {
-		static u32 s_vif1_warn = 0;
-		if (s_vif1_warn < 3)
-			Console.Warning("@@VIF1_FQC0@@ n=%u FQC=0 on FIFO read (skip)", s_vif1_warn++);
-		return;
-	}
+	pxAssertRel(vif1Regs.stat.FQC != 0, "FQC = 0 on VIF FIFO READ!");
 	if (vif1Regs.stat.FDR)
 	{
 		if (vif1Regs.stat.FQC > vif1.GSLastDownloadSize)
@@ -125,23 +115,8 @@ void WriteFIFO_VIF1(const mem128_t* value)
 	pxAssertMsg(ret, "vif stall code not implemented");
 }
 
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-volatile uint32_t g_gif_fifo_write_count = 0;
-#endif
-
 void WriteFIFO_GIF(const mem128_t* value)
 {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	g_gif_fifo_write_count++;
-	{
-		static u32 s_fifo_log_n = 0;
-		if (s_fifo_log_n < 140) {
-			Console.WriteLn("@@GIF_FIFO_DATA@@ n=%u data=[%08x_%08x_%08x_%08x] pc=%08x",
-				s_fifo_log_n, value->_u32[3], value->_u32[2], value->_u32[1], value->_u32[0], cpuRegs.pc);
-			s_fifo_log_n++;
-		}
-	}
-#endif
 	GUNIT_LOG("WriteFIFO_GIF()");
 	if ((!gifUnit.CanDoPath3() || gif_fifo.fifoSize > 0))
 	{

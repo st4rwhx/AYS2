@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include "BuildVersion.h"
-#include "Achievements.h"
 #include "Config.h"
 #include "Counters.h"
 #include "GS/GS.h"
@@ -33,10 +32,6 @@
 #include "VMManager.h"
 
 #include "common/BitUtils.h"
-#if defined(__APPLE__)
-#include "common/Darwin/DarwinMisc.h"
-#include <TargetConditionals.h>
-#endif
 #include "common/Error.h"
 #include "common/FileSystem.h"
 #include "common/Path.h"
@@ -45,6 +40,10 @@
 #include "fmt/chrono.h"
 #include "fmt/format.h"
 #include "imgui.h"
+
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 #include <array>
 #include <cmath>
@@ -69,48 +68,18 @@ SmallString s_gs_frame_times_line;
 SmallString s_resolution_line;
 SmallString s_hardware_info_cpu_line;
 SmallString s_hardware_info_gpu_line;
+SmallString s_cpu_jit_line;
 SmallString s_cpu_usage_ee_line;
 SmallString s_cpu_usage_gs_line;
 SmallString s_cpu_usage_vu_line;
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-SmallString s_ios_runtime_line;
-SmallString s_ios_device_stats_line;
-#endif
 std::vector<SmallString> s_software_thread_lines;
 SmallString s_capture_line;
 SmallString s_gpu_usage_line;
 SmallString s_gpu_debug_info_line;
+SmallString s_gpu_stats_line;
 SmallString s_speed_icon;
 
 constexpr ImU32 white_color = IM_COL32(255, 255, 255, 255);
-
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-extern "C" bool ARMSX2_iOSShouldShowDeviceStatsOverlay();
-extern "C" int ARMSX2_iOSGetDeviceStatsOverlaySeverity();
-extern "C" const char* ARMSX2_iOSGetDeviceStatsOverlayLine();
-
-// AYS2: in-game OSD brand (seam)
-static constexpr const char* ARMSX2_IOS_OSD_BRAND = "AYS2";
-static constexpr const char* ARMSX2_IOS_PCSX2_CORE_VERSION_FALLBACK = "2.7.394";
-
-static const char* ARMSX2IOSJitState(bool enabled)
-{
-	return enabled ? "JIT" : "INT";
-}
-
-static ImU32 ARMSX2IOSDeviceStatsColor()
-{
-	switch (ARMSX2_iOSGetDeviceStatsOverlaySeverity())
-	{
-		case 2:
-			return IM_COL32(255, 100, 100, 255);
-		case 1:
-			return IM_COL32(255, 220, 100, 255);
-		default:
-			return white_color;
-	}
-}
-#endif
 
 // OSD positioning funcs
 ImVec2 CalculateOSDPosition(OsdOverlayPos position, float margin, const ImVec2& text_size, float window_width, float window_height)
@@ -412,31 +381,30 @@ __ri void ImGuiManager::DrawPerformanceOverlay(float& position_y, float scale, f
 					s_speed_line.append_format(" (T: {:.0f}%)", target_speed * 100.0f);
 			}
 
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-				if (GSConfig.OsdShowVersion)
+			if (GSConfig.OsdShowVersion)
+			{
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+				if (BuildVersion::GitTagHi != 0 || BuildVersion::GitTagMid != 0 || BuildVersion::GitTagLo != 0)
 				{
-					if (BuildVersion::GitTagHi > 0)
-					{
-						s_speed_line.append_format("{}{} | Core: {}.{}.{}",
-							s_speed_line.empty() ? "" : " | ", ARMSX2_IOS_OSD_BRAND,
-							BuildVersion::GitTagHi, BuildVersion::GitTagMid, BuildVersion::GitTagLo);
-					}
-					else
-					{
-						s_speed_line.append_format("{}{} | Core: {}",
-							s_speed_line.empty() ? "" : " | ", ARMSX2_IOS_OSD_BRAND,
-							ARMSX2_IOS_PCSX2_CORE_VERSION_FALLBACK);
-					}
+					s_speed_line.append_format("{}ARMSX2-MacOS 2.1 | Core: {}.{}.{}",
+						s_speed_line.empty() ? "" : " | ", BuildVersion::GitTagHi, BuildVersion::GitTagMid, BuildVersion::GitTagLo);
 				}
-				if (Achievements::IsHardcoreModeActive())
-					s_speed_line.append_format("{}RA:HC", s_speed_line.empty() ? "" : " | ");
-#else
-				if (GSConfig.OsdShowVersion)
-					s_speed_line.append_format("{}PCSX2 {}", s_speed_line.empty() ? "" : " | ", BuildVersion::GitRev);
-#endif
-
-				if (!s_speed_line.empty())
+				else
 				{
+					s_speed_line.append_format("{}ARMSX2-MacOS 2.1 | Core: {}",
+						s_speed_line.empty() ? "" : " | ", BuildVersion::GitRev);
+				}
+#elif defined(__ANDROID__)
+				s_speed_line.append_format("{}ARMSX2 2.7", s_speed_line.empty() ? "" : " | ");
+#elif defined(__ANDROID__)
+				s_speed_line.append_format("{}ARMSX2 2.7", s_speed_line.empty() ? "" : " | ");
+#else
+				s_speed_line.append_format("{}PCSX2 {}", s_speed_line.empty() ? "" : " | ", BuildVersion::GitRev);
+#endif
+			}
+
+			if (!s_speed_line.empty())
+			{
 				if (speed < 95.0f)
 					s_speed_line_color = IM_COL32(255, 100, 100, 255); // red
 				else if (speed > 105.0f)
@@ -444,33 +412,12 @@ __ri void ImGuiManager::DrawPerformanceOverlay(float& position_y, float scale, f
 				else
 					s_speed_line_color = white_color;
 
-					DRAW_LINE(osd_font, font_size, s_speed_line.c_str(), s_speed_line_color);
-				}
+				DRAW_LINE(osd_font, font_size, s_speed_line.c_str(), s_speed_line_color);
+			}
 
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-				if (GSConfig.OsdShowCPU)
-				{
-					const bool ee_jit = EmuConfig.Cpu.Recompiler.EnableEE && !DarwinMisc::iPSX2_FORCE_EE_INTERP;
-					s_ios_runtime_line.format("EE:{} | IOP:{} | VU0:{} | VU1:{}",
-						ARMSX2IOSJitState(ee_jit),
-						ARMSX2IOSJitState(EmuConfig.Cpu.Recompiler.EnableIOP),
-						ARMSX2IOSJitState(EmuConfig.Cpu.Recompiler.EnableVU0),
-						ARMSX2IOSJitState(EmuConfig.Cpu.Recompiler.EnableVU1));
-					DRAW_LINE(osd_font, font_size, s_ios_runtime_line.c_str(), white_color);
-				}
-
-				if (ARMSX2_iOSShouldShowDeviceStatsOverlay())
-				{
-					const char* stats_line = ARMSX2_iOSGetDeviceStatsOverlayLine();
-					s_ios_device_stats_line.assign(stats_line ? stats_line : "");
-					if (!s_ios_device_stats_line.empty())
-						DRAW_LINE(osd_font, font_size, s_ios_device_stats_line.c_str(), ARMSX2IOSDeviceStatsColor());
-				}
-#endif
-
-				if (GSConfig.OsdShowGSStats)
-				{
-					GSgetStats(s_gs_stats_line);
+			if (GSConfig.OsdShowGSStats)
+			{
+				GSgetStats(s_gs_stats_line);
 				GSgetMemoryStats(s_gs_memory_stats_line);
 				s_gs_frame_times_line.format("{} QF | Min: {:.2f}ms | Avg: {:.2f}ms | Max: {:.2f}ms",
 					MTGS::GetCurrentVsyncQueueSize() - 1, // subtract one for the current frame
@@ -517,12 +464,45 @@ __ri void ImGuiManager::DrawPerformanceOverlay(float& position_y, float scale, f
 				DRAW_LINE(osd_font, font_size, s_hardware_info_cpu_line.c_str(), white_color);
 
 				// GPU
-				s_hardware_info_gpu_line.format("GPU: {}{}", g_gs_device->GetName(), GSConfig.UseDebugDevice ? " (Debug)" : "");
+				const char* gpu_suffix = "";
+				if (GSConfig.UseDebugDevice && GSConfig.HWROV)
+					gpu_suffix = " (Debug & ROV)";
+				else if (GSConfig.UseDebugDevice)
+					gpu_suffix = " (Debug)";
+				else if (GSConfig.HWROV)
+					gpu_suffix = " (ROV)";
+
+				s_hardware_info_gpu_line.format(
+					"GPU: {}{}",
+					g_gs_device->GetName(),
+					gpu_suffix);
+
 				DRAW_LINE(osd_font, font_size, s_hardware_info_gpu_line.c_str(), white_color);
+
+#if defined(__ANDROID__)
+				// Diagnostic: which core each emu thread is actually running on (c<N>),
+				// its allowed-core affinity mask (m<hex>), and the cpuinfo cluster topology.
+				// Reveals whether the VU/GS worker threads are being parked on slow cores.
+				if (VMManager::HasValidVM())
+				{
+					static std::string s_thread_placement_line;
+					s_thread_placement_line = VMManager::Internal::GetThreadPlacementDebug();
+					DRAW_LINE(osd_font, font_size, s_thread_placement_line.c_str(), white_color);
+				}
+#endif
 			}
 
 			if (GSConfig.OsdShowCPU)
 			{
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+				s_cpu_jit_line.format("EE:{} | IOP:{} | VU0:{} | VU1:{}",
+					EmuConfig.Cpu.Recompiler.EnableEE ? "JIT" : "INT",
+					EmuConfig.Cpu.Recompiler.EnableIOP ? "JIT" : "INT",
+					EmuConfig.Cpu.Recompiler.EnableVU0 ? "JIT" : "INT",
+					EmuConfig.Cpu.Recompiler.EnableVU1 ? "JIT" : "INT");
+				DRAW_LINE(osd_font, font_size, s_cpu_jit_line.c_str(), white_color);
+#endif
+
 				if (EmuConfig.Speedhacks.EECycleRate != 0 || EmuConfig.Speedhacks.EECycleSkip != 0)
 					s_cpu_usage_ee_line.format("EE[{}/{}]: ", EmuConfig.Speedhacks.EECycleRate, EmuConfig.Speedhacks.EECycleSkip);
 				else
@@ -582,24 +562,34 @@ __ri void ImGuiManager::DrawPerformanceOverlay(float& position_y, float scale, f
 				}
 #endif
 			}
+
+			if (GSConfig.OsdShowGPUStats)
+			{
+				const auto FormatUnits = [](double val) {
+					if (val >= 1e9)
+						return fmt::format("{:.5}B", val / 1e9);
+					if (val >= 1e6)
+						return fmt::format("{:.5}M", val / 1e6);
+					if (val >= 1e3)
+						return fmt::format("{:.5}K", val / 1e3);
+					return fmt::format("{:.5}", val);
+				};
+
+				s_gpu_stats_line.format("VSI: {} | PSI: {}",
+					FormatUnits(PerformanceMetrics::GetGPUAverageVSInvocations()),
+					FormatUnits(PerformanceMetrics::GetGPUAveragePSInvocations()));
+				DRAW_LINE(osd_font, font_size, s_gpu_stats_line.c_str(), white_color);
+			}
 		}
 		// No refresh yet. Display cached lines.
 		else
 		{
-				if (GSConfig.OsdShowFPS || GSConfig.OsdShowVPS || GSConfig.OsdShowSpeed || GSConfig.OsdShowVersion)
-					DRAW_LINE(osd_font, font_size, s_speed_line.c_str(), s_speed_line_color);
+			if (GSConfig.OsdShowFPS || GSConfig.OsdShowVPS || GSConfig.OsdShowSpeed || GSConfig.OsdShowVersion)
+				DRAW_LINE(osd_font, font_size, s_speed_line.c_str(), s_speed_line_color);
 
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-				if (GSConfig.OsdShowCPU && !s_ios_runtime_line.empty())
-					DRAW_LINE(osd_font, font_size, s_ios_runtime_line.c_str(), white_color);
-
-				if (ARMSX2_iOSShouldShowDeviceStatsOverlay() && !s_ios_device_stats_line.empty())
-					DRAW_LINE(osd_font, font_size, s_ios_device_stats_line.c_str(), ARMSX2IOSDeviceStatsColor());
-#endif
-
-				if (GSConfig.OsdShowGSStats)
-				{
-					if (!s_gs_stats_line.empty())
+			if (GSConfig.OsdShowGSStats)
+			{
+				if (!s_gs_stats_line.empty())
 					DRAW_LINE(osd_font, font_size, s_gs_stats_line.c_str(), white_color);
 				if (!s_gs_memory_stats_line.empty())
 					DRAW_LINE(osd_font, font_size, s_gs_memory_stats_line.c_str(), white_color);
@@ -617,6 +607,10 @@ __ri void ImGuiManager::DrawPerformanceOverlay(float& position_y, float scale, f
 
 			if (GSConfig.OsdShowCPU)
 			{
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+				if (!s_cpu_jit_line.empty())
+					DRAW_LINE(osd_font, font_size, s_cpu_jit_line.c_str(), white_color);
+#endif
 				DRAW_LINE(osd_font, font_size, s_cpu_usage_ee_line.c_str(), white_color);
 				DRAW_LINE(osd_font, font_size, s_cpu_usage_gs_line.c_str(), white_color);
 				if (THREAD_VU1)
@@ -641,6 +635,11 @@ __ri void ImGuiManager::DrawPerformanceOverlay(float& position_y, float scale, f
 				if (g_gs_device->GetRenderAPI() == RenderAPI::D3D12)
 					DRAW_LINE(osd_font, font_size, s_gpu_debug_info_line.c_str(), white_color);
 #endif
+			}
+
+			if (GSConfig.OsdShowGPUStats)
+			{
+				DRAW_LINE(osd_font, font_size, s_gpu_stats_line.c_str(), white_color);
 			}
 		}
 
@@ -998,7 +997,7 @@ __ri void ImGuiManager::DrawSettingsOverlay(float scale, float margin, float spa
 
 		if (GSConfig.HWAccurateAlphaTest)
 			APPEND("AAT ");
-		
+
 		if (GSConfig.HWAA1)
 			APPEND("AA1 ");
 

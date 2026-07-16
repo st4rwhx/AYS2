@@ -1,21 +1,26 @@
-# Setting it to a range tells it that it supports the features on the newer
-# versions as well, avoiding setting policies.
+# iOS 2.4.1 CMakeLists adapted for AYS2 flat structure
+# SPDX-License-Identifier: GPL-3.0+
+# 
+# AYS2: This CMakeLists preserves all iOS 2.4.1 functionality while adapting
+# paths for AYS2's flat src/cpp/ structure (no monorepo root reference).
+# All AYS2 seams marked with "# AYS2:" for easy grep.
+
 cmake_minimum_required(VERSION 3.16...3.25)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
-# Enabling this cmake policy gets rid of warnings regarding LTO.
 cmake_policy(SET CMP0069 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
-	message(FATAL_ERROR "PCSX2 does not support in-tree builds.  Please make a build directory that is not the PCSX2 source directory and generate your CMake project there using either `cmake -B build_directory` or by running cmake from the build directory.")
+	message(FATAL_ERROR "PCSX2 does not support in-tree builds. Please make a build directory that is not the PCSX2 source directory.")
 endif()
 
+# AYS2: iOS version is 2.4.1 (from ARMSX2 iOS, not 2.6.0.5 which is Android!)
 set(ARMSX2_VERSION_MAJOR 2)
-set(ARMSX2_VERSION_MINOR 2)
-set(ARMSX2_VERSION_PATCH 2)
+set(ARMSX2_VERSION_MINOR 4)
+set(ARMSX2_VERSION_PATCH 1)
 set(ARMSX2_VERSION "${ARMSX2_VERSION_MAJOR}.${ARMSX2_VERSION_MINOR}.${ARMSX2_VERSION_PATCH}")
-set(ARMSX2_BUILD_NUMBER 222)
+set(ARMSX2_BUILD_NUMBER 241)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	set(CMAKE_C_COMPILER_WORKS 1)
@@ -26,7 +31,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	if(ARMSX2_MAC_CATALYST)
 		set(ARMSX2_DEFAULT_BUNDLE_IDENTIFIER "com.armsx2.macos")
 	else()
-		# AYS2: bundle id (seam) — HARD CONSTRAINT, never change (preserves install/data)
+		# AYS2: Bundle identifier seam (HARD CONSTRAINT - never change)
 		set(ARMSX2_DEFAULT_BUNDLE_IDENTIFIER "com.ayano.aysx2")
 	endif()
 	set(ARMSX2_BUNDLE_IDENTIFIER "${ARMSX2_DEFAULT_BUNDLE_IDENTIFIER}" CACHE STRING "Apple bundle identifier")
@@ -36,7 +41,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	else()
 		set(ARMSX2_JIT_ENTITLEMENTS_DEFAULT OFF)
 	endif()
-	option(ARMSX2_ENABLE_JIT_ENTITLEMENTS "Attach the Apple JIT entitlement file for provisioning profiles which allow it" ${ARMSX2_JIT_ENTITLEMENTS_DEFAULT})
+	option(ARMSX2_ENABLE_JIT_ENTITLEMENTS "Attach Apple JIT entitlement" ${ARMSX2_JIT_ENTITLEMENTS_DEFAULT})
+	option(ARMSX2_IOS_DSYM "Emit dSYM for crash symbolication" OFF)
 	set(ARMSX2_IOS_DEPLOYMENT_TARGET "17.0" CACHE STRING "Minimum iOS deployment target")
 	set(CMAKE_OSX_DEPLOYMENT_TARGET "${ARMSX2_IOS_DEPLOYMENT_TARGET}" CACHE STRING "Minimum iOS deployment target" FORCE)
 	set(ARMSX2_MACOS_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum Mac Catalyst deployment target")
@@ -47,20 +53,23 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	endif()
 	set(CMAKE_OSX_ARCHITECTURES "arm64")
 	set(USE_OPENGL OFF CACHE BOOL "Enable OpenGL renderer" FORCE)
+	set(USE_VULKAN OFF CACHE BOOL "Enable Vulkan renderer" FORCE)
 	set(SDL_OPENGL OFF CACHE BOOL "Enable SDL OpenGL support" FORCE)
 	set(SDL_OPENGLES OFF CACHE BOOL "Enable SDL OpenGL ES support" FORCE)
+	set(ENABLE_QT_UI OFF CACHE BOOL "Enables building the PCSX2 Qt interface." FORCE)
+	set(ENABLE_TESTS OFF CACHE BOOL "Enables building the unit tests" FORCE)
+	set(ENABLE_GSRUNNER OFF CACHE BOOL "Enables building the GSRunner" FORCE)
 endif()
 
-# Project Name
 project(ARMSX2iOS VERSION ${ARMSX2_VERSION} LANGUAGES C CXX)
 
 add_compile_definitions(ARMSX2_VERSION_STR="${ARMSX2_VERSION}")
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-	add_compile_definitions(_M_ARM64=1)
 	set(_M_ARM64 TRUE)
 	set(_M_X86 FALSE)
 	set(CMAKE_HOST_SYSTEM_PROCESSOR "arm64")
+	set(CMAKE_SYSTEM_PROCESSOR "arm64")
 
 	if(CMAKE_GENERATOR STREQUAL "Xcode")
 		if(ARMSX2_MAC_CATALYST OR NOT ARMSX2_REAL_DEVICE)
@@ -73,28 +82,23 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	endif()
 endif()
 
-# Variable to check that people use the good file
 set(TOP_CMAKE_WAS_SOURCED TRUE)
 
-# set module path
-set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
+# AYS2: Flat structure - core is local, not from monorepo root
+# The 3rdparty libs are included by SearchForStuff below from CMAKE_SOURCE_DIR/3rdparty
+set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-# Write binaries to the bin directory under the build directory.
-# This makes it simple to run development builds directly out of the build directory.
 if (UNIX AND NOT APPLE)
 	set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 	set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 endif()
 
-# include some generic functions to ensure correctness of the env
 include(Pcsx2Utils)
 
 check_no_parenthesis_in_path()
 detect_operating_system()
 detect_compiler()
 
-#-------------------------------------------------------------------------------
-# Include specific module
 include(BuildParameters)
 include(SearchForStuff)
 
@@ -104,87 +108,30 @@ if(ANDROID)
 	if(USE_DISCORD_SDK)
 		find_package(discord_partner_sdk CONFIG)
 	endif()
-	# Link all native binaries with 16KB page support for newer devices.
 	add_link_options(-Wl,-z,max-page-size=16384)
-	# Belt-and-suspenders: ensure every shared/module target inherits the flag.
 	set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
 	set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
 endif()
 
-# Must be done after SearchForStuff
 get_git_version_info()
 write_svnrev_h()
 
-# make common
+# AYS2: Flat structure - direct subdirectories (not from ARMSX2_ROOT)
 add_subdirectory(common)
-
-# make pcsx2
 add_subdirectory(pcsx2)
-#add_subdirectory(pcsx2-qt)
 
-# Updater is Windows only for now.
 if (WIN32)
 	add_subdirectory(updater)
 endif()
 
-## tests
-#if(ENABLE_TESTS)
-#	add_subdirectory(3rdparty/googletest)
-#	add_subdirectory(tests/ctest)
-#endif()
-
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	enable_language(Swift)
 
-	set(SWIFT_SOURCES
-		${CMAKE_SOURCE_DIR}/../swift/Views/RootView.swift
-		# AYS2: additive Swift sources (seam) — DashboardView..DiscordLogoShape, SoundManager, TermsOfUseView
-		${CMAKE_SOURCE_DIR}/../swift/Views/DashboardView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/CommunityView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/DiscordLogoShape.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/RetroKit.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/TermsOfUseView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/SoundManager.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/BootSplashView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/GameListView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/CoverThumbnailView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/BIOSListView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/HelpView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/GameScreenView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/MetalGameView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/EmulatorView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/VirtualControllerView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/LicenseView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/Settings/SettingsRootView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/Settings/AppearanceSettingsView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/Settings/EmulatorSettingsView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/Settings/GraphicsSettingsView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/Settings/MemoryCardSettingsView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/Settings/StorageSettingsView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/Settings/RetroAchievementsSettingsView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/Settings/OverlaySettingsView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/Settings/GamepadSettingsView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/Settings/VirtualPadSettingsView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Views/Settings/PadLayoutEditView.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/PadLayoutStore.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/PadLayoutPresetStore.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/PadLayoutImportExport.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/EmulatorBridge.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/SwiftUIHost.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/AppState.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/AppLanguage.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/VirtualPadSkin.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/VPadSkinLibraryStore.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/SettingsStore.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/FileImportHandler.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/ImportFileCopier.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/ExternalGameLibrary.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/ARMSX2DeepLinkHandler.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/ImportDocumentPicker.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/ShareSheet.swift
-		${CMAKE_SOURCE_DIR}/../swift/Models/CoverStore.swift
+	file(GLOB_RECURSE SWIFT_SOURCES CONFIGURE_DEPENDS
+		${CMAKE_SOURCE_DIR}/../swift/*.swift
 	)
 
+	# Info.plist: configure template in build directory
 	configure_file("${CMAKE_SOURCE_DIR}/Info.plist.in" "${CMAKE_BINARY_DIR}/Info.plist" @ONLY)
 
 	if(ARMSX2_REAL_DEVICE OR ARMSX2_MAC_CATALYST)
@@ -219,10 +166,19 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		set(ARMSX2_ENABLE_HARDENED_RUNTIME "NO")
 	endif()
 
-	add_executable(ARMSX2iOS ios_main.mm ARMSX2Bridge.mm ${SWIFT_SOURCES})
+	set(IOS_RUNTIME_SOURCES
+		ios_main.mm
+		IOS/AppDelegate.mm
+		IOS/GamepadHaptics.mm
+		IOS/HostImpls.mm
+		IOS/PlaySoundAsync.mm
+		IOS/SceneDelegate.mm
+	)
+	add_executable(ARMSX2iOS ${IOS_RUNTIME_SOURCES} ARMSX2Bridge.mm ${SWIFT_SOURCES})
 	set_target_properties(ARMSX2iOS PROPERTIES
 		MACOSX_BUNDLE TRUE
 		MACOSX_BUNDLE_GUI_IDENTIFIER "${ARMSX2_BUNDLE_IDENTIFIER}"
+		# AYS2: App name seam (displayed in iOS)
 		MACOSX_BUNDLE_BUNDLE_NAME "AYS2"
 		MACOSX_BUNDLE_BUNDLE_VERSION "${ARMSX2_BUILD_NUMBER}"
 		MACOSX_BUNDLE_SHORT_VERSION_STRING "${ARMSX2_VERSION}"
@@ -246,62 +202,81 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${ARMSX2_DEVELOPMENT_TEAM}"
 		XCODE_ATTRIBUTE_PROVISIONING_PROFILE_SPECIFIER ""
 		XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${ARMSX2_CODE_SIGN_ENTITLEMENTS}"
-			XCODE_ATTRIBUTE_SWIFT_OBJC_BRIDGING_HEADER "${CMAKE_SOURCE_DIR}/ARMSX2-Bridging-Header.h"
-			XCODE_ATTRIBUTE_SWIFT_VERSION "6.0"
-			XCODE_ATTRIBUTE_CLANG_ENABLE_MODULES "YES"
-			XCODE_ATTRIBUTE_ENABLE_ON_DEMAND_RESOURCES "NO"
-			XCODE_ATTRIBUTE_LD_RUNPATH_SEARCH_PATHS "@executable_path/Frameworks /usr/lib/swift"
-			XCODE_ATTRIBUTE_LIBRARY_SEARCH_PATHS "$(inherited) $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) /usr/lib/swift"
-			XCODE_ATTRIBUTE_OTHER_SWIFT_FLAGS ""
-			XCODE_ATTRIBUTE_MTL_HEADER_SEARCH_PATHS "${CMAKE_SOURCE_DIR}/pcsx2/GS/Renderers/Metal ${CMAKE_SOURCE_DIR}/3rdparty/include ${CMAKE_SOURCE_DIR}/../assets ${CMAKE_SOURCE_DIR}/../assets/resources"
-			XCODE_ATTRIBUTE_MTL_ENABLE_DEBUG_INFO "$<IF:$<CONFIG:Debug>,INCLUDE_SOURCE,>"
-		)
+		XCODE_ATTRIBUTE_SWIFT_OBJC_BRIDGING_HEADER "${CMAKE_SOURCE_DIR}/ARMSX2-Bridging-Header.h"
+		XCODE_ATTRIBUTE_SWIFT_VERSION "6.0"
+		XCODE_ATTRIBUTE_CLANG_ENABLE_MODULES "YES"
+		XCODE_ATTRIBUTE_ENABLE_ON_DEMAND_RESOURCES "NO"
+		XCODE_ATTRIBUTE_LD_RUNPATH_SEARCH_PATHS "@executable_path/Frameworks /usr/lib/swift"
+		XCODE_ATTRIBUTE_LIBRARY_SEARCH_PATHS "$(inherited) $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) /usr/lib/swift"
+		XCODE_ATTRIBUTE_MTL_HEADER_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/pcsx2/GS/Renderers/Metal ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/include ${CMAKE_SOURCE_DIR}/../assets ${CMAKE_SOURCE_DIR}/../assets/resources"
+		XCODE_ATTRIBUTE_MTL_ENABLE_DEBUG_INFO "$<IF:$<CONFIG:Debug>,INCLUDE_SOURCE,>"
+	)
 
-		set(BOOT_SPLASH_VIDEO "${CMAKE_SOURCE_DIR}/../res/raw/boot_intro.mp4")
-		set(IOS_APP_ICON_FILES
-			"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-20.png"
-			"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-29.png"
-			"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-40.png"
-			"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-58.png"
-			"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-60.png"
-			"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-76.png"
-			"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-80.png"
-			"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-87.png"
-			"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-120.png"
-			"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-152.png"
-			"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-167.png"
-			"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-180.png"
-			"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
-		)
-		foreach(IOS_APP_ICON_FILE IN LISTS IOS_APP_ICON_FILES)
-			if(EXISTS "${IOS_APP_ICON_FILE}")
-				target_sources(ARMSX2iOS PRIVATE "${IOS_APP_ICON_FILE}")
-				set_source_files_properties("${IOS_APP_ICON_FILE}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-			endif()
-		endforeach()
-		if(EXISTS "${BOOT_SPLASH_VIDEO}")
-			target_sources(ARMSX2iOS PRIVATE "${BOOT_SPLASH_VIDEO}")
-			set_source_files_properties("${BOOT_SPLASH_VIDEO}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+	set(BOOT_SPLASH_VIDEO "${CMAKE_SOURCE_DIR}/../res/raw/boot_intro.mp4")
+	set(IOS_APP_ICON_FILES
+		"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-20.png"
+		"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-29.png"
+		"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-40.png"
+		"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-58.png"
+		"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-60.png"
+		"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-76.png"
+		"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-80.png"
+		"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-87.png"
+		"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-120.png"
+		"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-152.png"
+		"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-167.png"
+		"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-180.png"
+		"${CMAKE_SOURCE_DIR}/../assets/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
+	)
+	foreach(IOS_APP_ICON_FILE IN LISTS IOS_APP_ICON_FILES)
+		if(EXISTS "${IOS_APP_ICON_FILE}")
+			target_sources(ARMSX2iOS PRIVATE "${IOS_APP_ICON_FILE}")
+			set_source_files_properties("${IOS_APP_ICON_FILE}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 		endif()
+	endforeach()
 
-		file(GLOB IOS_CONTROLLER_ICON_FILES "${CMAKE_SOURCE_DIR}/../assets/app_icons/controller_icons_nether/*.png")
-		if(IOS_CONTROLLER_ICON_FILES)
-			target_sources(ARMSX2iOS PRIVATE ${IOS_CONTROLLER_ICON_FILES})
-			set_source_files_properties(${IOS_CONTROLLER_ICON_FILES} PROPERTIES
-				MACOSX_PACKAGE_LOCATION Resources)
+	file(GLOB IOS_ALTERNATE_APP_ICON_FILES "${CMAKE_SOURCE_DIR}/../assets/app_icons/alternate_app_icons/*.png")
+	foreach(IOS_ALTERNATE_APP_ICON_FILE IN LISTS IOS_ALTERNATE_APP_ICON_FILES)
+		if(EXISTS "${IOS_ALTERNATE_APP_ICON_FILE}")
+			target_sources(ARMSX2iOS PRIVATE "${IOS_ALTERNATE_APP_ICON_FILE}")
+			set_source_files_properties("${IOS_ALTERNATE_APP_ICON_FILE}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 		endif()
+	endforeach()
 
-		file(GLOB_RECURSE IOS_CONTROLLER_SKIN_FILES "${CMAKE_SOURCE_DIR}/../assets/app_icons/controller_skins/*.png")
-		foreach(IOS_CONTROLLER_SKIN_FILE IN LISTS IOS_CONTROLLER_SKIN_FILES)
-			file(RELATIVE_PATH IOS_CONTROLLER_SKIN_RELATIVE_FILE
-				"${CMAKE_SOURCE_DIR}/../assets/app_icons"
-				"${IOS_CONTROLLER_SKIN_FILE}")
-			get_filename_component(IOS_CONTROLLER_SKIN_RELATIVE_DIR
-				"${IOS_CONTROLLER_SKIN_RELATIVE_FILE}" DIRECTORY)
-			target_sources(ARMSX2iOS PRIVATE "${IOS_CONTROLLER_SKIN_FILE}")
-			set_source_files_properties("${IOS_CONTROLLER_SKIN_FILE}" PROPERTIES
-				MACOSX_PACKAGE_LOCATION "Resources/${IOS_CONTROLLER_SKIN_RELATIVE_DIR}")
-		endforeach()
+	file(GLOB IOS_ALTERNATE_APP_ICON_PREVIEWS "${CMAKE_SOURCE_DIR}/../assets/app_icons/alternate_app_icons/previews/*.png")
+	foreach(IOS_ALTERNATE_APP_ICON_PREVIEW IN LISTS IOS_ALTERNATE_APP_ICON_PREVIEWS)
+		if(EXISTS "${IOS_ALTERNATE_APP_ICON_PREVIEW}")
+			target_sources(ARMSX2iOS PRIVATE "${IOS_ALTERNATE_APP_ICON_PREVIEW}")
+			set_source_files_properties("${IOS_ALTERNATE_APP_ICON_PREVIEW}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+		endif()
+	endforeach()
+
+	file(GLOB IOS_ALTERNATE_APP_ICON_EXPORTS "${CMAKE_SOURCE_DIR}/../assets/app_icons/alternate_app_icons/exports/*.png")
+	foreach(IOS_ALTERNATE_APP_ICON_EXPORT IN LISTS IOS_ALTERNATE_APP_ICON_EXPORTS)
+		if(EXISTS "${IOS_ALTERNATE_APP_ICON_EXPORT}")
+			target_sources(ARMSX2iOS PRIVATE "${IOS_ALTERNATE_APP_ICON_EXPORT}")
+			set_source_files_properties("${IOS_ALTERNATE_APP_ICON_EXPORT}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+		endif()
+	endforeach()
+
+	if(EXISTS "${BOOT_SPLASH_VIDEO}")
+		target_sources(ARMSX2iOS PRIVATE "${BOOT_SPLASH_VIDEO}")
+		set_source_files_properties("${BOOT_SPLASH_VIDEO}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+	endif()
+
+	file(GLOB IOS_CONTROLLER_ICON_FILES "${CMAKE_SOURCE_DIR}/../assets/app_icons/controller_icons_nether/*.png")
+	if(IOS_CONTROLLER_ICON_FILES)
+		target_sources(ARMSX2iOS PRIVATE ${IOS_CONTROLLER_ICON_FILES})
+		set_source_files_properties(${IOS_CONTROLLER_ICON_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+	endif()
+
+	file(GLOB_RECURSE IOS_CONTROLLER_SKIN_FILES "${CMAKE_SOURCE_DIR}/../assets/app_icons/controller_skins/*.png")
+	foreach(IOS_CONTROLLER_SKIN_FILE IN LISTS IOS_CONTROLLER_SKIN_FILES)
+		file(RELATIVE_PATH IOS_CONTROLLER_SKIN_RELATIVE_FILE "${CMAKE_SOURCE_DIR}/../assets/app_icons" "${IOS_CONTROLLER_SKIN_FILE}")
+		get_filename_component(IOS_CONTROLLER_SKIN_RELATIVE_DIR "${IOS_CONTROLLER_SKIN_RELATIVE_FILE}" DIRECTORY)
+		target_sources(ARMSX2iOS PRIVATE "${IOS_CONTROLLER_SKIN_FILE}")
+		set_source_files_properties("${IOS_CONTROLLER_SKIN_FILE}" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/${IOS_CONTROLLER_SKIN_RELATIVE_DIR}")
+	endforeach()
 
 	set(ARMSX2_APPLE_FRAMEWORKS
 		"-framework UIKit"
@@ -348,46 +323,47 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	endif()
 
 	target_include_directories(ARMSX2iOS PRIVATE
-		${CMAKE_SOURCE_DIR}
-		${CMAKE_SOURCE_DIR}/common
-		${CMAKE_SOURCE_DIR}/pcsx2
-		${CMAKE_SOURCE_DIR}/pcsx2/GS/Renderers/Metal
-		${CMAKE_SOURCE_DIR}/3rdparty/SDL3/include
-		${CMAKE_SOURCE_DIR}/3rdparty/fmt/include
-		${CMAKE_SOURCE_DIR}/3rdparty/fast_float/include
-		${CMAKE_SOURCE_DIR}/3rdparty/vixl/include
-		${CMAKE_SOURCE_DIR}/3rdparty/include
-		${CMAKE_SOURCE_DIR}/3rdparty/vulkan/include
-		${CMAKE_SOURCE_DIR}/3rdparty/glslang/glslang
-		${CMAKE_SOURCE_DIR}/3rdparty/glslang/include
+		${CMAKE_CURRENT_SOURCE_DIR}
+		${CMAKE_CURRENT_SOURCE_DIR}/common
+		${CMAKE_CURRENT_SOURCE_DIR}/pcsx2
+		${CMAKE_CURRENT_SOURCE_DIR}/pcsx2/GS/Renderers/Metal
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/SDL3/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/fmt/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/fast_float/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/vixl/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/vulkan/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/glslang/glslang
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/glslang/include
 		${CMAKE_BINARY_DIR}/common/include
 		${CMAKE_BINARY_DIR}/pcsx2
-		${CMAKE_SOURCE_DIR}/3rdparty/simpleini/include
-		${CMAKE_SOURCE_DIR}/3rdparty/imgui/include
-		${CMAKE_SOURCE_DIR}/3rdparty/rapidyaml/include
-		${CMAKE_SOURCE_DIR}/3rdparty/cpuinfo/include
-		${CMAKE_SOURCE_DIR}/3rdparty/libchdr/include
-		${CMAKE_SOURCE_DIR}/3rdparty/libzip/lib
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/simpleini/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/imgui/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/rapidyaml/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/cpuinfo/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/libchdr/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/libzip/lib
 		${CMAKE_BINARY_DIR}/3rdparty/libzip
-		${CMAKE_SOURCE_DIR}/3rdparty/cubeb/include
-		${CMAKE_SOURCE_DIR}/3rdparty/rcheevos/include
-		${CMAKE_SOURCE_DIR}/3rdparty/freesurround/include
-		${CMAKE_SOURCE_DIR}/3rdparty/freetype/include
-		${CMAKE_SOURCE_DIR}/3rdparty/plutosvg1/source
-		${CMAKE_SOURCE_DIR}/3rdparty/plutosvg1/plutovg/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/cubeb/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/rcheevos/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/freesurround/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/freetype/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/plutosvg1/source
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/plutosvg1/plutovg/include
 		${CMAKE_BINARY_DIR}/3rdparty/freetype/include
-		${CMAKE_SOURCE_DIR}/3rdparty/soundtouch/soundtouch
-		${CMAKE_SOURCE_DIR}/3rdparty/lz4/lz4/lib
-		${CMAKE_SOURCE_DIR}/3rdparty/lzma/include
-		${CMAKE_SOURCE_DIR}/3rdparty/zstd/zstd/lib
-		${CMAKE_SOURCE_DIR}/3rdparty/demangler/include
-		${CMAKE_SOURCE_DIR}/3rdparty/ccc/src
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/soundtouch/soundtouch
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/lz4/lz4/lib
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/lzma/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/zstd/zstd/lib
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/demangler/include
+		${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ccc/src
 		${CMAKE_BINARY_DIR}/3rdparty/SDL3/include-revision
 	)
 
-	file(GLOB METAL_SHADERS "${CMAKE_SOURCE_DIR}/pcsx2/GS/Renderers/Metal/*.metal")
+	file(GLOB METAL_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/pcsx2/GS/Renderers/Metal/*.metal")
 	file(GLOB FONTS "${CMAKE_SOURCE_DIR}/../assets/resources/fonts/*.ttf" "${CMAKE_SOURCE_DIR}/../assets/resources/fonts/*.otf")
 	file(GLOB_RECURSE IOS_SHADER_RESOURCES "${CMAKE_SOURCE_DIR}/../assets/resources/shaders/*")
+	file(GLOB_RECURSE IOS_SOUND_RESOURCES "${CMAKE_SOURCE_DIR}/../assets/resources/sounds/*")
 	set(IOS_TOP_LEVEL_RESOURCES
 		"${CMAKE_SOURCE_DIR}/../assets/resources/GameIndex.yaml"
 		"${CMAKE_SOURCE_DIR}/../assets/resources/RedumpDatabase.yaml"
@@ -410,8 +386,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	foreach(IOS_SHADER_RESOURCE IN LISTS IOS_SHADER_RESOURCES)
 		get_filename_component(IOS_SHADER_DIR "${IOS_SHADER_RESOURCE}" DIRECTORY)
 		file(RELATIVE_PATH IOS_SHADER_SUBDIR "${CMAKE_SOURCE_DIR}/../assets/resources" "${IOS_SHADER_DIR}")
-		set_source_files_properties("${IOS_SHADER_RESOURCE}" PROPERTIES
-			MACOSX_PACKAGE_LOCATION "Resources/${IOS_SHADER_SUBDIR}")
+		set_source_files_properties("${IOS_SHADER_RESOURCE}" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/${IOS_SHADER_SUBDIR}")
+	endforeach()
+	target_sources(ARMSX2iOS PRIVATE ${IOS_SOUND_RESOURCES})
+	foreach(IOS_SOUND_RESOURCE IN LISTS IOS_SOUND_RESOURCES)
+		get_filename_component(IOS_SOUND_DIR "${IOS_SOUND_RESOURCE}" DIRECTORY)
+		file(RELATIVE_PATH IOS_SOUND_SUBDIR "${CMAKE_SOURCE_DIR}/../assets/resources" "${IOS_SOUND_DIR}")
+		set_source_files_properties("${IOS_SOUND_RESOURCE}" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/${IOS_SOUND_SUBDIR}")
 	endforeach()
 
 	if(CMAKE_GENERATOR STREQUAL "Xcode" AND ARMSX2_MAC_CATALYST)
@@ -426,7 +407,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 						XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
 						XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ""
 						XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS ""
-						)
+					)
 				endif()
 			endforeach()
 
@@ -440,36 +421,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	endif()
 endif()
 
-# gsrunner
 if(ENABLE_GSRUNNER)
 	if (NOT WIN32)
-		message(WARNING "GSRunner is only supported on Windows and may not build on your system")
+		message(WARNING "GSRunner is only supported on Windows")
 	endif()
 	add_subdirectory(pcsx2-gsrunner)
 endif()
-
-#-------------------------------------------------------------------------------
-if(NOT IS_SUPPORTED_COMPILER)
-	message(WARNING "
-*************** UNSUPPORTED CONFIGURATION ***************
-You are not compiling PCSX2 with a supported compiler.
-It may not even build successfully.
-PCSX2 only supports the Clang and MSVC compilers.
-No support will be provided, continue at your own risk.
-*********************************************************")
-endif()
-
-#if(_M_ARM64)
-#	message(WARNING "
-#*************** UNSUPPORTED CONFIGURATION ***************
-#
-#Apple Silicon support in PCSX2 is INCOMPLETE. There are
-#currently no EE/VU/IOP recompilers, and games will run
-#VERY slow. There is no date for completion yet, you
-#should set -DCMAKE_OSX_ARCHITECTURES=x86_64 for now,
-#unless you want to work on the recompilers.
-#
-#We also ask that you read https://dont-ship.it/.
-#
-#*********************************************************")
-#endif()

@@ -11,14 +11,12 @@ function(detect_operating_system)
 
 	if(WIN32)
 		message(STATUS "Building for Windows.")
-	elseif(IOS OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
-		message(STATUS "Building for iOS.")
-	elseif(APPLE)
+	elseif(APPLE AND NOT IOS)
 		message(STATUS "Building for MacOS.")
+	elseif(APPLE AND IOS)
+		message(STATUS "Building for iOS.")
 	elseif(LINUX)
 		message(STATUS "Building for Linux.")
-	elseif(ANDROID)
-		message(STATUS "Building for Android.")
 	elseif(BSD)
 		message(STATUS "Building for *BSD.")
 	else()
@@ -51,24 +49,13 @@ function(get_git_version_info)
 	set(PCSX2_GIT_REV "")
 	set(PCSX2_GIT_TAG "")
 	set(PCSX2_GIT_HASH "")
-	set(PCSX2_GIT_WORKDIR "${PROJECT_SOURCE_DIR}")
-	if (GIT_FOUND)
-		EXECUTE_PROCESS(WORKING_DIRECTORY ${PROJECT_SOURCE_DIR} COMMAND ${GIT_EXECUTABLE} rev-parse --show-toplevel
-			OUTPUT_VARIABLE PCSX2_GIT_WORKDIR
-			RESULT_VARIABLE PCSX2_GIT_WORKDIR_RESULT
-			OUTPUT_STRIP_TRAILING_WHITESPACE
-			ERROR_QUIET)
-		if (NOT PCSX2_GIT_WORKDIR_RESULT EQUAL 0 OR NOT PCSX2_GIT_WORKDIR)
-			set(PCSX2_GIT_WORKDIR "${PROJECT_SOURCE_DIR}")
-		endif()
-	endif()
-	if (GIT_FOUND)
-		EXECUTE_PROCESS(WORKING_DIRECTORY ${PCSX2_GIT_WORKDIR} COMMAND ${GIT_EXECUTABLE} describe --tags --match "v[0-9]*"
+	if (GIT_FOUND AND EXISTS ${PROJECT_SOURCE_DIR}/.git)
+		EXECUTE_PROCESS(WORKING_DIRECTORY ${PROJECT_SOURCE_DIR} COMMAND ${GIT_EXECUTABLE} describe --tags
 			OUTPUT_VARIABLE PCSX2_GIT_REV
 			OUTPUT_STRIP_TRAILING_WHITESPACE
 			ERROR_QUIET)
 
-		EXECUTE_PROCESS(WORKING_DIRECTORY ${PCSX2_GIT_WORKDIR} COMMAND ${GIT_EXECUTABLE} tag --points-at HEAD --sort=version:refname --list "v[0-9]*"
+		EXECUTE_PROCESS(WORKING_DIRECTORY ${PROJECT_SOURCE_DIR} COMMAND ${GIT_EXECUTABLE} tag --points-at HEAD --sort=version:refname
 			OUTPUT_VARIABLE PCSX2_GIT_TAG_LIST
 			RESULT_VARIABLE TAG_RESULT
 			OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -86,18 +73,18 @@ function(get_git_version_info)
 			endif()
 		endif()
 
-		EXECUTE_PROCESS(WORKING_DIRECTORY ${PCSX2_GIT_WORKDIR} COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
+		EXECUTE_PROCESS(WORKING_DIRECTORY ${PROJECT_SOURCE_DIR} COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
 			OUTPUT_VARIABLE PCSX2_GIT_HASH
 			OUTPUT_STRIP_TRAILING_WHITESPACE
 			ERROR_QUIET)
 
-		EXECUTE_PROCESS(WORKING_DIRECTORY ${PCSX2_GIT_WORKDIR} COMMAND ${GIT_EXECUTABLE} log -1 --format=%cd --date=local
+		EXECUTE_PROCESS(WORKING_DIRECTORY ${PROJECT_SOURCE_DIR} COMMAND ${GIT_EXECUTABLE} log -1 --format=%cd --date=local
 			OUTPUT_VARIABLE PCSX2_GIT_DATE
 			OUTPUT_STRIP_TRAILING_WHITESPACE
 			ERROR_QUIET)
 	endif()
 	if (NOT PCSX2_GIT_REV)
-		EXECUTE_PROCESS(WORKING_DIRECTORY ${PCSX2_GIT_WORKDIR} COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+		EXECUTE_PROCESS(WORKING_DIRECTORY ${PROJECT_SOURCE_DIR} COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
 			OUTPUT_VARIABLE PCSX2_GIT_REV
 			OUTPUT_STRIP_TRAILING_WHITESPACE
 			ERROR_QUIET)
@@ -240,6 +227,13 @@ endfunction()
 
 function(detect_page_size)
 	message(STATUS "Determining host page size")
+	# Allow cross-compile builds to skip the try_run by pre-setting HOST_PAGE_SIZE
+	# (e.g. -DHOST_PAGE_SIZE=0x1000 for typical 4 KiB ARM64). iOS/simulator are
+	# always cross-compiled, so try_run cannot execute and would FATAL otherwise.
+	if(DEFINED HOST_PAGE_SIZE)
+		message(STATUS "Host page size (preset): ${HOST_PAGE_SIZE}")
+		return()
+	endif()
 	set(detect_page_size_file ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/src.c)
 	file(WRITE ${detect_page_size_file} "
 #include <stdio.h>
@@ -266,6 +260,12 @@ endfunction()
 
 function(detect_cache_line_size)
 	message(STATUS "Determining host cache line size")
+	# Allow cross-compile builds to skip the try_run by pre-setting
+	# HOST_CACHE_LINE_SIZE (e.g. -DHOST_CACHE_LINE_SIZE=64 for typical ARM64).
+	if(DEFINED HOST_CACHE_LINE_SIZE)
+		message(STATUS "Host cache line size (preset): ${HOST_CACHE_LINE_SIZE}")
+		return()
+	endif()
 	set(detect_cache_line_size_file ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/src.c)
 	file(WRITE ${detect_cache_line_size_file} "
 #include <stdio.h>

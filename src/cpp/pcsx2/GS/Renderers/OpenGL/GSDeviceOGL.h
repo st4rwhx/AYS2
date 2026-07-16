@@ -130,8 +130,18 @@ public:
 		VSSelector vs;
 		u8 pad[3];
 
-		__fi bool operator==(const ProgramSelector& p) const { return BitEqual(*this, p); }
-		__fi bool operator!=(const ProgramSelector& p) const { return !BitEqual(*this, p); }
+		// Compare ONLY the meaningful key fields, matching ProgramSelectorHash above
+		// (which hashes {vs.key, ps.key_hi, ps.key_lo}). BitEqual() memcmp'd all 32 bytes
+		// including this struct's uninitialized trailing/alignment padding, so two
+		// logically-identical selectors landed in the same hash bucket yet failed ==,
+		// making m_programs.find() miss every time. Result: the same shaders recompiled
+		// every frame (issue #243 — Jackie Chan Adventures: 142 unique shaders, 41k+
+		// recompiles, GS-thread pegged). Field compare is hash-consistent and padding-proof.
+		__fi bool operator==(const ProgramSelector& p) const
+		{
+			return vs.key == p.vs.key && ps.key_hi == p.ps.key_hi && ps.key_lo == p.ps.key_lo;
+		}
+		__fi bool operator!=(const ProgramSelector& p) const { return !(*this == p); }
 	};
 	static_assert(sizeof(ProgramSelector) == 32, "Program selector is 32 bytes");
 
@@ -147,8 +157,11 @@ public:
 
 private:
 	static constexpr u8 NUM_TIMESTAMP_QUERIES = 5;
+	static constexpr u8 NUM_PIPELINE_STATISTICS_QUERIES = 5;
 
 	std::unique_ptr<GLContext> m_gl_context;
+
+	bool m_is_gles = false;
 
 	struct
 	{
@@ -157,6 +170,10 @@ private:
 	} m_bugs;
 
 	bool m_disable_download_pbo = false;
+	// Adreno: read prior depth for SW-Z feedback via the coherent ARM depth-stencil
+	// fetch (gl_LastFragDepthARM) instead of the incoherent depth sampler, when the
+	// GL_ARM_shader_framebuffer_fetch_depth_stencil extension is present.
+	bool m_arm_depth_fetch = false;
 
 	GLuint m_fbo = 0; // frame buffer container
 	GLuint m_fbo_read = 0; // frame buffer container only for reading
@@ -253,6 +270,15 @@ private:
 	bool m_timestamp_query_started = false;
 	bool m_gpu_timing_enabled = false;
 
+	std::array<std::array<GLuint, 2>, NUM_PIPELINE_STATISTICS_QUERIES> m_pipeline_statistics_queries = {};
+	GPUPipelineStatistics m_accumulated_gpu_pipeline_statistics = {};
+	u8 m_read_pipeline_statistics_query = 0;
+	u8 m_write_pipeline_statistics_query = 0;
+	u8 m_waiting_pipeline_statistics_queries = 0;
+	bool m_pipeline_statistics_query_started = false;
+	bool m_gpu_pipeline_statistics_enabled = false;
+	bool m_gpu_pipeline_statistics_supported = false;
+
 	GSHWDrawConfig::VSConstantBuffer m_vs_cb_cache;
 	GSHWDrawConfig::PSConstantBuffer m_ps_cb_cache;
 	GSHWDrawConfig::VSPushConstants m_vs_pc_cache;
@@ -270,7 +296,12 @@ private:
 	void PopTimestampQuery();
 	void KickTimestampQuery();
 
-	GSTexture* CreateSurface(GSTexture::Type type, int width, int height, int levels, GSTexture::Format format) override;
+	void CreatePipelineStatisticsQueries();
+	void DestroyPipelineStatisticsQueries();
+	void PopPipelineStatisticsQuery();
+	void KickPipelineStatisticsQuery();
+
+	GSTexture* CreateSurface(GSTexture::Usage usage, int width, int height, int levels, GSTexture::Format format) override;
 
 	void DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, const GSRegPMODE& PMODE, const GSRegEXTBUF& EXTBUF, u32 c, const Filter filter) override;
 	void DoInterlace(GSTexture* sTex, const GSVector4& sRect, GSTexture* dTex, const GSVector4& dRect, ShaderInterlace shader, Filter filter, const InterlaceConstantBuffer& cb) override;
@@ -336,6 +367,9 @@ public:
 
 	bool SetGPUTimingEnabled(bool enabled) override;
 	float GetAndResetAccumulatedGPUTime() override;
+
+	bool SetGPUPipelineStatisticsEnabled(bool enabled) override;
+	GPUPipelineStatistics GetAndResetAccumulatedGPUPipelineStatistics() override;
 
 	// Helpers and utility draws.
 	void DrawPrimitive();

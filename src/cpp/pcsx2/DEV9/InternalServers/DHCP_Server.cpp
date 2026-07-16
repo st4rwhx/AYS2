@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #include <algorithm>
-#include <TargetConditionals.h>
 #ifdef __POSIX__
 #include <string>
 #include <vector>

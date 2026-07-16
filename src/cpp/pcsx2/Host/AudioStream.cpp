@@ -119,6 +119,11 @@ std::unique_ptr<AudioStream> AudioStream::CreateStream(AudioBackend backend, u32
 		case AudioBackend::SDL:
 			return CreateSDLAudioStream(sample_rate, parameters, stretch_enabled, error);
 
+#ifdef __ANDROID__
+		case AudioBackend::Oboe:
+			return CreateOboeAudioStream(sample_rate, parameters, stretch_enabled, error);
+#endif
+
 		case AudioBackend::Null:
 			return CreateNullStream(sample_rate, parameters.buffer_ms);
 
@@ -820,14 +825,4 @@ void AudioStreamParameters::LoadSave(SettingsWrapper& wrap, const char* section)
 		expand_low_cutoff = std::min<u8>(expand_low_cutoff, 100);
 		expand_high_cutoff = std::min<u8>(expand_high_cutoff, 100);
 	}
-}
-
-bool AudioStreamParameters::operator!=(const AudioStreamParameters& rhs) const
-{
-	return (std::memcmp(this, &rhs, sizeof(*this)) != 0);
-}
-
-bool AudioStreamParameters::operator==(const AudioStreamParameters& rhs) const
-{
-	return (std::memcmp(this, &rhs, sizeof(*this)) == 0);
 }

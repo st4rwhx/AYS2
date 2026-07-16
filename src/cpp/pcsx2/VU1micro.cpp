@@ -8,7 +8,6 @@
 #include <cmath>
 #include "VUmicro.h"
 #include "MTVU.h"
-#include "Gif_Unit.h" // for gifUnit
 
 #ifdef PCSX2_DEBUG
 u32 vudump = 0;
@@ -49,8 +48,6 @@ void vu1Finish(bool add_cycles) {
 
 void vu1ExecMicro(u32 addr)
 {
-	// [P24] Per-kick drain removed — replaced by VSync-level pacing in Counters.cpp.
-
 	if (THREAD_VU1) {
 		VU0.VI[REG_VPU_STAT].UL &= ~0xFF00;
 		// Okay this is a little bit of a hack, but with good reason.

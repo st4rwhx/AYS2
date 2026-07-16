@@ -104,7 +104,6 @@ namespace R5900
 		void recMTSA();
 		void recMTSAB();
 		void recMTSAH();
-		void recMOVCI();
 
 		void recTGE();
 		void recTGEU();
@@ -310,7 +309,6 @@ namespace R5900
 		void DSRA32( std::string& output );
 		void MOVZ( std::string& output );
 		void MOVN( std::string& output );
-		void MOVCI( std::string& output );
 		void MFSA( std::string& output );
 		void MTSA( std::string& output );
 //*******************END OF SPECIAL OPCODES************************
@@ -604,7 +602,6 @@ namespace R5900
 		void DSRA32();
 		void MOVZ();
 		void MOVN();
-		void MOVCI();
 		void MFSA();
 		void MTSA();
 //*******************END OF SPECIAL OPCODES************************

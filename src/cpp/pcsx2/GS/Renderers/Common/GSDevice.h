@@ -7,6 +7,7 @@
 #include "common/WindowInfo.h"
 #include "GS/GS.h"
 #include "GS/Renderers/Common/GSFastList.h"
+#include "GS/Renderers/Common/GSGPUProfile.h"
 #include "GS/Renderers/Common/GSShaderEnums.h"
 #include "GS/Renderers/Common/GSTexture.h"
 #include "GS/Renderers/Common/GSVertex.h"
@@ -28,6 +29,12 @@ static inline constexpr Filter BilnIf(bool biln)
 {
 	return biln ? Biln : Nearest;
 }
+
+struct GPUPipelineStatistics
+{
+	u64 vs_invocations;
+	u64 ps_invocations;
+};
 
 enum class ShaderConvert
 {
@@ -893,7 +900,7 @@ struct alignas(16) GSHWDrawConfig
 
 		__fi bool HasDepthROV() const
 		{
-			return rov_depth == PS_ROV_DEPTH::READ_ONLY || rov_depth == PS_ROV_DEPTH::READ_WRITE;
+			return rov_depth != PS_ROV_DEPTH::NONE;
 		}
 
 		__fi bool HasDepthROVWrite() const
@@ -1027,7 +1034,8 @@ struct alignas(16) GSHWDrawConfig
 		GSVector2 texture_scale;
 		GSVector2 texture_offset;
 		GSVector2 point_size;
-		GSVector2i max_depth;
+		u32 max_depth;
+		float line_aa1_width;
 		__fi VSConstantBuffer()
 		{
 			memset(static_cast<void*>(this), 0, sizeof(*this));
@@ -1117,6 +1125,10 @@ struct alignas(16) GSHWDrawConfig
 		GSVector4 DitherMatrix[4];
 
 		GSVector4 ScaleFactor;
+		float LineCovScale;
+		float _pad0;
+		float _pad1;
+		float _pad2;
 
 		__fi PSConstantBuffer()
 		{
@@ -1390,6 +1402,7 @@ public:
 		bool depth_feedback       : 1; ///< Depth feedback loops can be done with DS directly (otherwise need to copy to separate RT).  Implies `feedback_loops`.
 		bool aa1                  : 1; ///< Supports the GS AA1 feature.
 		bool rov                  : 1; ///< Supports rasterizer ordered views for both depth and color.
+		bool metalfx_spatial      : 1; ///< Supports Apple MetalFX spatial upscaling (Metal backend, macOS 13+).
 		FeatureSupport()
 		{
 			memset(this, 0, sizeof(*this));
@@ -1432,6 +1445,7 @@ protected:
 	std::string m_name = "Unknown";
 	FeatureSupport m_features;
 	u32 m_max_texture_size = 0;
+	RuntimeGpuProfile m_runtime_gpu_profile = RuntimeGpuProfile::Adreno;
 
 	struct
 	{
@@ -1465,15 +1479,6 @@ protected:
 	bool m_allow_present_throttle = false;
 	u64 m_last_frame_displayed_time = 0;
 
-	// iOS off-speed present pacing: EMA of how long the backend blocked acquiring
-	// a swapchain image/drawable on the last presents (microseconds), updated by
-	// the backend (GSDeviceMTL). Drives the adaptive present-rate backoff in
-	// ShouldSkipPresentingFrame — e.g. iPhones report 120Hz but cap CAMetalLayer
-	// presents at 60Hz unless CADisableMinimumFrameDurationOnPhone is set, so the
-	// sustainable present rate must be discovered at runtime.
-	float m_present_block_ema_us = 0.0f;
-	bool m_present_backoff = false;
-
 	GSTexture* m_merge = nullptr;
 	GSTexture* m_weavebob = nullptr;
 	GSTexture* m_blend = nullptr;
@@ -1481,13 +1486,13 @@ protected:
 	GSTexture* m_target_tmp = nullptr;
 	GSTexture* m_current = nullptr;
 	GSTexture* m_cas = nullptr;
+	GSTexture* m_mfx_output = nullptr; ///< MetalFX spatial upscale destination (Metal backend).
 	GSTexture* m_colclip_rt = nullptr; ///< Temp hw colclip texture
 	GSTexture* m_ds_as_rt = nullptr; ///< Depth as color
 
 	bool AcquireWindow(bool recreate_window);
 
-	virtual GSTexture* CreateSurface(GSTexture::Type type, int width, int height, int levels, GSTexture::Format format) = 0;
-	GSTexture* FetchSurface(GSTexture::Type type, int width, int height, int levels, GSTexture::Format format, bool clear, bool prefer_unused_texture);
+	virtual GSTexture* CreateSurface(GSTexture::Usage usage, int width, int height, int levels, GSTexture::Format format) = 0;
 
 	virtual void DoMerge(GSTexture* sTex[3], GSVector4* sRect, GSTexture* dTex, GSVector4* dRect, const GSRegPMODE& PMODE, const GSRegEXTBUF& EXTBUF, u32 c, const Filter filter) = 0;
 	virtual void DoInterlace(GSTexture* sTex, const GSVector4& sRect, GSTexture* dTex, const GSVector4& dRect, ShaderInterlace shader, Filter filter, const InterlaceConstantBuffer& cb) = 0;
@@ -1497,8 +1502,12 @@ protected:
 	/// Resolves CAS shader includes for the specified source.
 	static bool GetCASShaderSource(std::string* source);
 
-	/// Applies CAS and writes to the destination texture, which should be a RWTexture.
+	/// Applies CAS and writes to the destination texture, which should be a shader writeable texture.
 	virtual bool DoCAS(GSTexture* sTex, GSTexture* dTex, bool sharpen_only, const std::array<u32, NUM_CAS_CONSTANTS>& constants) = 0;
+
+	/// Upscales sTex into dTex using a backend-specific spatial upscaler (MetalFX on Metal).
+	/// Base implementation is a no-op; only the Metal backend overrides it.
+	virtual bool DoMetalFXSpatial(GSTexture* sTex, GSTexture* dTex) { return false; }
 
 	/// Perform texture operations for ImGui
 	void UpdateImGuiTextures();
@@ -1555,6 +1564,11 @@ public:
 
 	__fi FeatureSupport Features() const { return m_features; }
 	__fi u32 GetMaxTextureSize() const { return m_max_texture_size; }
+	__fi void SetRuntimeGPUProfile(RuntimeGpuProfile p) { m_runtime_gpu_profile = p; }
+	__fi RuntimeGpuProfile GetRuntimeGPUProfile() const { return m_runtime_gpu_profile; }
+	__fi bool IsMaliGPUProfile() const { return (m_runtime_gpu_profile == RuntimeGpuProfile::Mali); }
+	__fi bool IsAdrenoGPUProfile() const { return (m_runtime_gpu_profile == RuntimeGpuProfile::Adreno); }
+	__fi bool IsPowerVRGPUProfile() const { return (m_runtime_gpu_profile == RuntimeGpuProfile::PowerVR); }
 
 	__fi const WindowInfo& GetWindowInfo() const { return m_window_info; }
 	__fi s32 GetWindowWidth() const { return static_cast<s32>(m_window_info.surface_width); }
@@ -1615,6 +1629,12 @@ public:
 	/// Returns the amount of GPU time utilized since the last time this method was called.
 	virtual float GetAndResetAccumulatedGPUTime() = 0;
 
+	/// Enables/disables GPU pipeline statistics.
+	virtual bool SetGPUPipelineStatisticsEnabled(bool enabled) = 0;
+
+	/// Get the pipeline statistics for the last frame.
+	virtual GPUPipelineStatistics GetAndResetAccumulatedGPUPipelineStatistics() = 0;
+
 	/// Returns true if not enough time has passed for present to not block.
 	bool ShouldSkipPresentingFrame();
 
@@ -1630,13 +1650,17 @@ public:
 	virtual void PopDebugGroup() = 0;
 	virtual void InsertDebugMessage(DebugMessageCategory category, const char* fmt, ...) = 0;
 
+	GSTexture* FetchSurface(GSTexture::Usage usage, int width, int height, int levels, GSTexture::Format format, bool clear, bool prefer_reuse);
+	GSTexture* FetchSurface(GSTexture::Usage usage, const GSVector2i& size, int levels, GSTexture::Format format, bool clear, bool prefer_reuse);
 	GSTexture* CreateRenderTarget(int w, int h, GSTexture::Format format, bool clear = true, bool prefer_reuse = true);
-	GSTexture* CreateDepthStencil(int w, int h, bool clear = true, bool prefer_reuse = true);
-	GSTexture* CreateDepthColor(int w, int h, bool clear = true, bool prefer_reuse = true);
-	GSTexture* CreateTexture(int w, int h, int mipmap_levels, GSTexture::Format format, bool prefer_reuse = false);
 	GSTexture* CreateRenderTarget(const GSVector2i& size, GSTexture::Format format, bool clear = true, bool prefer_reuse = true);
+	GSTexture* CreateFeedbackTarget(int w, int h, GSTexture::Format format, bool clear = true, bool prefer_reuse = true);
+	GSTexture* CreateFeedbackTarget(const GSVector2i& size, GSTexture::Format format, bool clear = true, bool prefer_reuse = true);
+	GSTexture* CreateShaderWriteTarget(int w, int h, GSTexture::Format format, bool clear = true, bool prefer_reuse = true);
+	GSTexture* CreateShaderWriteTarget(const GSVector2i& size, GSTexture::Format format, bool clear = true, bool prefer_reuse = true);
+	GSTexture* CreateDepthStencil(int w, int h, bool clear = true, bool prefer_reuse = true);
 	GSTexture* CreateDepthStencil(const GSVector2i& size, bool clear = true, bool prefer_reuse = true);
-	GSTexture* CreateDepthColor(const GSVector2i& size, bool clear = true, bool prefer_reuse = true);
+	GSTexture* CreateTexture(int w, int h, int mipmap_levels, GSTexture::Format format, bool prefer_reuse = false);
 	GSTexture* CreateTexture(const GSVector2i& size, int mipmap_levels, GSTexture::Format format, bool prefer_reuse = false);
 	GSTexture* CreateCompatible(GSTexture* tex, bool clear = true, bool prefer_reuse = true);
 	GSTexture* CreateCompatible(GSTexture* tex, const GSVector2i& size, bool clear = true, bool prefer_reuse = true);
@@ -1694,6 +1718,10 @@ public:
 	void Resize(int width, int height);
 
 	void CAS(GSTexture*& tex, GSVector4i& src_rect, GSVector4& src_uv, const GSVector4& draw_rect, bool sharpen_only);
+
+	/// Spatially upscales the merged display texture (MetalFX) to the draw-rect size, rewriting
+	/// tex/src_rect/src_uv to point at the upscaled result, mirroring CAS().
+	void MetalFXUpscale(GSTexture*& tex, GSVector4i& src_rect, GSVector4& src_uv, const GSVector4& draw_rect);
 
 	bool ResizeRenderTarget(GSTexture** t, int w, int h, bool preserve_contents, bool recycle);
 

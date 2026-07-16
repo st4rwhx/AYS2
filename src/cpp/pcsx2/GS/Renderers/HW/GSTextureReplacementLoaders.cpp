@@ -11,14 +11,7 @@
 #include "GS/Renderers/HW/GSTextureReplacements.h"
 
 #include <csetjmp>
-#include <limits>
-#if !TARGET_OS_IPHONE
 #include <png.h>
-#else
-#include <CoreFoundation/CoreFoundation.h>
-#include <CoreGraphics/CoreGraphics.h>
-#include <ImageIO/ImageIO.h>
-#endif
 
 struct LoaderDefinition
 {
@@ -153,168 +146,122 @@ static void ConvertTexture_R8G8B8(u32 width, u32 height, std::vector<u8>& data, 
 // PNG Handlers
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if !TARGET_OS_IPHONE
 bool PNGLoader(const std::string& filename, GSTextureReplacements::ReplacementTexture* tex, bool only_base_image)
 {
-    // ... (existing code)
-}
-#else
-static void UnpremultiplyAlpha(u32 width, u32 height, std::vector<u8>& data, u32 pitch)
-{
-	for (u32 row = 0; row < height; row++)
+	png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+	if (!png_ptr)
+		return false;
+
+	png_infop info_ptr = png_create_info_struct(png_ptr);
+	if (!info_ptr)
 	{
-		u8* pixel = data.data() + (static_cast<size_t>(row) * pitch);
+		png_destroy_read_struct(&png_ptr, nullptr, nullptr);
+		return false;
+	}
 
-		for (u32 col = 0; col < width; col++)
+	ScopedGuard cleanup([&png_ptr, &info_ptr]() {
+		png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
+	});
+
+	auto fp = FileSystem::OpenManagedCFile(filename.c_str(), "rb");
+	if (!fp)
+		return false;
+
+	if (setjmp(png_jmpbuf(png_ptr)))
+		return false;
+
+	png_init_io(png_ptr, fp.get());
+	png_read_info(png_ptr, info_ptr);
+
+	png_uint_32 width = 0;
+	png_uint_32 height = 0;
+	int bitDepth = 0;
+	int colorType = -1;
+	if (png_get_IHDR(png_ptr, info_ptr, &width, &height, &bitDepth, &colorType, nullptr, nullptr, nullptr) != 1 ||
+		width == 0 || height == 0)
+	{
+		return false;
+	}
+
+	const u32 pitch = width * sizeof(u32);
+	tex->width = width;
+	tex->height = height;
+	tex->format = GSTexture::Format::Color;
+	tex->pitch = pitch;
+	tex->data.resize(pitch * height);
+
+	const png_uint_32 row_bytes = png_get_rowbytes(png_ptr, info_ptr);
+	std::vector<u8> row_data(row_bytes);
+
+	for (u32 y = 0; y < height; y++)
+	{
+		png_read_row(png_ptr, static_cast<png_bytep>(row_data.data()), nullptr);
+
+		const u8* row_ptr = row_data.data();
+		u8* out_ptr = tex->data.data() + y * pitch;
+		if (colorType == PNG_COLOR_TYPE_RGB)
 		{
-			const u8 alpha = pixel[3];
-			if (alpha != 0 && alpha != 255)
+			for (u32 x = 0; x < width; x++)
 			{
-				for (u32 channel = 0; channel < 3; channel++)
-				{
-					const u32 straight = (static_cast<u32>(pixel[channel]) * 255u + (alpha / 2u)) / alpha;
-					pixel[channel] = static_cast<u8>((straight > 255u) ? 255u : straight);
-				}
+				u32 pixel = static_cast<u32>(*(row_ptr)++);
+				pixel |= static_cast<u32>(*(row_ptr)++) << 8;
+				pixel |= static_cast<u32>(*(row_ptr)++) << 16;
+				pixel |= 0x80000000u; // make opaque
+				std::memcpy(out_ptr, &pixel, sizeof(pixel));
+				out_ptr += sizeof(pixel);
 			}
-
-			pixel += sizeof(u32);
+		}
+		else if (colorType == PNG_COLOR_TYPE_RGBA)
+		{
+			std::memcpy(out_ptr, row_ptr, pitch);
 		}
 	}
-}
 
-bool PNGLoader(const std::string& filename, GSTextureReplacements::ReplacementTexture* tex, bool only_base_image)
-{
-	if (filename.empty())
-		return false;
-
-	CFURLRef url = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault,
-		reinterpret_cast<const UInt8*>(filename.c_str()), filename.length(), false);
-	if (!url)
-		return false;
-
-	CGImageSourceRef source = CGImageSourceCreateWithURL(url, nullptr);
-	CFRelease(url);
-	if (!source)
-		return false;
-
-	CGImageRef image = CGImageSourceCreateImageAtIndex(source, 0, nullptr);
-	CFRelease(source);
-	if (!image)
-		return false;
-
-	const size_t width = CGImageGetWidth(image);
-	const size_t height = CGImageGetHeight(image);
-	if (width == 0 || height == 0 || width > std::numeric_limits<u32>::max() || height > std::numeric_limits<u32>::max())
-	{
-		CGImageRelease(image);
-		return false;
-	}
-
-	const size_t bytes_per_row = width * sizeof(u32);
-	std::vector<u8> data(bytes_per_row * height);
-	CGColorSpaceRef color_space = CGColorSpaceCreateDeviceRGB();
-	const CGBitmapInfo bitmap_info = static_cast<CGBitmapInfo>(kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast);
-	CGContextRef context = CGBitmapContextCreate(data.data(), width, height, 8, bytes_per_row, color_space, bitmap_info);
-	if (color_space)
-		CGColorSpaceRelease(color_space);
-	if (!context)
-	{
-		CGImageRelease(image);
-		return false;
-	}
-
-	CGContextDrawImage(context, CGRectMake(0, 0, static_cast<CGFloat>(width), static_cast<CGFloat>(height)), image);
-	CGContextRelease(context);
-	CGImageRelease(image);
-
-	// CoreGraphics requires premultiplied alpha for this context; texture
-	// replacement rendering expects straight RGBA.
-	UnpremultiplyAlpha(static_cast<u32>(width), static_cast<u32>(height), data, static_cast<u32>(bytes_per_row));
-
-	tex->width = static_cast<u32>(width);
-	tex->height = static_cast<u32>(height);
-	tex->format = GSTexture::Format::Color;
-	tex->pitch = static_cast<u32>(bytes_per_row);
-	tex->data = std::move(data);
-	tex->mips.clear();
 	return true;
 }
-#endif
 
-#if !TARGET_OS_IPHONE
 bool GSTextureReplacements::SavePNGImage(const std::string& filename, u32 width, u32 height, const u8* buffer, u32 pitch)
 {
-    // ... (existing code)
+	const int compression = GSConfig.PNGCompressionLevel;
+
+	png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+	if (!png_ptr)
+		return false;
+
+	png_infop info_ptr = png_create_info_struct(png_ptr);
+	if (info_ptr == nullptr)
+	{
+		png_destroy_write_struct(&png_ptr, nullptr);
+		return false;
+	}
+
+	ScopedGuard cleanup([&png_ptr, &info_ptr]() {
+		png_destroy_write_struct(&png_ptr, &info_ptr);
+	});
+
+	if (setjmp(png_jmpbuf(png_ptr)))
+		return false;
+
+	auto fp = FileSystem::OpenManagedCFile(filename.c_str(), "wb");
+	if (!fp)
+		return false;
+
+	png_init_io(png_ptr, fp.get());
+	png_set_compression_level(png_ptr, compression);
+	png_set_IHDR(png_ptr, info_ptr, width, height, 8, PNG_COLOR_TYPE_RGBA,
+		PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+	png_write_info(png_ptr, info_ptr);
+	png_set_swap(png_ptr);
+
+	for (u32 y = 0; y < height; ++y)
+	{
+		// cast is needed here for mac builder
+		png_write_row(png_ptr, (png_bytep)(buffer + y * pitch));
+	}
+
+	png_write_end(png_ptr, nullptr);
+	return true;
 }
-#else
-bool GSTextureReplacements::SavePNGImage(const std::string& filename, u32 width, u32 height, const u8* buffer, u32 pitch)
-{
-	if (filename.empty() || width == 0 || height == 0 || !buffer)
-		return false;
-
-	const size_t bytes_per_row = static_cast<size_t>(width) * sizeof(u32);
-	const size_t total_bytes = bytes_per_row * height;
-	const u8* data_ptr = buffer;
-	std::vector<u8> compact_data;
-
-	if (pitch != bytes_per_row)
-	{
-		compact_data.resize(total_bytes);
-		for (u32 y = 0; y < height; y++)
-			std::memcpy(compact_data.data() + (static_cast<size_t>(y) * bytes_per_row), buffer + (static_cast<size_t>(y) * pitch), bytes_per_row);
-		data_ptr = compact_data.data();
-	}
-
-	CGColorSpaceRef color_space = CGColorSpaceCreateDeviceRGB();
-	if (!color_space)
-		return false;
-
-	CFDataRef data = CFDataCreate(kCFAllocatorDefault, data_ptr, total_bytes);
-	if (!data)
-	{
-		CGColorSpaceRelease(color_space);
-		return false;
-	}
-
-	CGDataProviderRef provider = CGDataProviderCreateWithCFData(data);
-	CFRelease(data);
-	if (!provider)
-	{
-		CGColorSpaceRelease(color_space);
-		return false;
-	}
-
-	const CGBitmapInfo bitmap_info = static_cast<CGBitmapInfo>(kCGBitmapByteOrder32Big | kCGImageAlphaLast);
-	CGImageRef image = CGImageCreate(width, height, 8, 32, bytes_per_row, color_space, bitmap_info,
-		provider, nullptr, false, kCGRenderingIntentDefault);
-	CGDataProviderRelease(provider);
-	CGColorSpaceRelease(color_space);
-	if (!image)
-		return false;
-
-	CFURLRef url = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault,
-		reinterpret_cast<const UInt8*>(filename.c_str()), filename.length(), false);
-	if (!url)
-	{
-		CGImageRelease(image);
-		return false;
-	}
-
-	CGImageDestinationRef destination = CGImageDestinationCreateWithURL(url, CFSTR("public.png"), 1, nullptr);
-	CFRelease(url);
-	if (!destination)
-	{
-		CGImageRelease(image);
-		return false;
-	}
-
-	CGImageDestinationAddImage(destination, image, nullptr);
-	const bool success = CGImageDestinationFinalize(destination);
-	CFRelease(destination);
-	CGImageRelease(image);
-	return success;
-}
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // DDS Handler

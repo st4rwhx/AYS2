@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 isztld <https://isztld.com/>
 // SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
 // SPDX-License-Identifier: GPL-3.0+
 
@@ -98,21 +99,24 @@ static inline void mVUshufflePS(const a64::VRegister& dst, const a64::VRegister&
 }
 
 // Lane0-preserving scalar FP ops on the PQ latency reg (mVU_xmmPQ). AArch64 scalar
-// FP writes Sd and zeroes Vd[127:32], while x86 SSE scalar ops preserve the upper
-// three lanes. EFU P-pipe ops depend on the two Q instances and the other P
-// instance surviving, so compute in scratch and merge only lane0 back.
+// FP (Fsqrt/Fadd/Fmul on .S()) writes Sd and ZEROES Vd[127:32]; x86 SSE scalar ops
+// (SQRTSS/ADDSS/MULSS) preserve the upper 3 lanes. The EFU P-pipe ops shuffle the
+// target P instance into lane0, compute there, then shuffle back, and DEPEND on the
+// other 3 lanes (the two Q instances + the other P instance) surviving — writing
+// mVU_xmmPQ.S() in place wipes them, so a later MULq reads Q=0 (→ unprojected
+// geometry, e.g. MGS2's broken polygons). Compute into a scratch and merge only
+// lane0 back. q31 (RQSCRATCH2) is outside the regalloc pool (v0..v23) and not used
+// by the EFU sequences (which use q30 via mVUclampedArith / q29 via mVUshufflePS).
 static inline void mVUscalarSqrtKeep(const a64::VRegister& dst, const a64::VRegister& src)
 {
 	armAsm->Fsqrt(RQSCRATCH2.S(), src.S());
 	armAsm->Ins(dst.V4S(), 0, RQSCRATCH2.V4S(), 0);
 }
-
 static inline void mVUscalarAddKeep(const a64::VRegister& dst, const a64::VRegister& a, const a64::VRegister& b)
 {
 	armAsm->Fadd(RQSCRATCH2.S(), a.S(), b.S());
 	armAsm->Ins(dst.V4S(), 0, RQSCRATCH2.V4S(), 0);
 }
-
 static inline void mVUscalarMulKeep(const a64::VRegister& dst, const a64::VRegister& a, const a64::VRegister& b)
 {
 	armAsm->Fmul(RQSCRATCH2.S(), a.S(), b.S());

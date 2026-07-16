@@ -9,16 +9,14 @@
 #include <AudioUnit/AudioUnit.h>
 #include <TargetConditionals.h>
 #include <assert.h>
-#include <cstdint>
-#include <dispatch/dispatch.h>
 #include <mach/mach_time.h>
 #include <pthread.h>
 #include <stdlib.h>
-#include <CoreFoundation/CoreFoundation.h>
 #if !TARGET_OS_IPHONE
 #include <AvailabilityMacros.h>
 #include <CoreAudio/AudioHardware.h>
 #include <CoreAudio/HostTime.h>
+#include <CoreFoundation/CoreFoundation.h>
 #endif
 #include "cubeb-internal.h"
 #include "cubeb/cubeb.h"
@@ -73,7 +71,6 @@ const char * PRIVATE_AGGREGATE_DEVICE_NAME = "CubebAggregateDevice";
 const uint32_t SAFE_MIN_LATENCY_FRAMES = 128;
 const uint32_t SAFE_MAX_LATENCY_FRAMES = 512;
 
-#if !TARGET_OS_IPHONE
 const AudioObjectPropertyAddress DEFAULT_INPUT_DEVICE_PROPERTY_ADDRESS = {
     kAudioHardwarePropertyDefaultInputDevice, kAudioObjectPropertyScopeGlobal,
     kAudioObjectPropertyElementMaster};
@@ -97,7 +94,6 @@ const AudioObjectPropertyAddress INPUT_DATA_SOURCE_PROPERTY_ADDRESS = {
 const AudioObjectPropertyAddress OUTPUT_DATA_SOURCE_PROPERTY_ADDRESS = {
     kAudioDevicePropertyDataSource, kAudioDevicePropertyScopeOutput,
     kAudioObjectPropertyElementMaster};
-#endif
 
 typedef uint32_t device_flags_value;
 
@@ -110,13 +106,6 @@ enum device_flags {
       0x08, /* User selected to use the system default device */
 };
 
-enum class io_side;
-
-#if TARGET_OS_IPHONE
-typedef uintptr_t AudioDeviceID;
-typedef uintptr_t AudioObjectID;
-#endif
-
 void
 audiounit_stream_stop_internal(cubeb_stream * stm);
 static int
@@ -125,27 +114,19 @@ static void
 audiounit_close_stream(cubeb_stream * stm);
 static int
 audiounit_setup_stream(cubeb_stream * stm);
-static int
-audiounit_set_device_info(cubeb_stream * stm, AudioDeviceID id, io_side side);
-static int
-audiounit_install_device_changed_callback(cubeb_stream * stm);
-static int
-audiounit_install_system_changed_callback(cubeb_stream * stm);
-static int
-audiounit_uninstall_device_changed_callback(cubeb_stream * stm);
-static int
-audiounit_uninstall_system_changed_callback(cubeb_stream * stm);
-#if !TARGET_OS_IPHONE
 static vector<AudioObjectID>
 audiounit_get_devices_of_type(cubeb_device_type devtype);
 static UInt32
 audiounit_get_device_presentation_latency(AudioObjectID devid,
                                           AudioObjectPropertyScope scope);
-#endif
 
 #if !TARGET_OS_IPHONE
 static AudioObjectID
 audiounit_get_default_device_id(cubeb_device_type type);
+static int
+audiounit_uninstall_device_changed_callback(cubeb_stream * stm);
+static int
+audiounit_uninstall_system_changed_callback(cubeb_stream * stm);
 static void
 audiounit_reinit_stream_async(cubeb_stream * stm, device_flags_value flags);
 #endif
@@ -201,15 +182,10 @@ to_string(io_side side)
 }
 
 struct device_info {
-#if TARGET_OS_IPHONE
-  AudioDeviceID id = 0;
-#else
   AudioDeviceID id = kAudioObjectUnknown;
-#endif
   device_flags_value flags = DEV_UNKNOWN;
 };
 
-#if !TARGET_OS_IPHONE
 struct property_listener {
   AudioDeviceID device_id;
   const AudioObjectPropertyAddress * property_address;
@@ -223,7 +199,6 @@ struct property_listener {
   {
   }
 };
-#endif
 
 struct cubeb_stream {
   explicit cubeb_stream(cubeb * context);
@@ -238,12 +213,19 @@ struct cubeb_stream {
   cubeb_device_changed_callback device_changed_callback = nullptr;
   owned_critical_section device_changed_callback_lock;
   /* Stream creation parameters */
-  cubeb_stream_params input_stream_params = {CUBEB_SAMPLE_FLOAT32NE, 0, 0,
+  cubeb_stream_params input_stream_params = {CUBEB_SAMPLE_FLOAT32NE,
+                                             0,
+                                             0,
                                              CUBEB_LAYOUT_UNDEFINED,
-                                             CUBEB_STREAM_PREF_NONE};
-  cubeb_stream_params output_stream_params = {CUBEB_SAMPLE_FLOAT32NE, 0, 0,
-                                              CUBEB_LAYOUT_UNDEFINED,
-                                              CUBEB_STREAM_PREF_NONE};
+                                             CUBEB_STREAM_PREF_NONE,
+                                             CUBEB_INPUT_PROCESSING_PARAM_NONE};
+  cubeb_stream_params output_stream_params = {
+      CUBEB_SAMPLE_FLOAT32NE,
+      0,
+      0,
+      CUBEB_LAYOUT_UNDEFINED,
+      CUBEB_STREAM_PREF_NONE,
+      CUBEB_INPUT_PROCESSING_PARAM_NONE};
   device_info input_device;
   device_info output_device;
   /* Format descriptions */
@@ -282,12 +264,10 @@ struct cubeb_stream {
   /* This is true if a device change callback is currently running.  */
   atomic<bool> switching_device{false};
   atomic<bool> buffer_size_change_state{false};
-#if !TARGET_OS_IPHONE
   AudioDeviceID aggregate_device_id =
       kAudioObjectUnknown; // the aggregate device id
   AudioObjectID plugin_id =
       kAudioObjectUnknown; // used to create aggregate device
-#endif
   /* Mixer interface */
   unique_ptr<cubeb_mixer, decltype(&cubeb_mixer_destroy)> mixer;
   /* Buffer where remixing/resampling will occur when upmixing is required */
@@ -295,13 +275,11 @@ struct cubeb_stream {
   unique_ptr<uint8_t[]> temp_buffer;
   size_t temp_buffer_size = 0; // size in bytes.
   /* Listeners indicating what system events are monitored. */
-#if !TARGET_OS_IPHONE
   unique_ptr<property_listener> default_input_listener;
   unique_ptr<property_listener> default_output_listener;
   unique_ptr<property_listener> input_alive_listener;
   unique_ptr<property_listener> input_source_listener;
   unique_ptr<property_listener> output_source_listener;
-#endif
 };
 
 bool
@@ -416,7 +394,11 @@ is_common_sample_rate(Float64 sample_rate)
 }
 
 #if TARGET_OS_IPHONE
+typedef UInt32 AudioDeviceID;
+typedef UInt32 AudioObjectID;
+
 #define AudioGetCurrentHostTime mach_absolute_time
+
 #endif
 
 uint64_t
@@ -501,9 +483,7 @@ audiounit_render_input(cubeb_stream * stm, AudioUnitRenderActionFlags * flags,
       // kAudioUnitErr_CannotDoInCurrentContext is returned when using a BT
       // headset and the profile is changed from A2DP to HFP/HSP. The previous
       // output device is no longer valid and must be reset.
-#if !TARGET_OS_IPHONE
       audiounit_reinit_stream_async(stm, DEV_INPUT | DEV_OUTPUT);
-#endif
     }
     // For now state that no error occurred and feed silence, stream will be
     // resumed once reinit has completed.
@@ -1262,55 +1242,9 @@ audiounit_get_acceptable_latency_range(AudioValueRange * latency_range)
 }
 #endif /* !TARGET_OS_IPHONE */
 
-#if TARGET_OS_IPHONE
-static int
-audiounit_set_device_info(cubeb_stream * stm, AudioDeviceID id, io_side side)
-{
-  assert(stm);
-  device_info * info = nullptr;
-  if (side == io_side::INPUT) {
-    info = &stm->input_device;
-    info->flags = DEV_INPUT;
-  } else {
-    info = &stm->output_device;
-    info->flags = DEV_OUTPUT;
-  }
-  info->id = id;
-  return CUBEB_OK;
-}
-
-static int
-audiounit_install_device_changed_callback(cubeb_stream * /* stm */)
-{
-  return CUBEB_OK;
-}
-
-static int
-audiounit_install_system_changed_callback(cubeb_stream * /* stm */)
-{
-  return CUBEB_OK;
-}
-
-static int
-audiounit_uninstall_device_changed_callback(cubeb_stream * /* stm */)
-{
-  return CUBEB_OK;
-}
-
-static int
-audiounit_uninstall_system_changed_callback(cubeb_stream * /* stm */)
-{
-  return CUBEB_OK;
-}
-#endif
-
 static AudioObjectID
 audiounit_get_default_device_id(cubeb_device_type type)
 {
-#if TARGET_OS_IPHONE
-  (void)type;
-  return 0;
-#else
   const AudioObjectPropertyAddress * adr;
   if (type == CUBEB_DEVICE_TYPE_OUTPUT) {
     adr = &DEFAULT_OUTPUT_DEVICE_PROPERTY_ADDRESS;
@@ -1328,7 +1262,6 @@ audiounit_get_default_device_id(cubeb_device_type type)
   }
 
   return devid;
-#endif
 }
 
 int
@@ -1456,7 +1389,6 @@ audiounit_convert_channel_layout(AudioChannelLayout * layout)
   return cl;
 }
 
-#if !TARGET_OS_IPHONE
 static cubeb_channel_layout
 audiounit_get_preferred_channel_layout(AudioUnit output_unit)
 {
@@ -1485,7 +1417,6 @@ audiounit_get_preferred_channel_layout(AudioUnit output_unit)
 
   return audiounit_convert_channel_layout(layout.get());
 }
-#endif
 
 static cubeb_channel_layout
 audiounit_get_current_channel_layout(AudioUnit output_unit)
@@ -1499,11 +1430,7 @@ audiounit_get_current_channel_layout(AudioUnit output_unit)
     LOG("AudioUnitGetPropertyInfo/kAudioUnitProperty_AudioChannelLayout rv=%d",
         rv);
     // This property isn't known before macOS 10.12, attempt another method.
-#if !TARGET_OS_IPHONE
     return audiounit_get_preferred_channel_layout(output_unit);
-#else
-    return CUBEB_LAYOUT_UNDEFINED;
-#endif
   }
   assert(size > 0);
 
@@ -1655,7 +1582,7 @@ audiounit_set_channel_layout(AudioUnit unit, io_side side,
 
   r = AudioUnitSetProperty(unit, kAudioUnitProperty_AudioChannelLayout,
                            kAudioUnitScope_Input, AU_OUT_BUS, au_layout.get(),
-                           static_cast<UInt32>(size));
+                           size);
   if (r != noErr) {
     LOG("AudioUnitSetProperty/%s/kAudioUnitProperty_AudioChannelLayout rv=%d",
         to_string(side), r);
@@ -1679,7 +1606,6 @@ audiounit_layout_init(cubeb_stream * stm, io_side side)
                                stm->context->layout);
 }
 
-#if !TARGET_OS_IPHONE
 static vector<AudioObjectID>
 audiounit_get_sub_devices(AudioDeviceID device_id)
 {
@@ -2123,7 +2049,6 @@ audiounit_destroy_aggregate_device(AudioObjectID plugin_id,
   *aggregate_device_id = kAudioObjectUnknown;
   return CUBEB_OK;
 }
-#endif
 
 static int
 audiounit_new_unit_instance(AudioUnit * unit, device_info * device)
@@ -2268,13 +2193,6 @@ audiounit_clamp_latency(cubeb_stream * stm, uint32_t latency_frames)
   }
   assert(stm->output_unit);
 
-#if TARGET_OS_IPHONE
-  // kAudioDevicePropertyBufferFrameSize is not available on iOS; the IO
-  // buffer duration is managed by AVAudioSession. Just keep the requested
-  // latency within the safe range.
-  return max(min<uint32_t>(latency_frames, SAFE_MAX_LATENCY_FRAMES),
-             SAFE_MIN_LATENCY_FRAMES);
-#else
   // If more than one stream operates in parallel
   // allow only lower values of latency
   int r;
@@ -2327,23 +2245,8 @@ audiounit_clamp_latency(cubeb_stream * stm, uint32_t latency_frames)
 
   return max(min<uint32_t>(latency_frames, upper_latency_limit),
              SAFE_MIN_LATENCY_FRAMES);
-#endif /* TARGET_OS_IPHONE */
 }
 
-#if TARGET_OS_IPHONE
-static int
-audiounit_set_buffer_size(cubeb_stream * stm, uint32_t new_size_frames,
-                          io_side side)
-{
-  // kAudioDevicePropertyBufferFrameSize is not available on iOS. The actual
-  // IO buffer duration is controlled through AVAudioSession by the host
-  // application, so accept the requested size and keep the unit defaults.
-  LOG("(%p) %s buffer size request of %u frames ignored on iOS "
-      "(AVAudioSession controls the IO buffer duration).",
-      stm, to_string(side), new_size_frames);
-  return CUBEB_OK;
-}
-#else
 /*
  * Change buffer size is prone to deadlock thus we change it
  * following the steps:
@@ -2487,7 +2390,6 @@ audiounit_set_buffer_size(cubeb_stream * stm, uint32_t new_size_frames,
       new_size_frames);
   return CUBEB_OK;
 }
-#endif /* TARGET_OS_IPHONE */
 
 static int
 audiounit_configure_input(cubeb_stream * stm)
@@ -2703,7 +2605,6 @@ audiounit_setup_stream(cubeb_stream * stm)
   device_info in_dev_info = stm->input_device;
   device_info out_dev_info = stm->output_device;
 
-#if !TARGET_OS_IPHONE
   if (has_input(stm) && has_output(stm) &&
       stm->input_device.id != stm->output_device.id) {
     r = audiounit_create_aggregate_device(stm);
@@ -2721,7 +2622,6 @@ audiounit_setup_stream(cubeb_stream * stm)
       out_dev_info.flags = DEV_OUTPUT;
     }
   }
-#endif
 
   if (has_input(stm)) {
     r = audiounit_create_unit(&stm->input_unit, &in_dev_info);
@@ -2863,13 +2763,8 @@ audiounit_setup_stream(cubeb_stream * stm)
       return CUBEB_ERROR;
     }
 
-    stm->current_latency_frames =
-#if TARGET_OS_IPHONE
-        0;
-#else
-        audiounit_get_device_presentation_latency(stm->output_device.id,
-                                                  kAudioDevicePropertyScopeOutput);
-#endif
+    stm->current_latency_frames = audiounit_get_device_presentation_latency(
+        stm->output_device.id, kAudioDevicePropertyScopeOutput);
 
     Float64 unit_s;
     UInt32 size = sizeof(unit_s);
@@ -2889,12 +2784,10 @@ audiounit_setup_stream(cubeb_stream * stm)
         ceilf(stm->output_hw_rate / stm->input_hw_rate);
   }
 
-#if !TARGET_OS_IPHONE
   r = audiounit_install_device_changed_callback(stm);
   if (r != CUBEB_OK) {
     LOG("(%p) Could not install all device change callback.", stm);
   }
-#endif
 
   return CUBEB_OK;
 }
@@ -3005,13 +2898,11 @@ audiounit_close_stream(cubeb_stream * stm)
   stm->resampler.reset();
   stm->mixer.reset();
 
-#if !TARGET_OS_IPHONE
   if (stm->aggregate_device_id != kAudioObjectUnknown) {
     audiounit_destroy_aggregate_device(stm->plugin_id,
                                        &stm->aggregate_device_id);
     stm->aggregate_device_id = kAudioObjectUnknown;
   }
-#endif
 }
 
 static void
@@ -3202,7 +3093,6 @@ convert_uint32_into_string(UInt32 data)
   return str;
 }
 
-#if !TARGET_OS_IPHONE
 int
 audiounit_get_default_device_datasource(cubeb_device_type type, UInt32 * data)
 {
@@ -3224,19 +3114,12 @@ audiounit_get_default_device_datasource(cubeb_device_type type, UInt32 * data)
 
   return CUBEB_OK;
 }
-#endif
 
 int
 audiounit_get_default_device_name(cubeb_stream * stm,
                                   cubeb_device * const device,
                                   cubeb_device_type type)
 {
-#if TARGET_OS_IPHONE
-  (void)stm;
-  (void)device;
-  (void)type;
-  return CUBEB_ERROR_NOT_SUPPORTED;
-#else
   assert(stm);
   assert(device);
 
@@ -3253,7 +3136,6 @@ audiounit_get_default_device_name(cubeb_stream * stm,
         type == CUBEB_DEVICE_TYPE_INPUT ? "input" : "output");
   }
   return CUBEB_OK;
-#endif
 }
 
 int
@@ -3330,7 +3212,6 @@ audiounit_strref_to_cstr_utf8(CFStringRef strref)
   return ret;
 }
 
-#if !TARGET_OS_IPHONE
 static uint32_t
 audiounit_get_channel_count(AudioObjectID devid, AudioObjectPropertyScope scope)
 {
@@ -3804,34 +3685,6 @@ audiounit_register_device_collection_changed(
   }
   return (ret == noErr) ? CUBEB_OK : CUBEB_ERROR;
 }
-#else
-static int
-audiounit_enumerate_devices(cubeb * /* context */, cubeb_device_type /* type */,
-                            cubeb_device_collection * collection)
-{
-  collection->count = 0;
-  collection->device = NULL;
-  return CUBEB_ERROR_NOT_SUPPORTED;
-}
-
-static int
-audiounit_device_collection_destroy(cubeb * /* context */,
-                                    cubeb_device_collection * collection)
-{
-  collection->count = 0;
-  collection->device = NULL;
-  return CUBEB_OK;
-}
-
-int
-audiounit_register_device_collection_changed(
-    cubeb * /* context */, cubeb_device_type /* devtype */,
-    cubeb_device_collection_changed_callback /* collection_changed_callback */,
-    void * /* user_ptr */)
-{
-  return CUBEB_ERROR_NOT_SUPPORTED;
-}
-#endif
 
 cubeb_ops const audiounit_ops = {
     /*.init =*/audiounit_init,

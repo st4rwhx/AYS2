@@ -218,13 +218,7 @@ __fi u32 ipuRead32(u32 mem)
 	// Note: It's assumed that mem's input value is always in the 0x10002000 page
 	// of memory (if not, it's probably bad code).
 
-	// [iter216] Soft-fail: corrupted vtlb mappings may route wrong addresses here.
-	if ((mem & ~0xff) != 0x10002000) {
-		static u32 s_ipu_warn = 0;
-		if (s_ipu_warn < 3)
-			Console.Warning("@@IPU_OOB@@ n=%u mem=0x%08x (expected 0x10002000 page)", s_ipu_warn++, mem);
-		return 0;
-	}
+	pxAssert((mem & ~0xff) == 0x10002000);
 	mem &= 0xff;	// ipu repeats every 0x100
 
 	switch (mem)
@@ -274,13 +268,7 @@ __fi u64 ipuRead64(u32 mem)
 	// Note: It's assumed that mem's input value is always in the 0x10002000 page
 	// of memory (if not, it's probably bad code).
 
-	// [iter216] Soft-fail for corrupted vtlb mappings
-	if ((mem & ~0xff) != 0x10002000) {
-		static u32 s_ipu64_warn = 0;
-		if (s_ipu64_warn < 3)
-			Console.Warning("@@IPU64_OOB@@ n=%u mem=0x%08x", s_ipu64_warn++, mem);
-		return 0;
-	}
+	pxAssert((mem & ~0xff) == 0x10002000);
 	mem &= 0xff;	// ipu repeats every 0x100
 
 	switch (mem)
@@ -344,13 +332,10 @@ void ipuSoftReset()
 
 __fi bool ipuWrite32(u32 mem, u32 value)
 {
-	// [iter216] Soft-fail for corrupted vtlb mappings
-	if ((mem & ~0xfff) != 0x10002000) {
-		static u32 s_ipuw_warn = 0;
-		if (s_ipuw_warn < 3)
-			Console.Warning("@@IPUW_OOB@@ n=%u mem=0x%08x val=0x%08x", s_ipuw_warn++, mem, value);
-		return false;
-	}
+	// Note: It's assumed that mem's input value is always in the 0x10002000 page
+	// of memory (if not, it's probably bad code).
+
+	pxAssert((mem & ~0xfff) == 0x10002000);
 	mem &= 0xfff;
 
 	switch (mem)
@@ -382,13 +367,10 @@ __fi bool ipuWrite32(u32 mem, u32 value)
 // writeback itself.
 __fi bool ipuWrite64(u32 mem, u64 value)
 {
-	// [iter216] Soft-fail for corrupted vtlb mappings
-	if ((mem & ~0xfff) != 0x10002000) {
-		static u32 s_ipuw64_warn = 0;
-		if (s_ipuw64_warn < 3)
-			Console.Warning("@@IPUW64_OOB@@ n=%u mem=0x%08x", s_ipuw64_warn++, mem);
-		return false;
-	}
+	// Note: It's assumed that mem's input value is always in the 0x10002000 page
+	// of memory (if not, it's probably bad code).
+
+	pxAssert((mem & ~0xfff) == 0x10002000);
 	mem &= 0xfff;
 
 	switch (mem)

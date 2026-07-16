@@ -72,11 +72,6 @@ typedef void (^ARMSX2RetroAchievementsCompletion)(BOOL success, NSString * _Nonn
 + (void)saveAllState;  // NVM + MC
 + (BOOL)isRunning;
 
-// NVM status
-+ (nullable NSDate *)lastNVMSaveDate;
-+ (nullable NSString *)nvmFilePath;
-+ (BOOL)nvmFileExists;
-
 // Pad input
 + (void)setPadButton:(ARMSX2PadButton)button pressed:(BOOL)pressed;
 + (void)setLeftStickX:(float)x Y:(float)y;
@@ -97,10 +92,27 @@ typedef void (^ARMSX2RetroAchievementsCompletion)(BOOL success, NSString * _Nonn
                                                     toDirectory:(nonnull NSURL *)destinationDirectory
     NS_SWIFT_NAME(extractControllerSkinArchive(at:to:));
 
++ (nullable NSData *)peekSkinManifestDataAtURL:(nonnull NSURL *)archiveURL
+    NS_SWIFT_NAME(peekSkinManifestData(at:));
+
++ (nonnull NSArray<NSURL *> *)extractSkinPackageArchiveAtURL:(nonnull NSURL *)archiveURL
+                                                    toDirectory:(nonnull NSURL *)destinationDirectory
+    NS_SWIFT_NAME(extractSkinPackageArchive(at:to:));
+
+// Extracts the first .ps2 file from a ZIP into the memory-card directory.
++ (nullable NSString *)extractMemoryCardArchiveAtURL:(nonnull NSURL *)archiveURL
+    NS_SWIFT_NAME(extractMemoryCardArchive(at:));
+
 // OSD overlay
 + (void)setPerformanceOverlayVisible:(BOOL)visible;
 + (BOOL)isPerformanceOverlayVisible;
 + (void)applyOsdPreset:(int)preset;  // 0=off, 1=simple, 2=detail, 3=full
+
+// Accessibility: structured device stats for the VoiceOver HUD mirror.
++ (nonnull NSDictionary<NSString *, id> *)deviceStatsForAccessibility;
+
+// Device haptic fallback for game rumble when no rumble-capable controller is connected.
++ (void)triggerDeviceHapticLarge:(NSUInteger)large small:(NSUInteger)small;
 
 // Audio
 + (int)emulatorVolumePercent;
@@ -199,23 +211,21 @@ typedef void (^ARMSX2RetroAchievementsCompletion)(BOOL success, NSString * _Nonn
 + (void)changeDiscToISO:(nonnull NSString *)isoName completion:(nullable ARMSX2SaveStateCompletion)completion NS_SWIFT_NAME(changeDisc(toISO:completion:));
 + (void)ejectDiscWithCompletion:(nullable ARMSX2SaveStateCompletion)completion NS_SWIFT_NAME(ejectDisc(completion:));
 
-// [P44] ISO boot
+// ISO boot
 + (BOOL)canResolveISO:(nonnull NSString *)isoName NS_SWIFT_NAME(canResolveISO(_:));
 + (void)bootISO:(nonnull NSString *)isoName;
 
-// [P44] BIOS management
+// BIOS management
 + (nonnull NSString *)biosDirectory;
-+ (nonnull NSArray<NSString *> *)availableBIOSes;
 + (nonnull NSArray<ARMSX2BIOSInfo *> *)availableBIOSInfos;
-+ (nonnull ARMSX2BIOSInfo *)biosInfoForName:(nonnull NSString *)biosName;
 + (nonnull NSString *)defaultBIOSName;
 + (void)setDefaultBIOS:(nonnull NSString *)biosName;
 
-// [P44] Favorites
+// Favorites
 + (BOOL)isFavorite:(nonnull NSString *)isoName;
 + (void)setFavorite:(nonnull NSString *)isoName favorite:(BOOL)favorite;
 
-// [P44] INI generic getter/setter
+// INI generic getter/setter
 + (int)getINIInt:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(int)def;
 + (BOOL)getINIBool:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(BOOL)def;
 + (float)getINIFloat:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(float)def;
@@ -225,6 +235,24 @@ typedef void (^ARMSX2RetroAchievementsCompletion)(BOOL success, NSString * _Nonn
 + (void)setINIFloat:(nonnull NSString *)section key:(nonnull NSString *)key value:(float)value;
 + (void)setINIString:(nonnull NSString *)section key:(nonnull NSString *)key value:(nonnull NSString *)value;
 + (void)clearINISection:(nonnull NSString *)section;
++ (void)applyGraphicsSettingsNow;
++ (void)flushINISettings;
+
+// Per-game INI access — reads/writes the per-game INI file
+// (EmuFolders::GameSettings/<serial>_<crc>.ini) used by the game-settings and
+// patch-enable-list helpers. "For current game" write/delete variants live-apply.
++ (BOOL)hasPerGameINIValue:(nonnull NSString *)section key:(nonnull NSString *)key forISO:(nonnull NSString *)isoName NS_SWIFT_NAME(hasPerGameINIValue(_:key:forISO:));
++ (int)getPerGameINIInt:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(int)def forISO:(nonnull NSString *)isoName NS_SWIFT_NAME(getPerGameINIInt(_:key:defaultValue:forISO:));
++ (BOOL)getPerGameINIBool:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(BOOL)def forISO:(nonnull NSString *)isoName NS_SWIFT_NAME(getPerGameINIBool(_:key:defaultValue:forISO:));
++ (void)setPerGameINIInt:(nonnull NSString *)section key:(nonnull NSString *)key value:(int)value forISO:(nonnull NSString *)isoName NS_SWIFT_NAME(setPerGameINIInt(_:key:value:forISO:));
++ (void)setPerGameINIBool:(nonnull NSString *)section key:(nonnull NSString *)key value:(BOOL)value forISO:(nonnull NSString *)isoName NS_SWIFT_NAME(setPerGameINIBool(_:key:value:forISO:));
++ (void)deletePerGameINIValue:(nonnull NSString *)section key:(nonnull NSString *)key forISO:(nonnull NSString *)isoName NS_SWIFT_NAME(deletePerGameINIValue(_:key:forISO:));
++ (BOOL)hasPerGameINIValueForCurrentGame:(nonnull NSString *)section key:(nonnull NSString *)key NS_SWIFT_NAME(hasPerGameINIValueForCurrentGame(_:key:));
++ (int)getPerGameINIIntForCurrentGame:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(int)def NS_SWIFT_NAME(getPerGameINIIntForCurrentGame(_:key:defaultValue:));
++ (BOOL)getPerGameINIBoolForCurrentGame:(nonnull NSString *)section key:(nonnull NSString *)key defaultValue:(BOOL)def NS_SWIFT_NAME(getPerGameINIBoolForCurrentGame(_:key:defaultValue:));
++ (void)setPerGameINIIntForCurrentGame:(nonnull NSString *)section key:(nonnull NSString *)key value:(int)value NS_SWIFT_NAME(setPerGameINIIntForCurrentGame(_:key:value:));
++ (void)setPerGameINIBoolForCurrentGame:(nonnull NSString *)section key:(nonnull NSString *)key value:(BOOL)value NS_SWIFT_NAME(setPerGameINIBoolForCurrentGame(_:key:value:));
++ (void)deletePerGameINIValueForCurrentGame:(nonnull NSString *)section key:(nonnull NSString *)key NS_SWIFT_NAME(deletePerGameINIValueForCurrentGame(_:key:));
 
 // Runtime speed control
 + (int)limiterMode;
@@ -246,12 +274,11 @@ typedef void (^ARMSX2RetroAchievementsCompletion)(BOOL success, NSString * _Nonn
 + (void)forgetCompatibilityPresetForCurrentGame;
 + (void)forgetCompatibilityPresetForISO:(nonnull NSString *)isoName NS_SWIFT_NAME(forgetCompatibilityPreset(forISO:));
 
-// [P44] VM lifecycle for menu flow
+// VM lifecycle for menu flow
 + (BOOL)isVMRunning;
 + (BOOL)hasBIOS;
 + (void)requestVMBoot;
 + (void)requestVMShutdown;
-+ (void)resetVM;
 + (void)testControllerRumble;
 
 // Save states
@@ -265,12 +292,33 @@ typedef void (^ARMSX2RetroAchievementsCompletion)(BOOL success, NSString * _Nonn
 + (nullable NSString *)pnachPathForISO:(nonnull NSString *)isoName asCheat:(BOOL)asCheat NS_SWIFT_NAME(pnachPath(forISO:asCheat:));
 + (void)reloadPatches;
 
+// Per-game patch/cheat enable lists (stored in the per-game INI under [Cheats]/Enable
+// and [Patches]/Enable, matching the PCSX2 patch loader). Used by the Cheats & Patches
+// manager to toggle named patch entries without rewriting .pnach files.
++ (nonnull NSArray<NSString *> *)patchEnableListForISO:(nonnull NSString *)isoName
+                                               section:(nonnull NSString *)section
+                                                  key:(nonnull NSString *)key
+        NS_SWIFT_NAME(patchEnableList(forISO:section:key:));
++ (nonnull NSArray<NSString *> *)patchEnableListForCurrentGameSection:(nonnull NSString *)section
+                                                                  key:(nonnull NSString *)key
+        NS_SWIFT_NAME(patchEnableListForCurrentGame(section:key:));
++ (void)setPatchEnableList:(nonnull NSArray<NSString *> *)values
+                   forISO:(nonnull NSString *)isoName
+                 section:(nonnull NSString *)section
+                    key:(nonnull NSString *)key
+        NS_SWIFT_NAME(setPatchEnableList(_:forISO:section:key:));
++ (void)setPatchEnableListForCurrentGame:(nonnull NSArray<NSString *> *)values
+                                 section:(nonnull NSString *)section
+                                     key:(nonnull NSString *)key
+        NS_SWIFT_NAME(setPatchEnableListForCurrentGame(_:section:key:));
+
 // Memory card management
 + (nonnull NSString *)memoryCardDirectory;
 + (nonnull NSArray<NSString *> *)availableMemoryCards;
 + (nullable NSString *)memoryCardNameForSlot:(NSInteger)slot NS_SWIFT_NAME(memoryCardName(forSlot:));
 + (void)setMemoryCardName:(nonnull NSString *)name forSlot:(NSInteger)slot enabled:(BOOL)enabled NS_SWIFT_NAME(setMemoryCard(name:forSlot:enabled:));
 + (BOOL)createMemoryCardNamed:(nonnull NSString *)name sizeMB:(NSInteger)sizeMB folder:(BOOL)folder NS_SWIFT_NAME(createMemoryCard(named:sizeMB:folder:));
++ (BOOL)deleteMemoryCardNamed:(nonnull NSString *)name NS_SWIFT_NAME(deleteMemoryCard(named:));
 
 // RetroAchievements
 + (nonnull NSDictionary<NSString *, id> *)retroAchievementsState;
@@ -288,7 +336,7 @@ typedef void (^ARMSX2RetroAchievementsCompletion)(BOOL success, NSString * _Nonn
 // DEV9 / Network
 + (nonnull NSArray<NSString *> *)dev9NetworkAdapters;
 
-// [P53] Gamepad button mapping
+// Gamepad button mapping
 + (void)startButtonCapture;
 + (void)stopButtonCapture;
 + (void)pollGamepadForCapture;  // call from main thread when VM is not running

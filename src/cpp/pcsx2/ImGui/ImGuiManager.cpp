@@ -84,6 +84,7 @@ static ImFont* s_fixed_font;
 static ImFont* s_osd_font;
 
 static std::vector<ImGuiManager::FontInfo> s_font_info;
+static std::vector<u8> s_standard_font_data;
 static std::vector<u8> s_custom_font_data;
 static std::vector<u8> s_fixed_font_data;
 static std::vector<u8> s_icon_fa_font_data;
@@ -99,6 +100,22 @@ static std::atomic_bool s_imgui_wants_mouse{false};
 static std::atomic_bool s_imgui_wants_text{false};
 
 static bool s_gamepad_swap_noth_west = false;
+
+struct ControllerNavState
+{
+	bool dpad_h_held = false;
+	bool dpad_v_held = false;
+
+	struct AxisState
+	{
+		float x = 0.0f, y = 0.0f;
+		bool x_neg_active = false, x_pos_active = false;
+		bool y_neg_active = false, y_pos_active = false;
+	};
+	AxisState left_stick;
+	AxisState right_stick;
+};
+static std::unordered_map<u32, ControllerNavState> s_controller_nav_states;
 
 // mapping of host key -> imgui key
 static std::unordered_map<u32, ImGuiKey> s_imgui_key_map;
@@ -251,12 +268,20 @@ void ImGuiManager::WindowResized()
 
 	// Scale might have changed as a result of window resize.
 	RequestScaleUpdate();
+
+	if (GImGui->NavWindow != nullptr)
+		ImGui::NavInitWindow(GImGui->NavWindow, true);
 }
 
 void ImGuiManager::RequestScaleUpdate()
 {
 	if (s_window_width > 0 && s_window_height > 0)
 		s_scale_changed = true;
+}
+
+void ImGuiManager::SetOSDSafeAreaInsets(float left, float top, float right, float bottom)
+{
+	// Stub — iOS uses this for rounded-corner OSD clearance. Full implementation in Phase 5.
 }
 
 void ImGuiManager::ReloadFonts()
@@ -315,12 +340,7 @@ void ImGuiManager::NewFrame()
 	// focus when there's nothing there. We use GetCurrentWindowRead() because otherwise it'll make it visible.
 	ImGui::GetCurrentWindowRead()->Flags |= ImGuiWindowFlags_NoNavInputs;
 	s_imgui_wants_keyboard.store(io.WantCaptureKeyboard, std::memory_order_relaxed);
-#if defined(__APPLE__) && defined(__MACH__) && (TARGET_OS_IOS || TARGET_OS_SIMULATOR)
-	// [P28] On iOS, never let ImGui capture mouse/touch — SwiftUI virtual pad handles input
-	s_imgui_wants_mouse.store(false, std::memory_order_release);
-#else
 	s_imgui_wants_mouse.store(io.WantCaptureMouse, std::memory_order_release);
-#endif
 
 	const bool want_text_input = io.WantTextInput;
 	if (s_imgui_wants_text.load(std::memory_order_relaxed) != want_text_input)
@@ -453,6 +473,27 @@ void ImGuiManager::SetKeyMap()
 
 bool ImGuiManager::LoadFontData()
 {
+	// Android: SetFonts() is never called (no Qt/language layer), so s_font_info stays
+	// empty and AddTextFont() returns null (blank OSD / default-font fallback). Seed it
+	// from the bundled Roboto-Regular.ttf resource, matching the refresh-experimental
+	// Android port.
+	if (s_font_info.empty())
+	{
+		if (s_standard_font_data.empty())
+		{
+			std::optional<std::vector<u8>> font_data = FileSystem::ReadBinaryFile(
+				EmuFolders::GetOverridableResourcePath("fonts" FS_OSPATH_SEPARATOR_STR "Roboto-Regular.ttf").c_str());
+			if (!font_data.has_value())
+				return false;
+			s_standard_font_data = std::move(font_data.value());
+		}
+		FontInfo info;
+		info.data = std::span<const u8>(s_standard_font_data.data(), s_standard_font_data.size());
+		info.face_name = nullptr;
+		info.is_emoji_font = false;
+		s_font_info.push_back(info);
+	}
+
 	const std::string custom_font_path(StringUtil::StripWhitespace(GSConfig.OsdFontPath));
 	if (custom_font_path.empty())
 	{
@@ -508,6 +549,8 @@ bool ImGuiManager::LoadFontData()
 
 void ImGuiManager::UnloadFontData()
 {
+	s_font_info.clear();
+	std::vector<u8>().swap(s_standard_font_data);
 	std::vector<u8>().swap(s_custom_font_data);
 	std::vector<u8>().swap(s_fixed_font_data);
 	std::vector<u8>().swap(s_icon_fa_font_data);
@@ -529,7 +572,15 @@ static u32 GetFontIndex(const ImGuiManager::FontInfo& font)
 {
 	if (!font.face_name)
 		return 0; // No face name selected
-#define RET_IF_ERR(x) do { if ((x) != FT_Err_Ok) [[unlikely]] { assert(0); return 0; } } while (0)
+#define RET_IF_ERR(x) \
+	do \
+	{ \
+		if ((x) != FT_Err_Ok) [[unlikely]] \
+		{ \
+			assert(0); \
+			return 0; \
+		} \
+	} while (0)
 	if (!s_ft_lib)
 		RET_IF_ERR(FT_Init_FreeType(&s_ft_lib));
 	u32 face_idx = 0;
@@ -749,19 +800,33 @@ bool ImGuiManager::AddImGuiFonts()
 	io.Fonts->Clear();
 
 	s_standard_font = AddTextFont();
-	if (!s_standard_font || !AddIconFonts() || !AddEmojiFont())
-		return false;
+	const char* fail = nullptr;
+	if (!s_standard_font) fail = "AddTextFont";
+	else if (!AddIconFonts()) fail = "AddIconFonts#1";
+	else if (!AddEmojiFont()) fail = "AddEmojiFont#1";
+	else if (!(s_fixed_font = AddFixedFont())) fail = "AddFixedFont";
+	else if (!AddEmojiFont()) fail = "AddEmojiFont#2";
+	else if (!(s_osd_font = AddOsdFont())) fail = "AddOsdFont";
+	else if (!AddIconFonts()) fail = "AddIconFonts#2";
+	else if (!AddEmojiFont()) fail = "AddEmojiFont#3";
 
-	s_fixed_font = AddFixedFont();
-	if (!s_fixed_font || !AddEmojiFont())
-		return false;
+	if (!fail)
+	{
+		ImGuiFullscreen::SetFont(s_standard_font);
+		return true;
+	}
 
-	s_osd_font = AddOsdFont();
-	if (!s_osd_font || !AddIconFonts() || !AddEmojiFont())
-		return false;
-
-	ImGuiFullscreen::SetFont(s_standard_font);
-	return true;
+	// Android: the custom font atlas failed to build (which font: logged below).
+	// Fall back to ImGui's built-in default font so ImGui — and therefore the GS
+	// device — can still initialize and the game can render (OSD uses a basic font).
+	Console.ErrorFmt("ImGui: font atlas build failed at {}, falling back to default font", fail);
+	io.Fonts->Clear();
+	s_standard_font = io.Fonts->AddFontDefault();
+	s_fixed_font = s_standard_font;
+	s_osd_font = s_standard_font;
+	if (s_standard_font)
+		ImGuiFullscreen::SetFont(s_standard_font);
+	return s_standard_font != nullptr;
 }
 
 struct OSDMessage
@@ -902,7 +967,7 @@ void ImGuiManager::DrawOSDMessages(Common::Timer::Value current_time)
 	const float padding = std::ceil(8.0f * scale);
 	const float rounding = std::ceil(5.0f * scale);
 	const float max_width = s_window_width - (margin + padding) * 2.0f;
-	
+
 	float position_y = margin;
 	switch (GSConfig.OsdMessagesPos)
 	{
@@ -911,20 +976,20 @@ void ImGuiManager::DrawOSDMessages(Common::Timer::Value current_time)
 		case OsdOverlayPos::TopRight:
 			position_y = margin;
 			break;
-			
+
 		case OsdOverlayPos::CenterLeft:
 		case OsdOverlayPos::Center:
 		case OsdOverlayPos::CenterRight:
 			position_y = s_window_height * 0.5f;
 			break;
-			
+
 		case OsdOverlayPos::BottomLeft:
 		case OsdOverlayPos::BottomCenter:
 		case OsdOverlayPos::BottomRight:
 			// For bottom positions, start from the bottom and let messages stack upward
 			position_y = s_window_height - margin;
 			break;
-			
+
 		case OsdOverlayPos::None:
 		default:
 			position_y = margin;
@@ -996,16 +1061,16 @@ void ImGuiManager::DrawOSDMessages(Common::Timer::Value current_time)
 		const ImVec2 text_size(
 			font->CalcTextSizeA(font_size, max_width, max_width, msg.text.c_str(), msg.text.c_str() + msg.text.length()));
 		const ImVec2 size(text_size.x + padding * 2.0f, text_size.y + padding * 2.0f);
-		
+
 		// For bottom positions, adjust actual_y to try to account for message height
 		float final_y = actual_y;
-		if (GSConfig.OsdMessagesPos == OsdOverlayPos::BottomLeft || 
-		    GSConfig.OsdMessagesPos == OsdOverlayPos::BottomCenter || 
-		    GSConfig.OsdMessagesPos == OsdOverlayPos::BottomRight)
+		if (GSConfig.OsdMessagesPos == OsdOverlayPos::BottomLeft ||
+			GSConfig.OsdMessagesPos == OsdOverlayPos::BottomCenter ||
+			GSConfig.OsdMessagesPos == OsdOverlayPos::BottomRight)
 		{
 			final_y = actual_y - size.y;
 		}
-		
+
 		const ImVec2 base_pos = CalculateOSDPosition(GSConfig.OsdMessagesPos, margin, size, s_window_width, s_window_height);
 		const ImVec2 pos(base_pos.x, final_y);
 		const ImVec4 text_rect(pos.x + padding, pos.y + padding, pos.x + size.x - padding, pos.y + size.y - padding);
@@ -1015,11 +1080,11 @@ void ImGuiManager::DrawOSDMessages(Common::Timer::Value current_time)
 		dl->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(0x48, 0x48, 0x48, opacity), rounding);
 		dl->AddText(font, font_size, ImVec2(text_rect.x, text_rect.y), IM_COL32(0xff, 0xff, 0xff, opacity), msg.text.c_str(),
 			msg.text.c_str() + msg.text.length(), max_width, &text_rect);
-		
+
 		// Stack direction depends on the position upward for bottom positions, downward for others
-		if (GSConfig.OsdMessagesPos == OsdOverlayPos::BottomLeft || 
-		    GSConfig.OsdMessagesPos == OsdOverlayPos::BottomCenter || 
-		    GSConfig.OsdMessagesPos == OsdOverlayPos::BottomRight)
+		if (GSConfig.OsdMessagesPos == OsdOverlayPos::BottomLeft ||
+			GSConfig.OsdMessagesPos == OsdOverlayPos::BottomCenter ||
+			GSConfig.OsdMessagesPos == OsdOverlayPos::BottomRight)
 		{
 			position_y -= (size.y + spacing); // Stack upward for bottom positions
 		}
@@ -1185,7 +1250,7 @@ bool ImGuiManager::ProcessHostKeyEvent(InputBindingKey key, float value)
 	return s_imgui_wants_keyboard.load(std::memory_order_acquire);
 }
 
-bool ImGuiManager::ProcessGenericInputEvent(GenericInputBinding key, InputLayout layout, float value)
+bool ImGuiManager::ProcessGenericInputEvent(GenericInputBinding key, InputLayout layout, float value, u32 controller_id)
 {
 	static constexpr ImGuiKey key_map[] = {
 		ImGuiKey_None, // Unknown,
@@ -1193,15 +1258,15 @@ bool ImGuiManager::ProcessGenericInputEvent(GenericInputBinding key, InputLayout
 		ImGuiKey_GamepadDpadRight, // DPadRight
 		ImGuiKey_GamepadDpadLeft, // DPadLeft
 		ImGuiKey_GamepadDpadDown, // DPadDown
-		ImGuiKey_None, // LeftStickUp
-		ImGuiKey_None, // LeftStickRight
-		ImGuiKey_None, // LeftStickDown
-		ImGuiKey_None, // LeftStickLeft
+		ImGuiKey_GamepadDpadUp, // LeftStickUp
+		ImGuiKey_GamepadDpadRight, // LeftStickRight
+		ImGuiKey_GamepadDpadDown, // LeftStickDown
+		ImGuiKey_GamepadDpadLeft, // LeftStickLeft
 		ImGuiKey_GamepadL3, // L3
-		ImGuiKey_None, // RightStickUp
-		ImGuiKey_None, // RightStickRight
-		ImGuiKey_None, // RightStickDown
-		ImGuiKey_None, // RightStickLeft
+		ImGuiKey_GamepadDpadUp, // RightStickUp
+		ImGuiKey_GamepadDpadRight, // RightStickRight
+		ImGuiKey_GamepadDpadDown, // RightStickDown
+		ImGuiKey_GamepadDpadLeft, // RightStickLeft
 		ImGuiKey_GamepadR3, // R3
 		ImGuiKey_GamepadFaceUp, // Triangle
 		ImGuiKey_GamepadFaceRight, // Circle
@@ -1222,6 +1287,21 @@ bool ImGuiManager::ProcessGenericInputEvent(GenericInputBinding key, InputLayout
 	if (static_cast<u32>(key) >= std::size(key_map) || key_map[static_cast<u32>(key)] == ImGuiKey_None)
 		return false;
 
+	// Ignore diagonal D-pad input — neither direction fires when both axes are held simultaneously.
+	const bool is_dpad_h = (key == GenericInputBinding::DPadLeft || key == GenericInputBinding::DPadRight);
+	const bool is_dpad_v = (key == GenericInputBinding::DPadUp || key == GenericInputBinding::DPadDown);
+	if (is_dpad_h || is_dpad_v)
+	{
+		ControllerNavState& nav = s_controller_nav_states[controller_id];
+		if (is_dpad_h)
+			nav.dpad_h_held = (value > 0.0f);
+		else
+			nav.dpad_v_held = (value > 0.0f);
+
+		if (nav.dpad_h_held && nav.dpad_v_held)
+			return false;
+	}
+
 	MTGS::RunOnGSThread(
 		[key = key_map[static_cast<u32>(key)], value, layout]() mutable {
 			if (s_gamepad_swap_noth_west)
@@ -1237,6 +1317,81 @@ bool ImGuiManager::ProcessGenericInputEvent(GenericInputBinding key, InputLayout
 		});
 
 	return s_imgui_wants_keyboard.load(std::memory_order_acquire);
+}
+
+void ImGuiManager::ProcessGenericAxisEvent(GenericInputBinding negative_key, GenericInputBinding positive_key, InputLayout layout, float value, u32 controller_id)
+{
+	// Hysteresis prevents wobble: activate at 0.5, release at 0.2.
+	static constexpr float ACTIVATE_THRESHOLD = 0.5f;
+	static constexpr float RELEASE_THRESHOLD = 0.2f;
+
+	// Ignore diagonal input and track binary state per direction to suppress duplicate events.
+	using AxisState = ControllerNavState::AxisState;
+	ControllerNavState& nav = s_controller_nav_states[controller_id];
+
+	AxisState* state = nullptr;
+	bool is_x_axis = false;
+	if (negative_key == GenericInputBinding::LeftStickLeft)
+	{
+		state = &nav.left_stick;
+		state->x = value;
+		is_x_axis = true;
+	}
+	else if (negative_key == GenericInputBinding::LeftStickUp)
+	{
+		state = &nav.left_stick;
+		state->y = value;
+		is_x_axis = false;
+	}
+	else if (negative_key == GenericInputBinding::RightStickLeft)
+	{
+		state = &nav.right_stick;
+		state->x = value;
+		is_x_axis = true;
+	}
+	else if (negative_key == GenericInputBinding::RightStickUp)
+	{
+		state = &nav.right_stick;
+		state->y = value;
+		is_x_axis = false;
+	}
+
+	float suppressed_value = value;
+	if (state)
+	{
+		const float other = is_x_axis ? state->y : state->x;
+		if (std::abs(other) > std::abs(value))
+			suppressed_value = 0.0f;
+	}
+
+	// Treat as binary like the D-pad: either fully pressed or released, with a deadzone.
+	bool* neg_active_ptr = state ? (is_x_axis ? &state->x_neg_active : &state->y_neg_active) : nullptr;
+	bool* pos_active_ptr = state ? (is_x_axis ? &state->x_pos_active : &state->y_pos_active) : nullptr;
+
+	if (negative_key != GenericInputBinding::Unknown)
+	{
+		const bool currently_active = neg_active_ptr ? *neg_active_ptr : false;
+		const float threshold = currently_active ? RELEASE_THRESHOLD : ACTIVATE_THRESHOLD;
+		const bool active = suppressed_value < -threshold;
+		if (!neg_active_ptr || active != currently_active)
+		{
+			if (neg_active_ptr)
+				*neg_active_ptr = active;
+			ProcessGenericInputEvent(negative_key, layout, active ? 1.0f : 0.0f, controller_id);
+		}
+	}
+	if (positive_key != GenericInputBinding::Unknown)
+	{
+		const bool currently_active = pos_active_ptr ? *pos_active_ptr : false;
+		const float threshold = currently_active ? RELEASE_THRESHOLD : ACTIVATE_THRESHOLD;
+		const bool active = suppressed_value > threshold;
+		if (!pos_active_ptr || active != currently_active)
+		{
+			if (pos_active_ptr)
+				*pos_active_ptr = active;
+			ProcessGenericInputEvent(positive_key, layout, active ? 1.0f : 0.0f, controller_id);
+		}
+	}
 }
 
 void ImGuiManager::SwapGamepadNorthWest(bool value)
