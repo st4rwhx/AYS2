@@ -24,6 +24,9 @@
 #include <condition_variable>
 #include <mutex>
 #include <string>
+#include <TargetConditionals.h>
+
+#if !TARGET_OS_IPHONE
 
 // We're using deprecated fields because we're targeting multiple ffmpeg versions.
 #if defined(_MSC_VER)
@@ -1546,3 +1549,5 @@ GSCapture::FormatList GSCapture::GetVideoFormatList(const char* codec)
 
 	return ret;
 }
+
+#endif  // !TARGET_OS_IPHONE
