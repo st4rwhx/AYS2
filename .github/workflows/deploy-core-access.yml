@@ -1,0 +1,117 @@
+# Auto-deploy AYS2 CORE ACCESS worker to Cloudflare
+#
+# What this does:
+#   1. Creates the KV namespace if it doesn't exist
+#   2. Injects the KV namespace ID into wrangler.toml
+#   3. Sets the Stripe webhook secret
+#   4. Deploys the worker
+#
+# Setup (ONE TIME):
+#   1. Generate a Cloudflare API token:
+#      - Go to https://dash.cloudflare.com/profile/api-tokens
+#      - Create Token → Use template "Edit Cloudflare Workers"
+#      - Add permission: "Workers KV Storage:Edit"
+#   2. Add to GitHub Secrets:
+#      - Settings → Secrets and variables → Actions → New repository secret
+#      - Name: CLOUDFLARE_API_TOKEN
+#      - Value: <your token>
+#   3. Add STRIPE_WEBHOOK_SECRET:
+#      - Same place, add another secret
+#      - Name: STRIPE_WEBHOOK_SECRET
+#      - Value: whsec_... (from Stripe Dashboard → Developers → Webhooks)
+
+name: Deploy CORE ACCESS Worker
+
+on:
+  push:
+    branches: [main, claude/ps2-emulator-ios-app-b7uvk6]
+    paths:
+      - 'coreaccess/worker/**'
+      - '.github/workflows/deploy-core-access.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy to Cloudflare Workers
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install wrangler
+        run: npm install -g wrangler
+
+      - name: Create or get KV namespace
+        id: kv
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          cd coreaccess/worker
+          
+          # Try to list existing namespaces and find ENTITLEMENTS
+          KV_ID=$(wrangler kv namespace list 2>/dev/null | grep -o '"id":"[^"]*"' | grep -A1 "ENTITLEMENTS" | grep -o '[a-f0-9]\{32\}' | head -1 || echo "")
+          
+          if [ -z "$KV_ID" ]; then
+            echo "Creating new KV namespace..."
+            KV_OUTPUT=$(wrangler kv namespace create ENTITLEMENTS 2>&1)
+            KV_ID=$(echo "$KV_OUTPUT" | grep -o 'id = "[^"]*"' | cut -d'"' -f2)
+          else
+            echo "Using existing KV namespace: $KV_ID"
+          fi
+          
+          echo "kv_id=$KV_ID" >> $GITHUB_OUTPUT
+          echo "✅ KV namespace ID: $KV_ID"
+
+      - name: Inject KV ID into wrangler.toml
+        run: |
+          cd coreaccess/worker
+          KV_ID="${{ steps.kv.outputs.kv_id }}"
+          
+          # Check if kv_namespaces binding already exists
+          if grep -q "kv_namespaces" wrangler.toml; then
+            # Update existing binding
+            sed -i "s/id = \"[^\"]*\"/id = \"$KV_ID\"/" wrangler.toml
+          else
+            # Add new binding
+            echo "" >> wrangler.toml
+            echo "[[kv_namespaces]]" >> wrangler.toml
+            echo "binding = \"ENTITLEMENTS\"" >> wrangler.toml
+            echo "id = \"$KV_ID\"" >> wrangler.toml
+          fi
+          
+          echo "✅ KV binding injected into wrangler.toml"
+
+      - name: Set Stripe webhook secret
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+        run: |
+          cd coreaccess/worker
+          echo "$STRIPE_WEBHOOK_SECRET" | wrangler secret put STRIPE_WEBHOOK_SECRET
+          echo "✅ Stripe webhook secret set"
+
+      - name: Deploy worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          cd coreaccess/worker
+          wrangler deploy
+          echo "✅ Worker deployed successfully"
+
+      - name: Summary
+        run: |
+          echo "## ✅ Deployment complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The CORE ACCESS worker is now live." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Get your worker URL from the deployment logs above" >> $GITHUB_STEP_SUMMARY
+          echo "2. Update \`CoreAccessStore.apiBase\` in Swift if needed" >> $GITHUB_STEP_SUMMARY
+          echo "3. Set up Stripe webhook pointing to \`<worker-url>/stripe-webhook\`" >> $GITHUB_STEP_SUMMARY
+          echo "4. Test with a test payment (card 4242 4242 4242 4242)" >> $GITHUB_STEP_SUMMARY
