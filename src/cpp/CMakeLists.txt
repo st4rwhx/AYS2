@@ -227,6 +227,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 
 	add_executable(ARMSX2iOS ios_main.mm ARMSX2Bridge.mm ${SWIFT_SOURCES})
 	
+	# Add Info.plist.in directly to bundle resources - Xcode will process the .in template
+	target_sources(ARMSX2iOS PRIVATE "${CMAKE_SOURCE_DIR}/Info.plist.in")
+	set_source_files_properties("${CMAKE_SOURCE_DIR}/Info.plist.in" PROPERTIES
+		MACOSX_PACKAGE_LOCATION .
+		XCODE_FILE_CLASS "text"
+	)
+	
 	set_target_properties(ARMSX2iOS PROPERTIES
 		MACOSX_BUNDLE TRUE
 		MACOSX_BUNDLE_GUI_IDENTIFIER "${ARMSX2_BUNDLE_IDENTIFIER}"
