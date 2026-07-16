@@ -430,7 +430,13 @@ GSVector4i GSTextureCache::TranslateAlignedRectByPage(u32 tbp, u32 tebp, u32 tbw
 				// The width is mismatched to the page.
 				if (!is_invalidation && GSConfig.UserHacks_TextureInsideRt < GSTextureInRtMode::MergeTargets)
 				{
-					DevCon.Warning("Uneven pages mess up sbp %x dbp %x spgw %d dpgw %d src fmt %d dst fmt %d src_rect %d, %d, %d, %d draw %lld", sbp, tbp, src_pgw, dst_pgw, spsm, tpsm, in_rect.x, in_rect.y, in_rect.z, in_rect.w, GSState::s_n);
+					// Some titles hit this every frame; fire the warning once.
+					static bool warned_uneven_pages = false;
+					if (!warned_uneven_pages)
+					{
+						warned_uneven_pages = true;
+						DevCon.Warning("Uneven pages mess up sbp %x dbp %x spgw %d dpgw %d src fmt %d dst fmt %d src_rect %d, %d, %d, %d draw %lld", sbp, tbp, src_pgw, dst_pgw, spsm, tpsm, in_rect.x, in_rect.y, in_rect.z, in_rect.w, GSState::s_n);
+					}
 					return GSVector4i::zero();
 				}
 
@@ -1757,7 +1763,7 @@ GSTextureCache::Source* GSTextureCache::LookupSource(const bool is_color, const 
 						}
 						else
 						{
-							const bool outside_target = !t->Overlaps(bp, bw, psm, r);
+							const bool outside_target = !t->OverlapsValid(bp, bw, psm, r);
 
 							if (!possible_shuffle && outside_target)
 							{
@@ -5296,7 +5302,8 @@ bool GSTextureCache::Move(u32 SBP, u32 SBW, u32 SPSM, int sx, int sy, u32 DBP, u
 			req_resize = true;
 
 			// If it was matched to an old target, make sure to clear the other type and update its information.
-			if (dst->m_was_dst_matched)
+			// Also update when the new data's buffer width is larger than the existing target.
+			if (dst->m_was_dst_matched || (Common::AlignUpPow2(w, 64) / GSLocalMemory::m_psm[new_TEX0.PSM].pgs.x) > dst->m_TEX0.TBW)
 			{
 				dst->m_TEX0 = new_TEX0;
 			}
@@ -7836,7 +7843,7 @@ GSTextureCache::Target::~Target()
 
 bool GSTextureCache::Target::OverlapsValid(u32 bp, u32 bw, u32 psm, const GSVector4i& rect) const
 {
-	const u32 valid_start_block = GSLocalMemory::m_psm[m_TEX0.PSM].info.bn(m_valid.x, m_valid.y, m_TEX0.TBP0, m_TEX0.TBW);
+	const u32 valid_start_block = GSLocalMemory::GetStartBlockAddress(m_TEX0.TBP0, m_TEX0.TBW, m_TEX0.PSM, m_valid);
 	return OverlapsHelper(valid_start_block, UnwrappedEndBlock(), bp, bw, psm, rect);
 }
 

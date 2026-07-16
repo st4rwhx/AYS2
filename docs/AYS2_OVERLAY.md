@@ -35,6 +35,8 @@ If a change can live in a new file instead of editing an upstream file, it MUST.
 
 ## 2. The overlay manifest (current)
 
+**Last synced to upstream: ARMSX2 iOSv2.4.0** (app version 2.4.0 / build 240).
+
 ### 2a. Additive files — 100% ours, upstream never has them
 Copied forward untouched on every rebase.
 
@@ -53,7 +55,7 @@ Copied forward untouched on every rebase.
 | File | Seam (what we change) |
 |---|---|
 | `src/swift/Views/RootView.swift` | show `DashboardView()` instead of the tab menu; app color-scheme apply; community welcome sheet |
-| `src/swift/Views/GameScreenView.swift` | pause button icon → pause; pause menu redesigned as tile grid |
+| `src/swift/Views/GameScreenView.swift` | pause button icon → `pause.fill` (menu itself is upstream's QuickMenuView; tile-grid redesign deferred) |
 | `src/swift/Models/SettingsStore.swift` | `AppColorScheme` (system/light/dark) setting |
 | `src/swift/Views/Settings/AppearanceSettingsView.swift` | Theme picker |
 | `src/swift/Views/GameListView.swift` | cover-flow carousel enabled in portrait (drop landscape-only gate) |
@@ -63,12 +65,12 @@ Copied forward untouched on every rebase.
 | `src/cpp/pcsx2/ImGui/ImGuiOverlays.cpp` | in-game OSD brand → `AYS2` |
 | `src/cpp/pcsx2/ImGui/FullscreenUI.cpp` | fullscreen heading brand → `AYS2` |
 | `src/cpp/ARMSX2Bridge.mm` | `buildVersion()` → `AYS2 v…` |
-| `src/cpp/CMakeLists.txt` | bundle id app name, our SWIFT_SOURCES additions |
+| `src/cpp/CMakeLists.txt` | bundle id `com.ayano.aysx2`, app name, our SWIFT_SOURCES additions |
 | `src/cpp/Info.plist.in` | `CFBundleDisplayName` → AYS2 |
 | `.github/workflows/build-ios.yml` | pin IPA version to `0.1.<run>`, SideStore publish, checksums |
 
 ### 2c. Hard constraints (never violate on any rebase)
-- **Bundle id stays — changing it loses the user's install/data.
+- **Bundle id stays `com.ayano.aysx2`** — changing it loses the user's install/data.
 - Keep the JIT default = `legacy` (brk #0x69 / StikDebug) on iOS.
 - Keep `TargetConditionals.h` in both PCHs (our vendored zlib doesn't pull it).
 - SideStore IPA version must equal `source.json` version (`0.1.<run>`).

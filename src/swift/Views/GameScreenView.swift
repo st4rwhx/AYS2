@@ -55,30 +55,30 @@ private struct RetroAchievementEntry: Identifiable, Equatable {
     var isActiveChallenge: Bool { bucket == 6 || bucket == 7 }
 }
 
-struct CompatibilityPreset: Identifiable {
-    let id: String
-    let title: String
-    let systemImage: String
-}
-
-let compatibilityPresets: [CompatibilityPreset] = [
-    CompatibilityPreset(id: "off", title: "Off / Default", systemImage: "power"),
-    CompatibilityPreset(id: "cop1", title: "COP1 Everything Only", systemImage: "function"),
-    CompatibilityPreset(id: "loadstore", title: "COP1 + EE Load/Store", systemImage: "arrow.left.arrow.right"),
-    CompatibilityPreset(id: "mmi", title: "COP1 + EE MMI", systemImage: "rectangle.3.group"),
-    CompatibilityPreset(id: "cop2vu", title: "COP1 + EE COP2/VU Macro", systemImage: "cube.transparent"),
-    CompatibilityPreset(id: "multdiv", title: "COP1 + EE Mult/Div", systemImage: "multiply"),
-    CompatibilityPreset(id: "shifts", title: "COP1 + EE Shifts", systemImage: "arrow.left.and.right"),
-    CompatibilityPreset(id: "moves", title: "COP1 + EE Moves/HI-LO", systemImage: "arrow.triangle.swap"),
-    CompatibilityPreset(id: "integeralu", title: "COP1 + EE Integer ALU", systemImage: "plus.forwardslash.minus"),
-    CompatibilityPreset(id: "branches", title: "COP1 + EE Branches/Jumps", systemImage: "arrow.triangle.branch"),
-]
-
 private struct GameScreenSizePreferenceKey: PreferenceKey {
     static let defaultValue: CGSize = .zero
     static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
         value = nextValue()
     }
+}
+
+/// Single source of truth for the in-game overlay stack, replacing the previous set of
+/// independent per-screen `@State` booleans.
+///
+/// - `.hidden`: gameplay; the VM is running and no overlay is up.
+/// - `.paused`: the pause-menu card is visible.
+/// - `.pausedPresenting`: the pause menu is logically open *underneath* a child screen (a
+///   sheet, the pad-layout overlay, the per-game settings overlay, or the reset alert). The
+///   pause card itself is not rendered in this state; the child covers the screen.
+///
+/// Dismissing any pause-launched child returns to `.paused` (never to `.hidden`), so closing
+/// Save States / Per-Game Settings / Cheats / RetroAchievements / Pad Layout / Reset ROM lands
+/// back on the pause menu instead of resuming gameplay. `Resume`, Back to Menu, Reset ROM and
+/// restart-with-disc are the only intentional paths to `.hidden`.
+private enum OverlayRoute: Equatable {
+    case hidden
+    case paused
+    case pausedPresenting(QuickMenuDestination)
 }
 
 struct GameScreenView: View {
@@ -88,29 +88,20 @@ struct GameScreenView: View {
     @State private var settings = SettingsStore.shared
     @State private var layoutPresets = PadLayoutPresetStore.shared
     @State private var skinLibrary = VPadSkinLibraryStore.shared
-    @State private var fileImporter = FileImportHandler.shared
     @State private var userVirtualPadVisible = true
     @State private var externalControllerConnected = false
     @State private var fullScreen = false
     @State private var menuButtonHidden = false
     @State private var vmMenuAvailable = false
     @State private var gameMenuAvailable = false
-    @State private var showSaveStates = false
-    @State private var showSpeedControl = false
-    @State private var showCompatibilityLab = false
-    @State private var showPerGameSettings = false
-    @State private var showPNACHImporter = false
-    @State private var showRetroAchievements = false
-    @State private var showPadLayoutEditor = false
-    @State private var showResetConfirmation = false
-    @State private var showPauseMenu = false
-    @State private var pendingPauseAction: (() -> Void)?
+    // MARK: Overlay Route
+    // The pause card + every screen launched from it are driven by one FSM. Opening a child
+    // transitions `.paused -> .pausedPresenting(child)` without tearing the card down; the child
+    // covers the screen and dismissing it returns to `.paused` (the pause menu), not gameplay.
+    @State private var overlayRoute: OverlayRoute = .hidden
     @State private var runtimePerGameSettingsEntry: ISOEntry?
     @State private var runtimePerGameSettings: [String: Any]?
     @State private var runtimePadLayoutIdentity: PadLayoutGameIdentity?
-    @State private var compatibilityPresetKey = "off"
-    @State private var compatibilityIdentity = ""
-    @State private var compatibilityAutoPresets = true
     @State private var statusMessage: String? = nil
     @State private var statusMessageGeneration = 0
     @State private var statusMessageDismissTask: Task<Void, Never>?
@@ -119,8 +110,21 @@ struct GameScreenView: View {
     @State private var retroAchievementsToastDismissTask: Task<Void, Never>?
     @State private var runtimeOverlayPauseActive = false
     @State private var previousHideHomeIndicator = false
+    @State private var previousHideStatusBar = false
+    @State private var wasBackgrounded = false
+    // Bumped whenever the in-game pad editor dismisses, so the gameplay controller is
+    // rebuilt from scratch (fresh UIKit press surfaces) instead of diffed. This avoids
+    // stale UIControl/hosting-controller state left behind by visibility edits.
+    @State private var padRebuildToken = 0
+    // Polls external controllers for any button/stick activity while the menu button is
+    // hidden, so external-controller-only users are never softlocked out of pause. The
+    // poll reads GCController state snapshots only (no handlers), so it cannot steal input
+    // from SDL/core. Started when the menu is hidden during gameplay, stopped on restore.
+    @State private var menuRestorePollTimer: Timer?
+    @State private var lastControllerInputActive = false
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let briefStatusDisplayDuration: TimeInterval = 2.2
     private static let importantStatusDisplayDuration: TimeInterval = 6.0
@@ -131,6 +135,61 @@ struct GameScreenView: View {
             .compactMap { $0 as? UIWindowScene }
             .first?.windows
             .first?.safeAreaInsets ?? .zero
+    }
+
+    /// SwiftUI `EdgeInsets` view of `displaySafeAreaInsets`, for the shared overlay
+    /// container which bounds its card from the host window's safe-area insets so the
+    /// card clears the notch / Dynamic Island / home indicator.
+    private var displaySafeAreaEdgeInsets: EdgeInsets {
+        let insets = displaySafeAreaInsets
+        return EdgeInsets(top: insets.top, leading: insets.left, bottom: insets.bottom, trailing: insets.right)
+    }
+
+    @ViewBuilder
+    private var pauseMenuOverlay: some View {
+        if case .paused = overlayRoute {
+            // The pause card renders only in `.paused`. While a child is up
+            // (`.pausedPresenting`) the card is omitted so it cannot z-order over the
+            // child overlay; the child covers the screen and the card reappears on dismiss.
+            GameOverlayContainer(
+                safeAreaInsets: displaySafeAreaEdgeInsets,
+                onTapOutside: { overlayRoute = .hidden },
+                frameMode: .landscapePanel
+            ) { metrics in
+                QuickMenuView(
+                    settings: settings,
+                    padVisible: $userVirtualPadVisible,
+                    fullScreen: $fullScreen,
+                    menuButtonHidden: $menuButtonHidden,
+                    vmMenuAvailable: vmMenuAvailable,
+                    gameMenuAvailable: gameMenuAvailable,
+                    virtualPadHiddenByController: virtualPadHiddenByController,
+                    gameTitle: currentRuntimeGameName(),
+                    controllerSkinMenu: AnyView(controllerSkinMenu),
+                    discMenu: AnyView(discSwapMenu),
+                    variant: metrics.variant,
+                    activePadLayoutName: activePadLayoutDisplayName,
+                    onCycleOSD: { cycleOsdPreset() },
+                    onOpen: { destination in
+                        // Transition to `.pausedPresenting` without closing the card; the
+                        // child covers the screen and dismissing it returns to `.paused`.
+                        openPauseMenuChild(destination)
+                    },
+                    onClearCache: {
+                        overlayRoute = .hidden
+                        clearCurrentGameCache()
+                    },
+                    onBackToMenu: {
+                        overlayRoute = .hidden
+                        appState.returnToMenu()
+                    },
+                    onResume: {
+                        if settings.hapticFeedback { HapticManager.light.impactOccurred() }
+                        overlayRoute = .hidden
+                    }
+                )
+            }
+        }
     }
 
     // MARK: - Body
@@ -144,12 +203,14 @@ struct GameScreenView: View {
                     // Landscape: full-screen layout so pad coordinates match the layout editor.
                     ZStack {
                         MetalGameView()
+                            .onTapGesture { restoreMenuButtonIfHidden() }
                         if effectiveVirtualPadVisible {
                             VirtualControllerView(
                                 isLandscape: true,
                                 layoutSnapshot: effectivePadLayoutSnapshot,
                                 skinDescriptor: effectivePadSkinDescriptor
                             )
+                            .id(padRebuildToken)
                         }
                         menuButtonOverlay(isLandscape: true)
                     }
@@ -163,6 +224,7 @@ struct GameScreenView: View {
                         MetalGameView()
                             .frame(height: gameHeight)
                             .clipped()
+                            .onTapGesture { restoreMenuButtonIfHidden() }
 
                         if effectiveVirtualPadVisible {
                             ZStack {
@@ -171,9 +233,10 @@ struct GameScreenView: View {
                                     layoutSnapshot: effectivePadLayoutSnapshot,
                                     skinDescriptor: effectivePadSkinDescriptor
                                 )
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .id(padRebuildToken)
                         }
                     }
                     .overlay(alignment: .topTrailing) {
@@ -189,13 +252,13 @@ struct GameScreenView: View {
             .preference(key: GameScreenSizePreferenceKey.self, value: geo.size)
         }
         .onPreferenceChange(GameScreenSizePreferenceKey.self) { _ in
-            // On newer iOS SDKs the onPreferenceChange action closure is @Sendable /
-            // nonisolated, so hop to the main actor before touching main-actor state.
+            // AYS2: onPreferenceChange's closure is @Sendable (nonisolated); hop to the
+            // main actor before touching main-actor state (seam)
             Task { @MainActor in
                 syncFullscreenStateFromWindow()
             }
         }
-        .sheet(isPresented: $showSaveStates) {
+        .sheet(isPresented: childPresentedBinding(.saveStates)) {
             SaveStatesPanel { message, isImportant in
                 presentStatusMessage(
                     message,
@@ -203,51 +266,33 @@ struct GameScreenView: View {
                 )
             }
         }
-        .sheet(isPresented: $showPauseMenu, onDismiss: {
-            if let action = pendingPauseAction {
-                pendingPauseAction = nil
-                action()
-            }
-        }) {
-            pauseMenuPanel
-        }
-        .sheet(isPresented: $showSpeedControl) {
+        .sheet(isPresented: childPresentedBinding(.speed)) {
             SpeedControlPanel(settings: settings)
                 .presentationDetents([.medium])
         }
-        .sheet(isPresented: $showCompatibilityLab) {
-            compatibilityLabPanel
-                .presentationDetents([.medium, .large])
-        }
-        .sheet(isPresented: $showRetroAchievements) {
+        .sheet(isPresented: childPresentedBinding(.retroAchievements)) {
             RetroAchievementsGamePanel(settings: settings)
                 .presentationDetents([.medium, .large])
         }
         .overlay(alignment: .top) {
-            if showPadLayoutEditor {
+            if case .pausedPresenting(.padLayout) = overlayRoute {
                 PadLayoutEditView(onDismiss: {
-                    showPadLayoutEditor = false
-                    updateRuntimeOverlayPause()
+                    // Dismissing the pad editor returns to the pause menu, not gameplay.
+                    // Bump the rebuild token so the gameplay controller is recreated with
+                    // fresh UIKit press surfaces after any visibility/layout change.
+                    padRebuildToken &+= 1
+                    overlayRoute = .paused
                 }, context: runtimePadLayoutEditorContext)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
-        .sheet(isPresented: $showPNACHImporter) {
-            ImportDocumentPicker(
-                allowedContentTypes: FileImportHandler.pnachContentTypes,
-                allowsMultipleSelection: true
-            ) { result in
-                showPNACHImporter = false
-                switch result {
-                case .success(let urls):
-                    let message = fileImporter.importPNACHURLs(urls, asCheat: true, presentsAlert: false)
-                    presentPNACHImportResult(message)
-                case .failure(let error):
-                    if !FileImportHandler.isUserCancelledPickerError(error) {
-                        fileImporter.presentImportResult(FileImportHandler.failedPNACHPickerMessage(errorDescription: error.localizedDescription))
-                    }
-                }
-            }
+        .sheet(isPresented: childPresentedBinding(.cheats)) {
+            CheatsPatchesManagerView(
+                isoName: ARMSX2Bridge.currentGameISOName() ?? "",
+                gameTitle: "",
+                launchContext: .inGame
+            )
+            .presentationDetents([.medium, .large])
         }
         .overlay(alignment: .bottom) {
             statusToastOverlay
@@ -255,14 +300,22 @@ struct GameScreenView: View {
         .overlay(alignment: .top) {
             retroAchievementsToastOverlay
         }
-        .sheet(isPresented: $showPerGameSettings) {
-            runtimePerGameSettingsContent
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.regularMaterial)
-                .presentationCornerRadius(34)
+        .overlay {
+            if case .pausedPresenting(.perGame) = overlayRoute {
+                // Presented through the same overlay shell as the pause menu so it stays
+                // integrated with gameplay (no system sheet chrome / status bar / Dynamic
+                // Island leak). The panel dismisses via Save/Cancel, so the backdrop does
+                // not tap-to-dismiss.
+                GameOverlayContainer(safeAreaInsets: displaySafeAreaEdgeInsets, frameMode: .landscapePanel) { _ in
+                    runtimePerGameSettingsContent
+                }
+            }
         }
-        .alert(settings.localized("Reset ROM?"), isPresented: $showResetConfirmation) {
+        .overlay {
+            pauseMenuOverlay
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: overlayRoute)
+        .alert(settings.localized("Reset ROM?"), isPresented: childPresentedBinding(.resetROM)) {
             Button(settings.localized("Cancel"), role: .cancel) {}
             Button(settings.localized("Reset ROM"), role: .destructive) {
                 resetCurrentROM()
@@ -277,28 +330,52 @@ struct GameScreenView: View {
             refreshExternalControllerConnectionState()
             refreshRuntimeMenuState()
             consumePendingRetroAchievementsToast()
+            startMenuRestorePollingIfNeeded()
         }
         .onDisappear {
             statusMessageDismissTask?.cancel()
             retroAchievementsToastDismissTask?.cancel()
+            stopMenuRestorePolling()
             leaveGameplaySystemChromeMode()
         }
-        .simultaneousGesture(
-            TapGesture(count: 2).onEnded {
-                restoreMenuButtonIfHidden()
+        // Single chokepoint for runtime pause: VM pause derives only from `overlayRoute`
+        // (any non-hidden route keeps the VM paused), so one observer covers every child
+        // open/dismiss regardless of which screen it was. This replaces the seven per-screen
+        // observers that existed for the old independent booleans.
+        .onChange(of: overlayRoute) { _, _ in
+            updateRuntimeOverlayPause()
+            if overlayRoute != .hidden {
+                stopMenuRestorePolling()
+            } else {
+                startMenuRestorePollingIfNeeded()
             }
-        )
-        .onChange(of: showSaveStates) { _, _ in updateRuntimeOverlayPause() }
-        .onChange(of: showSpeedControl) { _, _ in updateRuntimeOverlayPause() }
-        .onChange(of: showCompatibilityLab) { _, _ in updateRuntimeOverlayPause() }
-        .onChange(of: showPerGameSettings) { _, _ in updateRuntimeOverlayPause() }
-        .onChange(of: showPNACHImporter) { _, _ in updateRuntimeOverlayPause() }
-        .onChange(of: showRetroAchievements) { _, _ in updateRuntimeOverlayPause() }
-        .onChange(of: showPadLayoutEditor) { _, _ in updateRuntimeOverlayPause() }
-        .onChange(of: showResetConfirmation) { _, _ in updateRuntimeOverlayPause() }
+        }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active {
+            if newPhase == .background {
+                wasBackgrounded = true
+            } else if newPhase == .active {
                 syncFullscreenStateFromWindow()
+                // Returning to a running game from the background: open the pause menu
+                // so resuming is deliberate, not a drop straight back into gameplay.
+                if wasBackgrounded && overlayRoute == .hidden {
+                    overlayRoute = .paused
+                }
+                wasBackgrounded = false
+            }
+        }
+        .onChange(of: fullScreen) { _, isEnabled in
+            applyFullscreenState(isEnabled)
+        }
+        .onChange(of: settings.hideMenuButton) { _, isHidden in
+            // Keep the runtime menu-button flag in lockstep with the persisted setting so
+            // re-enabling it (from the quick menu or settings) restores the button at once.
+            if menuButtonHidden != isHidden {
+                menuButtonHidden = isHidden
+            }
+            if isHidden {
+                startMenuRestorePollingIfNeeded()
+            } else {
+                stopMenuRestorePolling()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: runtimeMenuStateChangedNotification)) { _ in
@@ -311,8 +388,9 @@ struct GameScreenView: View {
             refreshExternalControllerConnectionState()
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ARMSX2iOSPadLayoutEditorDismissed"))) { _ in
-            showPadLayoutEditor = false
-            updateRuntimeOverlayPause()
+            // Safety net for external pad-editor dismissal: return to the pause menu.
+            padRebuildToken &+= 1
+            overlayRoute = .paused
         }
         .onReceive(NotificationCenter.default.publisher(for: retroAchievementsToastNotification)) { notification in
             _ = ARMSX2Bridge.consumePendingRetroAchievementsNotification()
@@ -343,233 +421,30 @@ struct GameScreenView: View {
 
     private func menuButton() -> some View {
         Button {
-            SoundManager.shared.play(.nav)
-            showPauseMenu = true
+            if settings.hapticFeedback { HapticManager.light.impactOccurred() }
+            overlayRoute = .paused
         } label: {
-            Image(systemName: "pause.circle.fill")
-                .font(.title3)
-                .foregroundStyle(.white.opacity(0.5))
-                .padding(6)
-                .background(.black.opacity(0.15), in: Circle())
+            menuButtonLabel
         }
-    }
-
-    /// Dismisses the pause panel, then runs the action once it has fully left the
-    /// screen (via the sheet's onDismiss) so the follow-up sheet/panel can present
-    /// without colliding with the still-animating pause sheet.
-    private func openPausePanel(_ name: String, _ action: @escaping () -> Void) {
-        NSLog("[ARMSX2 iOS QuickMenu] present \(name)")
-        pendingPauseAction = action
-        showPauseMenu = false
-    }
-
-    private static let pauseTileBlue = Color(red: 0.153, green: 0.427, blue: 1.0)
-
-    // AYS2: pause button icon + tile pause menu (seam)
-    /// The in-game pause menu, styled like the AYS2 Settings hub: grouped
-    /// blue tiles instead of a plain list.
-    private var pauseMenuPanel: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    pauseGroup(settings.localized("Display")) {
-                        pauseActionTile(settings.localized("OSD"), "speedometer") { cycleOsdPreset() }
-                        pauseToggleTile(settings.localized("Virtual Pad"), "gamecontroller", isOn: userVirtualPadVisible) {
-                            userVirtualPadVisible.toggle()
-                        }
-                        pauseSubmenuTile(settings.localized("Controller Skin"), "paintpalette") { controllerSkinItems }
-                        pauseToggleTile(settings.localized("Full Screen"), "arrow.up.left.and.arrow.down.right", isOn: fullScreen) {
-                            fullScreen.toggle()
-                            ARMSX2Bridge.setFullScreen(fullScreen)
-                        }
-                        pauseToggleTile(settings.localized("Hide Menu"), "eye.slash", isOn: menuButtonHidden || settings.hideMenuButton) {
-                            let newValue = !(menuButtonHidden || settings.hideMenuButton)
-                            settings.hideMenuButton = newValue
-                            menuButtonHidden = newValue
-                            if newValue {
-                                showPauseMenu = false
-                                presentStatusMessage(settings.localized("Double-tap empty gameplay space to show the menu button again."))
-                            }
-                        }
-                        pauseActionTile(settings.localized("Edit Layout"), "square.resize") {
-                            openPausePanel("pad_layout") { showPadLayoutEditor = true }
-                        }
-                    }
-
-                    pauseGroup(settings.localized("Game")) {
-                        pauseActionTile(settings.localized("Compatibility Lab"), "wand.and.stars") {
-                            openPausePanel("compatibility_lab") {
-                                refreshCompatibilityState()
-                                showCompatibilityLab = true
-                            }
-                        }
-                        if gameMenuAvailable {
-                            pauseActionTile(settings.localized("Per-Game Settings"), "slider.horizontal.3") {
-                                openPausePanel("per_game_settings") { openPerGameSettingsForCurrentGame() }
-                            }
-                        }
-                        if vmMenuAvailable {
-                            pauseActionTile(settings.localized("Speed / Fast Forward"), "forward.fill") {
-                                openPausePanel("speed_control") { showSpeedControl = true }
-                            }
-                            pauseActionTile(settings.localized("Reset ROM"), "arrow.counterclockwise.circle") {
-                                openPausePanel("reset_rom") { showResetConfirmation = true }
-                            }
-                        }
-                        if gameMenuAvailable || vmMenuAvailable {
-                            pauseActionTile(settings.localized("Save / Load States"), "square.stack.3d.up.fill") {
-                                openPausePanel("save_states") { showSaveStates = true }
-                            }
-                        }
-                        if vmMenuAvailable {
-                            pauseSubmenuTile(settings.localized("Change Disc"), "opticaldisc") { discSwapItems }
-                        }
-                        if gameMenuAvailable {
-                            pauseActionTile(settings.localized("RetroAchievements"), "trophy.fill") {
-                                openPausePanel("retroachievements") { showRetroAchievements = true }
-                            }
-                            pauseActionTile(settings.localized("Import PNACH / 60 FPS Patch"), "wand.and.stars") {
-                                openPausePanel("pnach_import") { showPNACHImporter = true }
-                            }
-                            pauseActionTile(settings.localized("Clear Game Cache"), "trash.slash", tint: .red) {
-                                showPauseMenu = false
-                                clearCurrentGameCache()
-                            }
-                        }
-                    }
-
-                    Button {
-                        showPauseMenu = false
-                        appState.returnToMenu()
-                    } label: {
-                        Label(settings.localized("Back to Menu"), systemImage: "list.bullet")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 15)
-                            .background(
-                                LinearGradient(colors: [.red, .red.opacity(0.8)], startPoint: .top, endPoint: .bottom),
-                                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(16)
-            }
-            .navigationTitle(settings.localized("Paused"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(settings.localized("Done")) { showPauseMenu = false }
-                }
-            }
-        }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
+        .accessibilityLabel(settings.localized("Pause Menu"))
+        .accessibilityHint(settings.localized("Opens the pause menu"))
     }
 
     @ViewBuilder
-    private func pauseGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title.uppercased())
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                content()
-            }
-        }
-    }
-
-    private func pauseTileSurface(_ title: String, _ icon: String, tint: Color, isOn: Bool?) -> some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(LinearGradient(colors: [tint, tint.opacity(0.72)], startPoint: .topLeading, endPoint: .bottomTrailing))
-            Image(systemName: icon)
-                .font(.system(size: 42, weight: .regular))
-                .foregroundStyle(.white.opacity(0.16))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .padding(8)
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Image(systemName: icon).font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
-                    Spacer()
-                    if let isOn {
-                        Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 16))
-                            .foregroundStyle(.white.opacity(isOn ? 1 : 0.55))
-                    }
-                }
-                Spacer(minLength: 6)
-                Text(title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(12)
-        }
-        .frame(height: 96)
-    }
-
-    private func pauseActionTile(_ title: String, _ icon: String, tint: Color = GameScreenView.pauseTileBlue, action: @escaping () -> Void) -> some View {
-        Button(action: action) { pauseTileSurface(title, icon, tint: tint, isOn: nil) }
-            .buttonStyle(.plain)
-    }
-
-    private func pauseToggleTile(_ title: String, _ icon: String, isOn: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            pauseTileSurface(title, icon, tint: isOn ? GameScreenView.pauseTileBlue : Color(.systemGray3), isOn: isOn)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func pauseSubmenuTile<M: View>(_ title: String, _ icon: String, @ViewBuilder menu: () -> M) -> some View {
-        Menu { menu() } label: {
-            pauseTileSurface(title, icon, tint: GameScreenView.pauseTileBlue, isOn: nil)
-        }
-    }
-
-    @ViewBuilder
-    private var controllerSkinItems: some View {
-        ForEach(skinLibrary.allDescriptors) { skin in
-            Button {
-                skinLibrary.selectSkin(id: skin.id)
-                settings.virtualPadSkin = skin.virtualPadSkin
-                presentStatusMessage("\(settings.localized("Controller Skin")): \(settings.localized(skin.displayName))")
-            } label: {
-                Label(settings.localized(skin.displayName), systemImage: skinLibrary.selectedSkinID == skin.id ? "checkmark" : "circle")
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var discSwapItems: some View {
-        Button { ejectDisc() } label: {
-            Label(settings.localized("Eject Disc"), systemImage: "eject")
-        }
-        let discs = availableDiscSwapNames
-        if discs.isEmpty {
-            Text(settings.localized("No disc images found"))
-        } else {
-            Menu {
-                ForEach(discs, id: \.self) { discName in
-                    Button { changeDisc(to: discName) } label: {
-                        Label(discName, systemImage: "opticaldisc")
-                    }
-                }
-            } label: {
-                Label(settings.localized("Insert Disc (No Reboot)"), systemImage: "tray.and.arrow.down")
-            }
-            Menu {
-                ForEach(discs, id: \.self) { discName in
-                    Button { restartWithDisc(discName) } label: {
-                        Label(discName, systemImage: "arrow.clockwise.circle")
-                    }
-                }
-            } label: {
-                Label(settings.localized("Restart With Disc"), systemImage: "arrow.clockwise.circle")
-            }
-        }
+    private var menuButtonLabel: some View {
+        // Always-rendered SF Symbol mark. A loose PNG was previously loaded here, but
+        // it loaded successfully (so the fallback never ran) while rendering nearly
+        // invisible at 30pt over gameplay. Using a template SF Symbol with a strong
+        // white foreground guarantees the icon is readable on both dark and bright
+        // gameplay regardless of any bundled asset, so the button is never iconless.
+        // AYS2: pause glyph instead of "..." (seam)
+        Image(systemName: "pause.fill")
+            .font(.system(size: 18, weight: .heavy))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(.white)
+            .frame(width: 30, height: 30)
+            .padding(7)
+            .background(.black.opacity(0.28), in: Circle())
     }
 
     private var controllerSkinMenu: some View {
@@ -584,14 +459,14 @@ struct GameScreenView: View {
                 }
             }
         } label: {
-            Label(settings.localized("Controller Skin"), systemImage: "paintpalette")
-        }
-    }
-
-    private func presentQuickMenuPanel(_ name: String, _ action: @escaping () -> Void) {
-        NSLog("[ARMSX2 iOS QuickMenu] present \(name)")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            action()
+            HStack {
+                Label(settings.localized("Controller Skin"), systemImage: "paintpalette")
+                Spacer()
+                Text(settings.localized(skinLibrary.selectedDescriptor.displayName))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
         }
     }
 
@@ -638,146 +513,6 @@ struct GameScreenView: View {
 
     // MARK: - Runtime Panels
 
-    private var compatibilityLabPanel: some View {
-        NavigationStack {
-            Form {
-                compatibilityStatusSection
-                compatibilityResetSection
-                compatibilityFlagsSection
-                if !compatibilityIdentity.isEmpty {
-                    compatibilityForgetSection
-                }
-            }
-            .navigationTitle(settings.localized("Compatibility Lab"))
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(settings.localized("Done")) {
-                        showCompatibilityLab = false
-                    }
-                }
-            }
-            .onAppear(perform: refreshCompatibilityState)
-        }
-    }
-
-    private var compatibilityStatusSection: some View {
-        let currentPreset = compatibilityPreset(for: compatibilityPresetKey)
-        return Section {
-            Toggle(isOn: Binding(
-                get: { compatibilityAutoPresets },
-                set: { newValue in
-                    compatibilityAutoPresets = newValue
-                    ARMSX2Bridge.setCompatibilityAutoGamePresetsEnabled(newValue)
-                    refreshCompatibilityState()
-                }
-            )) {
-                Label(settings.localized("Auto Game Presets"), systemImage: "sparkles")
-            }
-
-            LabeledContent(settings.localized("Current Mode")) {
-                Text(settings.localized(currentPreset.title))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-            }
-
-            if !compatibilityIdentity.isEmpty {
-                LabeledContent(settings.localized("Current Game")) {
-                    Text(compatibilityIdentity)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                Text(settings.localized("Start a game to remember presets per title."))
-                    .foregroundStyle(.secondary)
-            }
-        } header: {
-            Text(settings.localized("Status"))
-        } footer: {
-            Text(settings.localized("Auto Game Presets applies known safe defaults. Manual flags below are remembered for the current game when a game is running."))
-        }
-    }
-
-    private var compatibilityResetSection: some View {
-        Section {
-            Button {
-                applyCompatibilityPreset(compatibilityPreset(for: "off"))
-            } label: {
-                Label(settings.localized("Use Default / Clear Flags"), systemImage: "power")
-            }
-            .foregroundStyle(.primary)
-        } header: {
-            Text(settings.localized("Reset"))
-        } footer: {
-            Text(settings.localized("Use this when testing is done or a game behaves worse with compatibility flags enabled."))
-        }
-    }
-
-    private var compatibilityFlagsSection: some View {
-        Section {
-            compatibilityLabToggle(
-                "COP1EverythingOnly",
-                title: "COP1 Everything Only",
-                systemImage: "function"
-            )
-            compatibilityLabToggle(
-                "COP1EverythingPlusLoadStore",
-                title: "COP1 Everything + EE Load/Store",
-                systemImage: "arrow.left.arrow.right"
-            )
-            compatibilityLabToggle(
-                "COP1EverythingPlusMMI",
-                title: "COP1 Everything + EE MMI",
-                systemImage: "rectangle.3.group"
-            )
-            compatibilityLabToggle(
-                "COP1EverythingPlusCOP2VU",
-                title: "COP1 Everything + EE COP2/VU Macro",
-                systemImage: "cube.transparent"
-            )
-            compatibilityLabToggle(
-                "COP1EverythingPlusMultDiv",
-                title: "COP1 Everything + EE Mult/Div",
-                systemImage: "multiply"
-            )
-            compatibilityLabToggle(
-                "COP1EverythingPlusShifts",
-                title: "COP1 Everything + EE Shifts",
-                systemImage: "arrow.left.and.right"
-            )
-            compatibilityLabToggle(
-                "COP1EverythingPlusMoves",
-                title: "COP1 Everything + EE Moves/HI-LO",
-                systemImage: "arrow.triangle.swap"
-            )
-            compatibilityLabToggle(
-                "COP1EverythingPlusIntegerALU",
-                title: "COP1 Everything + EE Integer ALU",
-                systemImage: "plus.forwardslash.minus"
-            )
-            compatibilityLabToggle(
-                "COP1EverythingPlusBranches",
-                title: "COP1 Everything + EE Branches/Jumps",
-                systemImage: "arrow.triangle.branch"
-            )
-        } header: {
-            Text(settings.localized("Manual Compatibility Flags"))
-        } footer: {
-            Text(settings.localized("Toggle one or more flags when a game needs compatibility help. Changing any flag switches this game to Custom Advanced Flags."))
-        }
-    }
-
-    private var compatibilityForgetSection: some View {
-        Section {
-            Button(role: .destructive) {
-                let identity = compatibilityIdentity
-                ARMSX2Bridge.forgetCompatibilityPresetForCurrentGame()
-                refreshCompatibilityState()
-                presentStatusMessage("\(settings.localized("Compatibility preset reset for")) \(identity)")
-            } label: {
-                Label(settings.localized("Forget This Game's Override"), systemImage: "trash")
-            }
-        }
-    }
-
     @ViewBuilder
     private var runtimePerGameSettingsContent: some View {
         if let runtimePerGameSettingsEntry {
@@ -807,25 +542,45 @@ struct GameScreenView: View {
 
     private func enterGameplaySystemChromeMode() {
         previousHideHomeIndicator = appState.hideHomeIndicator
+        previousHideStatusBar = appState.hideStatusBar
         appState.hideHomeIndicator = true
     }
 
     private func leaveGameplaySystemChromeMode() {
         appState.hideHomeIndicator = previousHideHomeIndicator
+        appState.hideStatusBar = previousHideStatusBar
+    }
+
+    /// Single source of truth for applying the runtime fullscreen state. Keeps the
+    /// SDL window, the SwiftUI status bar policy, and the local toggle in lockstep so
+    /// the quick-menu Full Screen toggle takes effect immediately instead of only on
+    /// the next app launch.
+    private func applyFullscreenState(_ enabled: Bool) {
+        ARMSX2Bridge.setFullScreen(enabled)
+        if appState.hideStatusBar != enabled {
+            appState.hideStatusBar = enabled
+        }
     }
 
     private func applyInitialFullscreenPreference() {
         menuButtonHidden = settings.hideMenuButton
-        if settings.autoFullscreen && !ARMSX2Bridge.isSDLFullscreen() {
-            fullScreen = true
-            ARMSX2Bridge.setFullScreen(true)
+        // Reconcile to the Auto Full Screen preference on every game entry so that
+        // changing the setting takes effect on the next boot without an app restart.
+        // Previously a stale fullscreen window persisted until the app was relaunched.
+        let desired = settings.autoFullscreen
+        if fullScreen != desired {
+            fullScreen = desired
         }
+        applyFullscreenState(desired)
     }
 
     private func syncFullscreenStateFromWindow() {
         let sdlFullscreen = ARMSX2Bridge.isSDLFullscreen()
         if fullScreen != sdlFullscreen {
             fullScreen = sdlFullscreen
+        }
+        if appState.hideStatusBar != sdlFullscreen {
+            appState.hideStatusBar = sdlFullscreen
         }
     }
 
@@ -834,18 +589,125 @@ struct GameScreenView: View {
 
         menuButtonHidden = false
         settings.hideMenuButton = false
+        stopMenuRestorePolling()
         presentStatusMessage(settings.localized("Menu button shown"))
     }
 
+    /// Starts polling external controllers for any input while the menu button is hidden
+    /// and gameplay is active, so a hidden menu can be restored without a screen tap.
+    private func startMenuRestorePollingIfNeeded() {
+        guard menuButtonHidden, overlayRoute == .hidden, menuRestorePollTimer == nil else { return }
+        lastControllerInputActive = controllerInputActive()
+        menuRestorePollTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+            Task { @MainActor in
+                guard menuButtonHidden, overlayRoute == .hidden else {
+                    stopMenuRestorePolling()
+                    return
+                }
+                let active = controllerInputActive()
+                if active && !lastControllerInputActive {
+                    restoreMenuButtonIfHidden()
+                }
+                lastControllerInputActive = active
+            }
+        }
+    }
+
+    private func stopMenuRestorePolling() {
+        menuRestorePollTimer?.invalidate()
+        menuRestorePollTimer = nil
+        lastControllerInputActive = false
+    }
+
+    /// Reads a non-destructive snapshot of every external controller's input state. Returns
+    /// true if any face button, shoulder, trigger, d-pad direction, thumbstick, or the
+    /// menu/options/L3/R3 buttons are currently active. Setting valueChangedHandler would
+    /// conflict with SDL; reading these snapshot properties does not.
+    private func controllerInputActive() -> Bool {
+        for controller in GCController.controllers() {
+            guard let gamepad = controller.extendedGamepad else { continue }
+            if gamepad.buttonA.isPressed || gamepad.buttonB.isPressed
+                || gamepad.buttonX.isPressed || gamepad.buttonY.isPressed {
+                return true
+            }
+            if gamepad.leftShoulder.isPressed || gamepad.rightShoulder.isPressed {
+                return true
+            }
+            if gamepad.leftTrigger.value > 0.1 || gamepad.rightTrigger.value > 0.1 {
+                return true
+            }
+            let dpad = gamepad.dpad
+            if dpad.up.isPressed || dpad.down.isPressed || dpad.left.isPressed || dpad.right.isPressed {
+                return true
+            }
+            if abs(gamepad.leftThumbstick.xAxis.value) > 0.1 || abs(gamepad.leftThumbstick.yAxis.value) > 0.1 {
+                return true
+            }
+            if abs(gamepad.rightThumbstick.xAxis.value) > 0.1 || abs(gamepad.rightThumbstick.yAxis.value) > 0.1 {
+                return true
+            }
+            if gamepad.buttonMenu.isPressed {
+                return true
+            }
+            if #available(iOS 13, *), let options = gamepad.buttonOptions, options.isPressed {
+                return true
+            }
+            if #available(iOS 14, *), let l3 = gamepad.leftThumbstickButton, l3.isPressed {
+                return true
+            }
+            if #available(iOS 14, *), let r3 = gamepad.rightThumbstickButton, r3.isPressed {
+                return true
+            }
+        }
+        return false
+    }
+
     private func updateRuntimeOverlayPause() {
-        let shouldPause = showSaveStates || showSpeedControl || showCompatibilityLab || showPerGameSettings || showPNACHImporter || showPadLayoutEditor || showResetConfirmation
-        NSLog("@@RUNTIME_OVERLAY_PAUSE@@ should=%d active=%d vm=%d", shouldPause ? 1 : 0, runtimeOverlayPauseActive ? 1 : 0, ARMSX2Bridge.isVMRunning() ? 1 : 0)
+        // Pause derives centrally from the overlay route: any non-hidden route keeps the VM
+        // paused (the pause card, or any child presented from it). `.hidden` is the only state
+        // that resumes gameplay, so opening a child and then dismissing it never briefly
+        // unpauses the VM the way the old boolean handoff did.
+        let shouldPause = overlayRoute != .hidden
+        NSLog("@@RUNTIME_OVERLAY_PAUSE@@ should=%d active=%d vm=%d route=%@", shouldPause ? 1 : 0, runtimeOverlayPauseActive ? 1 : 0, ARMSX2Bridge.isVMRunning() ? 1 : 0, String(describing: overlayRoute))
         guard runtimeOverlayPauseActive != shouldPause else { return }
 
         runtimeOverlayPauseActive = shouldPause
         if ARMSX2Bridge.isVMRunning() {
             ARMSX2Bridge.setVMPaused(shouldPause)
         }
+    }
+
+    /// Routes a pause-menu destination to the overlay FSM. `.perGame` needs the VM-safe
+    /// settings load, so it goes through `openPerGameSettingsForCurrentGame`; every other
+    /// destination simply transitions to `.pausedPresenting` so the card stays logically open
+    /// underneath the child and reappears when the child is dismissed.
+    private func openPauseMenuChild(_ destination: QuickMenuDestination) {
+        // Exhaustive (no `default`): adding a new QuickMenuDestination case without a matching
+        // presentation would fail to compile here, so a destination can never silently route to
+        // `.pausedPresenting` with no view presenting it.
+        switch destination {
+        case .perGame:
+            openPerGameSettingsForCurrentGame()
+        case .speed, .saveStates, .cheats, .retroAchievements, .padLayout, .resetROM:
+            overlayRoute = .pausedPresenting(destination)
+        }
+    }
+
+    /// Drives a `.sheet` / `.alert(isPresented:)` from the single overlay route. `get`
+    /// presents the child when the route is `.pausedPresenting(child)`; `set(false)` on
+    /// dismissal returns to `.paused` — *unless* a teardown path (Reset ROM / restart-with-disc)
+    /// has already moved the route to `.hidden`, in which case the dismissal is a no-op so it
+    /// does not clobber the intentional return to gameplay.
+    private func childPresentedBinding(_ child: QuickMenuDestination) -> Binding<Bool> {
+        Binding(
+            get: { overlayRoute == .pausedPresenting(child) },
+            set: { isPresented in
+                guard !isPresented else { return }
+                if case .pausedPresenting(let active) = overlayRoute, active == child {
+                    overlayRoute = .paused
+                }
+            }
+        )
     }
 
     private func refreshRuntimeMenuState() {
@@ -861,7 +723,6 @@ struct GameScreenView: View {
         if runtimePadLayoutIdentity != identity {
             runtimePadLayoutIdentity = identity
         }
-        refreshCompatibilityState()
     }
 
     private func refreshExternalControllerConnectionState() {
@@ -941,59 +802,6 @@ struct GameScreenView: View {
             .uppercased()
     }
 
-    // MARK: - Compatibility Helpers
-
-    private func refreshCompatibilityState() {
-        let preset = ARMSX2Bridge.compatibilityPresetForCurrentGame()
-        let identity = ARMSX2Bridge.compatibilityIdentityForCurrentGame()
-        let autoPresets = ARMSX2Bridge.isCompatibilityAutoGamePresetsEnabled()
-
-        if compatibilityPresetKey != preset {
-            compatibilityPresetKey = preset
-        }
-        if compatibilityIdentity != identity {
-            compatibilityIdentity = identity
-        }
-        if compatibilityAutoPresets != autoPresets {
-            compatibilityAutoPresets = autoPresets
-        }
-    }
-
-    private func compatibilityPreset(for id: String) -> CompatibilityPreset {
-        if let preset = compatibilityPresets.first(where: { $0.id == id }) {
-            return preset
-        }
-
-        return CompatibilityPreset(id: "custom", title: "Custom Advanced Flags", systemImage: "slider.horizontal.3")
-    }
-
-    private func applyCompatibilityPreset(_ preset: CompatibilityPreset) {
-        let rememberForCurrentGame = !compatibilityIdentity.isEmpty
-        ARMSX2Bridge.setCompatibilityPreset(preset.id, rememberForCurrentGame: rememberForCurrentGame)
-        refreshCompatibilityState()
-
-        if rememberForCurrentGame {
-            presentStatusMessage("\(settings.localized(preset.title)) \(settings.localized("saved for")) \(compatibilityIdentity)")
-        } else {
-            presentStatusMessage("\(settings.localized("Compatibility preset set to")) \(settings.localized(preset.title))")
-        }
-    }
-
-    private func compatibilityLabToggle(_ key: String, title: String, systemImage: String) -> some View {
-        Toggle(isOn: Binding(
-            get: { ARMSX2Bridge.getJITBisectFlag(key, defaultValue: false) },
-            set: {
-                ARMSX2Bridge.setJITBisectFlag(key, value: $0)
-                compatibilityPresetKey = "custom"
-                if !compatibilityIdentity.isEmpty {
-                    presentStatusMessage("\(settings.localized("Custom compatibility flags saved for")) \(compatibilityIdentity)")
-                }
-            }
-        )) {
-            Label(settings.localized(title), systemImage: systemImage)
-        }
-    }
-
     // MARK: - Actions
 
     private func openPerGameSettingsForCurrentGame() {
@@ -1003,7 +811,7 @@ struct GameScreenView: View {
             runtimePerGameSettingsEntry = nil
             runtimePerGameSettings = nil
             withAnimation(.spring(response: 0.32, dampingFraction: 0.88)) {
-                showPerGameSettings = true
+                overlayRoute = .pausedPresenting(.perGame)
             }
             presentImportantStatusMessage(settings.localized("Per-game settings need a running game."))
             return
@@ -1022,13 +830,14 @@ struct GameScreenView: View {
         )
         runtimePerGameSettings = info
         withAnimation(.spring(response: 0.32, dampingFraction: 0.88)) {
-            showPerGameSettings = true
+            overlayRoute = .pausedPresenting(.perGame)
         }
     }
 
     private func closePerGameSettingsOverlay() {
+        // Save/Cancel from Per-Game Settings return to the pause menu, not gameplay.
         withAnimation(.easeInOut(duration: 0.2)) {
-            showPerGameSettings = false
+            overlayRoute = .paused
         }
         runtimePerGameSettingsEntry = nil
         runtimePerGameSettings = nil
@@ -1036,6 +845,9 @@ struct GameScreenView: View {
     }
 
     private func resetCurrentROM() {
+        // Drop out of the overlay before tearing the VM down so the pause state cannot
+        // re-pause a resetting VM.
+        overlayRoute = .hidden
         appState.resetCurrentVM()
         presentStatusMessage(settings.localized("Restarting ROM..."))
     }
@@ -1064,6 +876,9 @@ struct GameScreenView: View {
     }
 
     private func restartWithDisc(_ discName: String) {
+        // Drop out of the overlay before the VM shutdown/boot so the pause state cannot
+        // fight the teardown.
+        overlayRoute = .hidden
         presentStatusMessage("Restarting with \(discName)...")
         appState.shutdownAndBoot(isoName: discName)
     }
@@ -1237,30 +1052,23 @@ struct GameScreenView: View {
         presentStatusMessage(message, displayDuration: Self.importantStatusDisplayDuration)
     }
 
-    private func presentPNACHImportResult(_ message: String) {
-        if Self.isPNACHImportSuccessMessage(message) {
-            presentStatusMessage(message)
-        } else {
-            fileImporter.presentImportResult(message)
-        }
-    }
-
-    private static func isPNACHImportSuccessMessage(_ message: String) -> Bool {
-        let lines = message
-            .split(separator: "\n")
-            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return !lines.isEmpty && lines.allSatisfy { $0.hasPrefix("PNACH imported") }
-    }
-
     // MARK: - Virtual Pad
 
     private var effectiveVirtualPadVisible: Bool {
-        userVirtualPadVisible && (!settings.autoHideVirtualPadWhenControllerConnected || !externalControllerConnected) && !showPadLayoutEditor
+        userVirtualPadVisible && (!settings.autoHideVirtualPadWhenControllerConnected || !externalControllerConnected) && overlayRoute != .pausedPresenting(.padLayout)
     }
 
     private var effectivePadLayoutSnapshot: PadLayoutSnapshot? {
         layoutPresets.effectiveSnapshot(for: runtimePadLayoutIdentity)
+    }
+
+    /// Friendly name for the virtual pad layout currently in effect, shown beside the
+    /// Edit Virtual Pad Layout row so the active value is visible at a glance.
+    private var activePadLayoutDisplayName: String {
+        if let preset = layoutPresets.effectivePreset(for: runtimePadLayoutIdentity) {
+            return preset.displayName
+        }
+        return settings.localized("Current Layout")
     }
 
     private var effectivePadSkinDescriptor: VPadSkinDescriptor {

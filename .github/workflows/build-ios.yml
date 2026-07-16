@@ -90,7 +90,7 @@ jobs:
           grep -E '(Error|error|Warning|CMake Error|failed|FAILED)' cmake_output.txt | tail -50 >> $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
           # Echouer si cmake a échoué
-          grep -q 'Configuring incomplete|Error|error' cmake_output.txt && exit 1 || exit 0
+          grep -qE 'Configuring incomplete|Error|error' cmake_output.txt && exit 1 || exit 0
 
       # ── 6. Compiler avec xcodebuild ─────────────────────────────────────────
       - name: Build (xcodebuild)
@@ -250,6 +250,14 @@ jobs:
           print("source.json version:", version, "\nnotes:\n" + desc)
           PY
 
+          # AYS2: one-time cleanup of the semantic-release ghosts (seam). The
+          # v0.1.0/1/2 releases were bot-created notes with NO assets, yet v0.1.2
+          # displayed as the repo's "Latest release" — pure version confusion.
+          # Idempotent: once deleted these no-op. (User-approved cleanup.)
+          for GHOST in v0.1.0 v0.1.1 v0.1.2; do
+            gh release delete "$GHOST" --repo "$RELEASE_REPO" --yes --cleanup-tag 2>/dev/null || true
+          done
+
           # Never delete the rolling release — that would wipe older versioned
           # IPAs and turn a harmless "slightly stale" install into a 404. Create
           # it once, then clobber-upload: the versioned IPA accumulates, the feed
@@ -257,11 +265,15 @@ jobs:
           gh release view "$TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1 || \
             gh release create "$TAG" --repo "$RELEASE_REPO" \
               --title "AYS2 (rolling)" \
-              --prerelease \
               --notes "Rolling AYS2 release. Add this source in SideStore/AltStore for 1-tap updates:
           \`https://github.com/${RELEASE_REPO}/releases/download/${TAG}/source.json\`"
           gh release upload "$TAG" "$IPA_NAME" source.json icon.png SOURCE-OFFER.txt checksums.txt \
             --repo "$RELEASE_REPO" --clobber
+          # AYS2: the rolling release IS the product — mark it as the repo's
+          # "Latest release" so the README badge and /releases/latest resolve to
+          # the real build (0.1.<run>), not a stale semantic-release tag (seam)
+          gh release edit "$TAG" --repo "$RELEASE_REPO" --prerelease=false --latest \
+            --title "AYS2 ${VERSION} (rolling)" || true
           echo "Published $IPA_NAME + source.json → https://github.com/$RELEASE_REPO/releases/tag/$TAG"
 
       # ── 9. Upload les logs si la build échoue ──────────────────────────────

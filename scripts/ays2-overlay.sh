@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# eloris-overlay.sh — the AYS2 overlay tool.
+# ays2-overlay.sh — the AYS2 overlay tool.
 #
 # Makes the "ride on top of ARMSX2 without breaking our stuff" pattern operational.
-# See docs/ELORIS_OVERLAY.md for the full contract.
+# See docs/AYS2_OVERLAY.md for the full contract.
 #
-#   ./scripts/eloris-overlay.sh seams        # every AYS2 seam (marked edits)
-#   ./scripts/eloris-overlay.sh additive     # our files upstream never has
-#   ./scripts/eloris-overlay.sh diff <UPSTREAM>   # core parity vs an ARMSX2 checkout
+#   ./scripts/ays2-overlay.sh seams        # every AYS2 seam (marked edits)
+#   ./scripts/ays2-overlay.sh additive     # our files upstream never has
+#   ./scripts/ays2-overlay.sh diff <UPSTREAM>   # core parity vs an ARMSX2 checkout
 #
 # <UPSTREAM> is a path to an ARMSX2 working tree (its app/src/main/{cpp,swift}).
 
@@ -39,7 +39,7 @@ case "$cmd" in
     ;;
 
   diff)
-    up="${2:?usage: eloris-overlay.sh diff <UPSTREAM_TREE>}"
+    up="${2:?usage: ays2-overlay.sh diff <UPSTREAM_TREE>}"
     ucpp="$up/app/src/main/cpp"
     [ -d "$ucpp" ] || ucpp="$up/cpp"
     echo "== Core parity: src/cpp/{pcsx2,common} vs $ucpp =="
