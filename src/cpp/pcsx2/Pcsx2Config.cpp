@@ -721,7 +721,7 @@ Pcsx2Config::GSOptions::GSOptions()
 	UseBlitSwapChain = false;
 	DisableShaderCache = false;
 	DisableFramebufferFetch = false;
-	DisableVertexShaderExpand = false;
+	DisableVertexShaderExpand = false;	EnableAdrenoFramebufferFetch = false;
 	SkipDuplicateFrames = true;
 	OsdMessagesPos = OsdOverlayPos::TopLeft;
 	OsdPerformancePos = OsdOverlayPos::TopRight;
@@ -733,6 +733,7 @@ Pcsx2Config::GSOptions::GSOptions()
 	OsdShowCPU = false;
 	OsdShowGPU = false;
 	OsdShowGPUDebug = false;
+	OsdShowGPUStats = false;
 	OsdShowIndicators = true;
 	OsdShowFrameTimes = false;
 	OsdShowHardwareInfo = false;
@@ -755,7 +756,7 @@ Pcsx2Config::GSOptions::GSOptions()
 	HWAccurateAlphaTest = false;
 	HWAA1 = false;
 	UseDebugBlend = false;
-	HWROV = true;
+	HWROV = false;
 	HWROVLogging = false;
 	HWROVBarriersVK = false;
 
@@ -834,6 +835,7 @@ bool Pcsx2Config::GSOptions::OptionsAreEqual(const GSOptions& right) const
 		OpEqu(GSDumpCompression) &&
 		OpEqu(HWDownloadMode) &&
 		OpEqu(CASMode) &&
+		OpEqu(Upscaler) &&
 		OpEqu(Dithering) &&
 		OpEqu(MaxAnisotropy) &&
 		OpEqu(SWExtraThreads) &&
@@ -892,7 +894,7 @@ bool Pcsx2Config::GSOptions::OptionsAreEqual(const GSOptions& right) const
 		OpEqu(AudioCaptureBitrate) &&
 
 		OpEqu(Adapter) &&
-		OpEqu(CustomDriverPath) &&
+		OpEqu(AndroidGpuProfileOverride) &&
 
 		OpEqu(HWDumpDirectory) &&
 		OpEqu(SWDumpDirectory));
@@ -907,12 +909,11 @@ bool Pcsx2Config::GSOptions::RestartOptionsAreEqual(const GSOptions& right) cons
 {
 	return OpEqu(Renderer) &&
 		   OpEqu(Adapter) &&
-		   OpEqu(CustomDriverPath) &&
 		   OpEqu(UseDebugDevice) &&
 		   OpEqu(UseBlitSwapChain) &&
 		   OpEqu(DisableShaderCache) &&
 		   OpEqu(DisableFramebufferFetch) &&
-		   OpEqu(DisableVertexShaderExpand) &&
+		   OpEqu(DisableVertexShaderExpand) &&		   OpEqu(EnableAdrenoFramebufferFetch) &&
 		   OpEqu(OverrideTextureBarriers) &&
 		   OpEqu(DepthFeedbackMode) &&
 		   OpEqu(HWAA1) &&
@@ -960,7 +961,7 @@ void Pcsx2Config::GSOptions::LoadSave(SettingsWrapper& wrap)
 	SettingsWrapBitBool(UseBlitSwapChain);
 	SettingsWrapBitBool(DisableShaderCache);
 	SettingsWrapBitBool(DisableFramebufferFetch);
-	SettingsWrapBitBool(DisableVertexShaderExpand);
+	SettingsWrapBitBool(DisableVertexShaderExpand);	SettingsWrapBitBool(EnableAdrenoFramebufferFetch);
 	SettingsWrapBitBool(SkipDuplicateFrames);
 	SettingsWrapBitBool(OsdShowSpeed);
 	SettingsWrapBitBool(OsdShowFPS);
@@ -968,6 +969,7 @@ void Pcsx2Config::GSOptions::LoadSave(SettingsWrapper& wrap)
 	SettingsWrapBitBool(OsdShowCPU);
 	SettingsWrapBitBool(OsdShowGPU);
 	SettingsWrapBitBool(OsdShowGPUDebug);
+	SettingsWrapBitBool(OsdShowGPUStats);
 	SettingsWrapBitBool(OsdShowResolution);
 	SettingsWrapBitBool(OsdShowGSStats);
 	SettingsWrapBitBool(OsdShowIndicators);
@@ -1057,6 +1059,7 @@ void Pcsx2Config::GSOptions::LoadSave(SettingsWrapper& wrap)
 	SettingsWrapIntEnumEx(GSDumpCompression, "GSDumpCompression");
 	SettingsWrapIntEnumEx(HWDownloadMode, "HWDownloadMode");
 	SettingsWrapIntEnumEx(CASMode, "CASMode");
+	SettingsWrapIntEnumEx(Upscaler, "Upscaler");
 	SettingsWrapBitfieldEx(CAS_Sharpness, "CASSharpness");
 	SettingsWrapBitfieldEx(Dithering, "dithering_ps2");
 	SettingsWrapBitfieldEx(MaxAnisotropy, "MaxAnisotropy");
@@ -1105,7 +1108,13 @@ void Pcsx2Config::GSOptions::LoadSave(SettingsWrapper& wrap)
 	SettingsWrapBitfieldEx(AudioCaptureBitrate, "AudioCaptureBitrate");
 
 	SettingsWrapEntry(Adapter);
-	SettingsWrapEntry(CustomDriverPath);
+	SettingsWrapEntry(AndroidGpuProfileOverride);
+	if (StringUtil::Strcasecmp(AndroidGpuProfileOverride.c_str(), "mali") == 0)
+		AndroidGpuProfileOverride = "mali";
+	else if (StringUtil::Strcasecmp(AndroidGpuProfileOverride.c_str(), "adreno") == 0)
+		AndroidGpuProfileOverride = "adreno";
+	else
+		AndroidGpuProfileOverride = "auto";
 	SettingsWrapEntry(HWDumpDirectory);
 	if (!HWDumpDirectory.empty() && !Path::IsAbsolute(HWDumpDirectory))
 		HWDumpDirectory = Path::Combine(EmuFolders::DataRoot, HWDumpDirectory);
@@ -1350,7 +1359,7 @@ void Pcsx2Config::DEV9Options::LoadSave(SettingsWrapper& wrap)
 			LoadIPHelper(Mask, maskStr);
 			LoadIPHelper(Gateway, gatewayStr);
 			LoadIPHelper(DNS1, dns1Str);
-			LoadIPHelper(DNS2, dns2Str);
+			LoadIPHelper(DNS1, dns1Str);
 		}
 
 		SettingsWrapEntry(AutoMask);
@@ -1945,7 +1954,7 @@ Pcsx2Config::Pcsx2Config()
 	bitset = 0;
 	// Set defaults for fresh installs / reset settings
 	EnablePatches = true;
-	EnableFastBoot = false;
+	EnableFastBoot = true;
 	EnableRecordingTools = true;
 	EnableGameFixes = true;
 	InhibitScreensaver = true;
@@ -2364,6 +2373,25 @@ bool EmuFolders::EnsureFoldersExist()
 	result = FileSystem::CreateDirectoryPath(Videos.c_str(), false) && result;
 	result = FileSystem::CreateDirectoryPath(DebuggerLayouts.c_str(), false) && result;
 	result = FileSystem::CreateDirectoryPath(DebuggerSettings.c_str(), false) && result;
+
+#ifdef __ANDROID__
+	// Android's MediaScanner indexes image files (PNG/DDS replacement textures
+	// and texture dumps) in any folder without a .nomedia marker, so on the
+	// shared-storage "sdcard" data setting the user's texture packs end up in
+	// their gallery/camera roll. Drop a .nomedia in the textures folder only —
+	// the scanner applies it recursively, so it also covers the per-game
+	// dumps/replacements subdirs. Screenshots (snaps), cover art and videos are
+	// intentionally left out so they STILL appear in the gallery.
+	if (!Textures.empty())
+	{
+		const std::string marker(Path::Combine(Textures, ".nomedia"));
+		if (!FileSystem::FileExists(marker.c_str()))
+		{
+			if (std::FILE* fp = FileSystem::OpenCFile(marker.c_str(), "wb"))
+				std::fclose(fp);
+		}
+	}
+#endif
 	return result;
 }
 

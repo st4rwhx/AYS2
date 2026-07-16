@@ -38,7 +38,7 @@ namespace DarwinMisc {
 	// [iPSX2] Indirect Branch Probe
     // extern volatile u64 g_last_indirect_target; // Deprecated
     // extern volatile u64 g_last_indirect_site;   // Deprecated
-    
+
     struct IndirectEvent {
         u64 site;
         u64 target;
@@ -106,6 +106,11 @@ struct CPUClass {
 
     // [P42] JIT availability detection for real iOS devices
     bool IsJITAvailable();
+
+    /// Re-checks whether JIT is still usable after initial acquisition.
+    /// Combines a CS_DEBUGGED re-probe with a canary write/read to the RW alias.
+    /// Returns false if iOS has revoked the JIT grant since boot.
+    bool ValidateJITAlive();
 
     // [P43] iOS 26 Dual-Mapping JIT
     enum class JitMode {

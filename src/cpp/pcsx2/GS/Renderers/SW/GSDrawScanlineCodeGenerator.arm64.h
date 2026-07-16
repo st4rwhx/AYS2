@@ -15,7 +15,8 @@ public:
 	void Generate();
 
 	size_t GetSize() const { return m_emitter.GetSizeOfCodeGenerated(); }
-	const u8* GetCode() const { return m_code; }
+	// Return RX entry pointer, not the RW write pointer.
+	const u8* GetCode() const { return m_code_rx; }
 
 private:
 	void Init();
@@ -74,10 +75,12 @@ private:
 	void blend8r(const vixl::aarch64::VRegister& b, const vixl::aarch64::VRegister& a, const vixl::aarch64::VRegister& mask, const vixl::aarch64::VRegister& temp);
 	void split16_2x8(const vixl::aarch64::VRegister& l, const vixl::aarch64::VRegister& h, const vixl::aarch64::VRegister& src);
 
-	const u8* m_code = nullptr;
 	vixl::aarch64::MacroAssembler m_emitter;
 
 	GSScanlineSelector m_sel;
 
 	vixl::aarch64::Label m_step_label;
+
+	// RX entry pointer; GetCode() must return RX even when the emitter writes through the RW alias.
+	const u8* m_code_rx;
 };

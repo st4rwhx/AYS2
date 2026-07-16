@@ -69,9 +69,6 @@ static __fi void vifFlush(int idx)
 	vifExecQueue(idx);
 }
 
-uint32_t getVU0ExecCount() { return 0; }
-uint32_t getVU1ExecCount() { return 0; }
-
 static __fi void vuExecMicro(int idx, u32 addr, bool requires_wait)
 {
 	VIFregisters& vifRegs = vifXRegs;

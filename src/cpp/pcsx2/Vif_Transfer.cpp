@@ -9,14 +9,6 @@
 // VifCode Transfer Interpreter (Vif0/Vif1)
 //------------------------------------------------------------------
 
-uint32_t getVif1XferCalls() { return 0; }
-uint32_t getVif1CmdsTotal() { return 0; }
-uint32_t getVif1CmdNop() { return 0; }
-uint32_t getVif1CmdUnpack() { return 0; }
-uint32_t getVif1CmdMscal() { return 0; }
-uint32_t getVif1CmdDirect() { return 0; }
-uint32_t getVif1CmdOther() { return 0; }
-
 // Interprets packet
 _vifT void vifTransferLoop(u32* &data) {
 	vifStruct& vifX = GetVifX;
@@ -42,6 +34,7 @@ _vifT void vifTransferLoop(u32* &data) {
 
 			vifXRegs.code = data[0];
 			vifX.cmd	  = data[0] >> 24;
+
 
 			VIF_LOG("New VifCMD %x tagsize %x irq %d", vifX.cmd, vifX.tag.size, vifX.irq);
 			if (IsDevBuild && TraceLogging.EE.VIFcode.IsActive()) {

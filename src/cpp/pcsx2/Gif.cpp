@@ -198,7 +198,7 @@ __fi void gifCheckPathStatus(bool calledFromGIF)
 		{
 			// Check if VIF is in a cycle or is currently "idle" waiting for GIF to come back.
 			if (!(cpuRegs.interrupt & (1 << DMAC_VIF1)))
-				CPU_INT(DMAC_VIF1, 1, EE_VIF1_SRC_GIF_PATH3);
+				CPU_INT(DMAC_VIF1, 1);
 
 			// Make sure it loops if the GIF packet is empty to prepare for the next packet
 			// or end if it was the end of a packet.
@@ -222,7 +222,7 @@ __fi void gifInterrupt()
 		{
 			// Check if VIF is in a cycle or is currently "idle" waiting for GIF to come back.
 			if (!(cpuRegs.interrupt & (1 << DMAC_VIF1)))
-				CPU_INT(DMAC_VIF1, 1, EE_VIF1_SRC_GIF_PATH3);
+				CPU_INT(DMAC_VIF1, 1);
 
 			// Make sure it loops if the GIF packet is empty to prepare for the next packet
 			// or end if it was the end of a packet.
@@ -464,8 +464,6 @@ void GIFdma()
 
 void dmaGIF()
 {
-	if (!gifch.chcr.STR) return;
-
 	// DevCon.Warning("dmaGIFstart chcr = %lx, madr = %lx, qwc  = %lx\n tadr = %lx, asr0 = %lx, asr1 = %lx", gifch.chcr._u32, gifch.madr, gifch.qwc, gifch.tadr, gifch.asr0, gifch.asr1);
 
 	gif.gspath3done = false; // For some reason this doesn't clear? So when the system starts the thread, we will clear it :)
@@ -713,7 +711,7 @@ void gifMFIFOInterrupt()
 		{
 			// Check if VIF is in a cycle or is currently "idle" waiting for GIF to come back.
 			if (!(cpuRegs.interrupt & (1 << DMAC_VIF1)))
-				CPU_INT(DMAC_VIF1, 1, EE_VIF1_SRC_GIF_PATH3);
+				CPU_INT(DMAC_VIF1, 1);
 
 			// Make sure it loops if the GIF packet is empty to prepare for the next packet
 			// or end if it was the end of a packet.

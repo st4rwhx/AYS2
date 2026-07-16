@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2002-2026 PCSX2 Dev Team
+// SPDX-FileCopyrightText: 2026 isztld <https://isztld.com/>
 // SPDX-License-Identifier: GPL-3.0
 
 #include "arm64/AsmHelpers.h"
@@ -13,6 +14,10 @@
 #include <dlfcn.h>
 #include <TargetConditionals.h>
 #endif
+
+#include <new> // placement new for s_armAsmStorage
+
+
 
 const vixl::aarch64::Register& armWRegister(int n)
 {
@@ -106,9 +111,13 @@ void armAlignAsmPtr()
 	armAsmPtr = new_ptr;
 }
 
-// [R59] Placement-new storage for MacroAssembler to avoid per-block heap alloc/free.
-// MacroAssembler dtor is trivial (~MacroAssembler() {}), so explicit dtor call is safe.
-alignas(a64::MacroAssembler) static thread_local u8 s_asm_storage[sizeof(a64::MacroAssembler)];
+// Placement-new the per-block MacroAssembler into a thread_local buffer instead of a heap
+// new/delete on every JIT block compile: one fewer alloc/free pair per block, and it
+// sidesteps the Android scudo tag/header corruption class this exact new/delete-per-block
+// pattern is prone to (yaps2 810020d8, crediting ARMSX2 1c1d0b880). Safe because armAsm is
+// itself thread_local and the pxAssert(!armAsm) invariant keeps one live per thread (MTVU
+// compiles VU1 on its own thread, with its own buffer).
+alignas(vixl::aarch64::MacroAssembler) static thread_local u8 s_armAsmStorage[sizeof(vixl::aarch64::MacroAssembler)];
 
 static u8* armGetWritableCodePtr(u8* rx_ptr)
 {
@@ -128,7 +137,7 @@ u8* armStartBlock()
 	HostSys::BeginCodeWriteRange(s_arm_block_start, s_arm_block_write_size);
 
 	pxAssert(!armAsm);
-	armAsm = new (s_asm_storage) a64::MacroAssembler(static_cast<vixl::byte*>(armGetWritableCodePtr(armAsmPtr)), armAsmCapacity);
+	armAsm = new (s_armAsmStorage) vixl::aarch64::MacroAssembler(static_cast<vixl::byte*>(armGetWritableCodePtr(armAsmPtr)), armAsmCapacity);
 	armAsm->GetScratchVRegisterList()->Remove(31);
 	armAsm->GetScratchRegisterList()->Remove(RSCRATCHADDR.GetCode());
 	return armAsmPtr;
@@ -143,7 +152,7 @@ u8* armEndBlock()
 	const u32 size = static_cast<u32>(armAsm->GetSizeOfCodeGenerated());
 	pxAssert(size < armAsmCapacity);
 
-	armAsm->~MacroAssembler();
+	armAsm->~MacroAssembler(); // placement-new'd into s_armAsmStorage; no delete
 	armAsm = nullptr;
 
 	HostSys::EndCodeWriteRange(s_arm_block_start, s_arm_block_write_size);
@@ -222,6 +231,28 @@ void armEmitCall(const void* ptr, bool force_inline)
 		a64::SingleEmissionCheckScope guard(armAsm);
 		armAsm->bl(displacement);
 	}
+}
+
+void armEmitJmpPtr(void* code_address, const void* target, bool flush_icache)
+{
+	const s64 displacement = GetPCDisplacement(code_address, target);
+	pxAssert(vixl::IsInt26(displacement));
+
+	// ARM64 B (unconditional branch): 0b000101 | imm26
+	u32 insn = 0x14000000u | (static_cast<u32>(displacement) & 0x03FFFFFFu);
+
+	// code_address is the executable (RX) alias. Under iOS W^X dual-mapping the RX page
+	// is read-only, so the write must go through the RW mirror (rx + g_code_rw_offset).
+	// On macOS (single RWX region, or pthread_jit_write_protect_np toggle) the offset is 0
+	// and this reduces to writing code_address directly. armGetWritableCodePtr encodes both.
+	u8* const writable = armGetWritableCodePtr(static_cast<u8*>(code_address));
+
+	HostSys::BeginCodeWrite();
+	std::memcpy(writable, &insn, sizeof(insn));
+	HostSys::EndCodeWrite();
+
+	if (flush_icache)
+		HostSys::FlushInstructionCache(code_address, 4);
 }
 
 void armEmitCbnz(const vixl::aarch64::Register& reg, const void* ptr)
@@ -493,3 +524,5 @@ void ArmConstantPool::EmitLoadLiteral(const vixl::aarch64::CPURegister& reg, con
 	armMoveAddressToReg(RXVIXLSCRATCH, literal);
 	armAsm->Ldr(reg, a64::MemOperand(RXVIXLSCRATCH));
 }
+
+

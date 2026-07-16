@@ -15,14 +15,14 @@ public:
 	void Generate();
 
 	size_t GetSize() const { return m_emitter.GetSizeOfCodeGenerated(); }
-	const u8* GetCode() const { return m_code; }
+	// Return RX entry pointer, not the RW write pointer.
+	const u8* GetCode() const { return m_code_rx; }
 
 private:
 	void Depth();
 	void Texture();
 	void Color();
 
-	const u8* m_code = nullptr;
 	vixl::aarch64::MacroAssembler m_emitter;
 
 	GSScanlineSelector m_sel;
@@ -31,4 +31,7 @@ private:
 	{
 		u32 z : 1, f : 1, t : 1, c : 1;
 	} m_en;
+
+	// RX entry pointer; GetCode() must return RX even when the emitter writes through the RW alias.
+	const u8* m_code_rx;
 };

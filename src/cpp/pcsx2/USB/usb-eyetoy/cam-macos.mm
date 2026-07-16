@@ -8,7 +8,6 @@
 #include "usb-eyetoy-webcam.h"
 #include "jo_mpeg.h"
 
-#include <TargetConditionals.h>
 #include <thread>
 
 @interface CameraDelegate : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
@@ -213,15 +212,17 @@ namespace usb_eyetoy
 
 			@autoreleasepool
 			{
-			#if TARGET_OS_IPHONE
-				NSArray<AVCaptureDeviceType>* deviceTypes = @[ AVCaptureDeviceTypeBuiltInWideAngleCamera ];
-			#else
-				NSArray<AVCaptureDeviceType>* deviceTypes = @[ AVCaptureDeviceTypeBuiltInWideAngleCamera, AVCaptureDeviceTypeExternalUnknown ];
-			#endif
+#if TARGET_OS_IOS
 				AVCaptureDeviceDiscoverySession* discoverySession = [AVCaptureDeviceDiscoverySession
-					discoverySessionWithDeviceTypes:deviceTypes
+					discoverySessionWithDeviceTypes:@[ AVCaptureDeviceTypeBuiltInWideAngleCamera ]
 					                      mediaType:AVMediaTypeVideo
 					                       position:AVCaptureDevicePositionUnspecified];
+#else
+				AVCaptureDeviceDiscoverySession* discoverySession = [AVCaptureDeviceDiscoverySession
+					discoverySessionWithDeviceTypes:@[ AVCaptureDeviceTypeBuiltInWideAngleCamera, AVCaptureDeviceTypeExternalUnknown ]
+					                      mediaType:AVMediaTypeVideo
+					                       position:AVCaptureDevicePositionUnspecified];
+#endif
 				NSArray<AVCaptureDevice*>* devices = discoverySession.devices;
 				if (devices.count == 0)
 					Console.Warning("Camera: You have no video capture hardware");

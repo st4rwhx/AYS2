@@ -12,6 +12,7 @@
 #include <csignal>
 #include <cerrno>
 #include <cstdlib>
+#include <cstring>
 #include <fcntl.h>
 #include <limits.h>
 #include <mutex>
@@ -27,8 +28,14 @@
 
 #include "fmt/format.h"
 
-#ifndef ARMSX2_ENABLE_MEMORY_MAP_DIAGNOSTICS
-#define ARMSX2_ENABLE_MEMORY_MAP_DIAGNOSTICS 0
+#if defined(__ANDROID__)
+#include <sys/syscall.h>
+// bionic lacks shm_open until API 30; memfd_create is a libc wrapper only from
+// API 30 too, but the raw syscall works from API 26 (our minSdk).
+static int memfd_create_wrapper(const char* name, unsigned int flags)
+{
+	return static_cast<int>(syscall(__NR_memfd_create, name, flags));
+}
 #endif
 
 #if defined(__FreeBSD__)
@@ -128,6 +135,15 @@ static int CreateIOSFileBackedSharedMemory(const char* name, size_t size, int sh
 
 void* HostSys::CreateSharedMemory(const char* name, size_t size)
 {
+#if defined(__ANDROID__)
+	// Android: memfd_create available since API 26 (our minSdk), no shm_open until API 30.
+	const int fd = memfd_create_wrapper(name, 0);
+	if (fd < 0)
+	{
+		std::fprintf(stderr, "memfd_create failed: %d\n", errno);
+		return nullptr;
+	}
+#else
 	const int fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR, 0600);
 	if (fd < 0)
 	{
@@ -143,12 +159,12 @@ void* HostSys::CreateSharedMemory(const char* name, size_t size)
 
 	// we're not going to be opening this mapping in other processes, so remove the file
 	shm_unlink(name);
+#endif
 
 	// ensure it's the correct size
 	if (ftruncate(fd, static_cast<off_t>(size)) < 0)
 	{
 		std::fprintf(stderr, "ftruncate(%zu) failed: %d\n", size, errno);
-		close(fd);
 		return nullptr;
 	}
 
@@ -245,14 +261,12 @@ std::unique_ptr<SharedMemoryMappingArea> SharedMemoryMappingArea::Create(size_t 
 	void* alloc = mmap(nullptr, size, prot, flags, -1, 0);
 	if (alloc == MAP_FAILED)
 	{
-		const int map_jit_errno = errno;
-		std::fprintf(stderr, "@@SMA_CREATE_FAIL@@ size=%zu jit=%d flags=0x%x prot=0x%x err=%d\n",
-			size, static_cast<int>(jit), flags, prot, map_jit_errno);
+		const int err = errno;
+		std::fprintf(stderr,
+			"@@HOST_MMAP_FAIL@@ op=reserve size=%zu jit=%d flags=0x%x prot=0x%x err=%d message=\"%s\"\n",
+			size, jit ? 1 : 0, flags, prot, err, std::strerror(err));
 		return nullptr;
 	}
-
-	std::fprintf(stderr, "@@SMA_CREATE_OK@@ base=%p size=%zu jit=%d flags=0x%x prot=0x%x\n",
-		alloc, size, static_cast<int>(jit), flags, prot);
 
 	return std::unique_ptr<SharedMemoryMappingArea>(new SharedMemoryMappingArea(static_cast<u8*>(alloc), size, size / __pagesize));
 }
@@ -262,10 +276,6 @@ u8* SharedMemoryMappingArea::Map(void* file_handle, size_t file_offset, void* ma
 	pxAssert(static_cast<u8*>(map_base) >= m_base_ptr && static_cast<u8*>(map_base) < (m_base_ptr + m_size));
 
 	const uint lnxmode = LinuxProt(mode);
-#if ARMSX2_ENABLE_MEMORY_MAP_DIAGNOSTICS
-	std::fprintf(stderr, "@@SMA_MAP_BEGIN@@ file=%d offset=%zu base=%p size=%zu prot=0x%x\n",
-		file_handle ? 1 : 0, file_offset, map_base, map_size, lnxmode);
-#endif
 	if (file_handle)
 	{
 		const int fd = static_cast<int>(reinterpret_cast<intptr_t>(file_handle));
@@ -273,8 +283,10 @@ u8* SharedMemoryMappingArea::Map(void* file_handle, size_t file_offset, void* ma
 		void* const ptr = mmap(map_base, map_size, lnxmode, MAP_SHARED | MAP_FIXED, fd, static_cast<off_t>(file_offset));
 		if (ptr == MAP_FAILED)
 		{
-			std::fprintf(stderr, "@@SMA_MAP_FAIL@@ file=1 offset=%zu base=%p size=%zu prot=0x%x err=%d\n",
-				file_offset, map_base, map_size, lnxmode, errno);
+			const int err = errno;
+			std::fprintf(stderr,
+				"@@HOST_MMAP_FAIL@@ op=map_shared base=%p size=%zu prot=0x%x err=%d message=\"%s\"\n",
+				map_base, map_size, lnxmode, err, std::strerror(err));
 			return nullptr;
 		}
 	}
@@ -285,18 +297,15 @@ u8* SharedMemoryMappingArea::Map(void* file_handle, size_t file_offset, void* ma
 		// Note that this will only work the first time for a given region
 		if (mprotect(map_base, map_size, lnxmode) < 0)
 		{
-			const int mprotect_errno = errno;
-			std::fprintf(stderr, "@@SMA_MAP_FAIL@@ file=0 offset=%zu base=%p size=%zu prot=0x%x err=%d\n",
-				file_offset, map_base, map_size, lnxmode, mprotect_errno);
+			const int err = errno;
+			std::fprintf(stderr,
+				"@@HOST_MMAP_FAIL@@ op=mprotect base=%p size=%zu prot=0x%x err=%d message=\"%s\"\n",
+				map_base, map_size, lnxmode, err, std::strerror(err));
 			return nullptr;
 		}
 	}
 
 	m_num_mappings++;
-#if ARMSX2_ENABLE_MEMORY_MAP_DIAGNOSTICS
-	std::fprintf(stderr, "@@SMA_MAP_OK@@ file=%d base=%p size=%zu prot=0x%x mappings=%zu\n",
-		file_handle ? 1 : 0, map_base, map_size, lnxmode, m_num_mappings);
-#endif
 	return static_cast<u8*>(map_base);
 }
 
@@ -429,6 +438,11 @@ void PageFaultHandler::SignalHandler(int sig, siginfo_t* info, void* ctx)
 bool PageFaultHandler::Install(Error* error)
 {
 	std::unique_lock lock(s_exception_handler_mutex);
+	// Android keeps one process across game launches, so the VM lifecycle can call
+	// Install() more than once. Make it idempotent instead of tripping the release
+	// assert below (which aborts the CPU thread on the second game boot).
+	if (s_installed)
+		return true;
 	pxAssertRel(!s_installed, "Page fault handler has already been installed.");
 
 	struct sigaction sa;

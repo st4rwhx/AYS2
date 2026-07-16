@@ -356,9 +356,3 @@ DEFINE_HOTKEY("ToggleMouseLock", TRANSLATE_NOOP("Hotkeys", "System"), TRANSLATE_
 			Host::SetMouseLock(!Host::GetBoolSettingValue("EmuCore", "EnableMouseLock"));
 	})
 END_HOTKEY_LIST()
-
-const size_t g_num_common_hotkeys = std::size(g_common_hotkeys);
-
-BEGIN_HOTKEY_LIST(g_host_hotkeys)
-END_HOTKEY_LIST()
-const size_t g_num_host_hotkeys = std::size(g_host_hotkeys);

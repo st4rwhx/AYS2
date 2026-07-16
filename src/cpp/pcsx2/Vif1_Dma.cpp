@@ -35,7 +35,7 @@ void vif1TransferToMemory()
 
 		vif1ch.qwc = 0;
 		vif1.done = true;
-		CPU_INT(DMAC_VIF1, 0, EE_VIF1_SRC_BUSERR);
+		CPU_INT(DMAC_VIF1, 0);
 		return; // An error has occurred.
 	}
 
@@ -310,7 +310,7 @@ __fi void vif1Interrupt()
 		if ((isDirect && !gifUnit.CanDoPath2()) || (isDirectHL && !gifUnit.CanDoPath2HL()))
 		{
 			GUNIT_WARN("vif1Interrupt() - Waiting for Path 2 to be ready");
-			CPU_INT(DMAC_VIF1, 128, EE_VIF1_SRC_PATH2_WAIT);
+			CPU_INT(DMAC_VIF1, 128);
 			if (gifRegs.stat.APATH == 3)
 				vif1Regs.stat.VGW = 1; //We're waiting for path 3. Gunslinger II
 			CPU_SET_DMASTALL(DMAC_VIF1, true);
@@ -395,19 +395,17 @@ __fi void vif1Interrupt()
 		if (vif1ch.chcr.DIR)
 			vif1Regs.stat.FQC = std::min(vif1ch.qwc, (u32)16);
 
-			if (!(vif1Regs.stat.VGW && gifUnit.gifPath[GIF_PATH_3].state != GIF_PATH_IDLE)) //If we're waiting on GIF, stop looping, (can be over 1000 loops!)
+		if (!(vif1Regs.stat.VGW && gifUnit.gifPath[GIF_PATH_3].state != GIF_PATH_IDLE)) //If we're waiting on GIF, stop looping, (can be over 1000 loops!)
+		{
+			if (vif1.waitforvu)
 			{
-				if (vif1.waitforvu)
-				{
-					//if (cpuGetCycles(VU_MTVU_BUSY) > static_cast<int>(g_vif1Cycles))
-					//	DevCon.Warning("Waiting %d instead of %d", cpuGetCycles(VU_MTVU_BUSY), static_cast<int>(g_vif1Cycles));
-					CPU_INT(DMAC_VIF1, std::max(static_cast<int>(g_vif1Cycles), cpuGetCycles(VU_MTVU_BUSY)), EE_VIF1_SRC_INPROGRESS_WAITVU);
-				}
-				else
-				{
-					CPU_INT(DMAC_VIF1, g_vif1Cycles, EE_VIF1_SRC_INPROGRESS_CYCLES);
-				}
+				//if (cpuGetCycles(VU_MTVU_BUSY) > static_cast<int>(g_vif1Cycles))
+				//	DevCon.Warning("Waiting %d instead of %d", cpuGetCycles(VU_MTVU_BUSY), static_cast<int>(g_vif1Cycles));
+				CPU_INT(DMAC_VIF1, std::max(static_cast<int>(g_vif1Cycles), cpuGetCycles(VU_MTVU_BUSY)));
 			}
+			else
+				CPU_INT(DMAC_VIF1, g_vif1Cycles);
+		}
 		return;
 	}
 
@@ -425,26 +423,24 @@ __fi void vif1Interrupt()
 		if (vif1ch.chcr.DIR)
 			vif1Regs.stat.FQC = std::min(vif1ch.qwc, (u32)16);
 
-			if (!(vif1Regs.stat.VGW && gifUnit.gifPath[GIF_PATH_3].state != GIF_PATH_IDLE)) //If we're waiting on GIF, stop looping, (can be over 1000 loops!)
+		if (!(vif1Regs.stat.VGW && gifUnit.gifPath[GIF_PATH_3].state != GIF_PATH_IDLE)) //If we're waiting on GIF, stop looping, (can be over 1000 loops!)
+		{
+			if (vif1.waitforvu)
 			{
-				if (vif1.waitforvu)
-				{
-					//if (cpuGetCycles(VU_MTVU_BUSY) > static_cast<int>(g_vif1Cycles))
-					//	DevCon.Warning("Waiting %d instead of %d", cpuGetCycles(VU_MTVU_BUSY), static_cast<int>(g_vif1Cycles));
-					CPU_INT(DMAC_VIF1, std::max(static_cast<int>(g_vif1Cycles), cpuGetCycles(VU_MTVU_BUSY)), EE_VIF1_SRC_SETUP_WAITVU);
-				}
-				else
-				{
-					CPU_INT(DMAC_VIF1, g_vif1Cycles, EE_VIF1_SRC_SETUP_CYCLES);
-				}
+				//if (cpuGetCycles(VU_MTVU_BUSY) > static_cast<int>(g_vif1Cycles))
+				//	DevCon.Warning("Waiting %d instead of %d", cpuGetCycles(VU_MTVU_BUSY), static_cast<int>(g_vif1Cycles));
+				CPU_INT(DMAC_VIF1, std::max(static_cast<int>(g_vif1Cycles), cpuGetCycles(VU_MTVU_BUSY)));
 			}
+			else
+				CPU_INT(DMAC_VIF1, g_vif1Cycles);
+		}
 		return;
 	}
 
 	if (vif1.vifstalled.enabled && vif1.done)
 	{
 		DevCon.WriteLn("VIF1 looping on stall at end\n");
-		CPU_INT(DMAC_VIF1, 0, EE_VIF1_SRC_STALL_END);
+		CPU_INT(DMAC_VIF1, 0);
 		CPU_SET_DMASTALL(DMAC_VIF1, true);
 		return; //Dont want to end if vif is stalled.
 	}
@@ -474,10 +470,6 @@ __fi void vif1Interrupt()
 	hwDmacIrq(DMAC_VIF1);
 	CPU_SET_DMASTALL(DMAC_VIF1, false);
 }
-
-u32 g_vif1_dma_starts = 0;
-u32 g_gap_sample_active = 0;
-u32 g_gap_sample_start_cyc = 0;
 
 void dmaVIF1()
 {
@@ -539,5 +531,5 @@ void dmaVIF1()
 	// Batman Vengence does something stupid and instead of cancelling a stall it tries to restart VIF, THEN check the stall
 	// However if VIF FIFO is reversed, it can continue
 	if (!vif1ch.chcr.DIR || !vif1Regs.stat.test(VIF1_STAT_VSS | VIF1_STAT_VIS | VIF1_STAT_VFS))
-		CPU_INT(DMAC_VIF1, 4, EE_VIF1_SRC_DMA_START);
+		CPU_INT(DMAC_VIF1, 4);
 }

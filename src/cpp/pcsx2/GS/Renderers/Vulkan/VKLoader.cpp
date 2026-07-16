@@ -7,8 +7,6 @@
 #include "common/Console.h"
 #include "common/DynamicLibrary.h"
 #include "common/Error.h"
-#include "pcsx2/Config.h"
-#include "GS/GS.h"
 
 #include <cstdarg>
 #include <cstdio>
@@ -16,11 +14,10 @@
 #include <cstring>
 #include <string>
 
-#ifdef __ANDROID__
-#ifdef USE_ADRENOTOOLS
-#include <adrenotools/driver.h>
-#endif
+#if defined(__ANDROID__)
 #include <dlfcn.h>
+#include <mutex>
+#include "adrenotools/driver.h"
 #endif
 
 extern "C" {
@@ -47,6 +44,78 @@ void Vulkan::ResetVulkanLibraryFunctionPointers()
 
 static DynamicLibrary s_vulkan_library;
 
+#if defined(__ANDROID__)
+namespace
+{
+	std::mutex s_custom_driver_mutex;
+	std::string s_custom_driver_dir;
+	std::string s_custom_driver_name;
+	std::string s_custom_redirect_dir;
+	std::string s_custom_hook_lib_dir;
+} // namespace
+
+void Vulkan::SetCustomDriverPath(const char* driver_dir, const char* driver_name,
+	const char* redirect_dir, const char* hook_lib_dir)
+{
+	std::lock_guard lock(s_custom_driver_mutex);
+	s_custom_driver_dir   = driver_dir   ? driver_dir   : "";
+	s_custom_driver_name  = driver_name  ? driver_name  : "";
+	s_custom_redirect_dir = redirect_dir ? redirect_dir : "";
+	s_custom_hook_lib_dir = hook_lib_dir ? hook_lib_dir : "";
+}
+
+static bool TryOpenAdrenotoolsDriver(DynamicLibrary& library, Error* error)
+{
+	std::string driver_dir, driver_name, redirect_dir, hook_lib_dir;
+	{
+		std::lock_guard lock(s_custom_driver_mutex);
+		if (s_custom_driver_dir.empty() || s_custom_driver_name.empty() || s_custom_hook_lib_dir.empty())
+			return false;
+		driver_dir   = s_custom_driver_dir;
+		driver_name  = s_custom_driver_name;
+		redirect_dir = s_custom_redirect_dir;
+		hook_lib_dir = s_custom_hook_lib_dir;
+	}
+
+	int feature_flags = ADRENOTOOLS_DRIVER_CUSTOM;
+	if (!redirect_dir.empty())
+		feature_flags |= ADRENOTOOLS_DRIVER_FILE_REDIRECT;
+
+	Console.WriteLn("VKLoader: opening custom Vulkan driver via adrenotools "
+		"(dir=%s name=%s redirect=%s hook=%s)",
+		driver_dir.c_str(), driver_name.c_str(),
+		redirect_dir.empty() ? "<none>" : redirect_dir.c_str(),
+		hook_lib_dir.c_str());
+
+	// adrenotools_open_libvulkan takes tmpLibDir for API < 29 fallback; pass null to
+	// use memfd which is fine on every modern device. The trailing slash in driver_dir /
+	// redirect_dir is required by the driver's path resolution; the Kotlin side appends it.
+	void* handle = adrenotools_open_libvulkan(
+		RTLD_NOW, feature_flags,
+		nullptr, // tmpLibDir (memfd path)
+		hook_lib_dir.c_str(),
+		driver_dir.c_str(),
+		driver_name.c_str(),
+		redirect_dir.empty() ? nullptr : redirect_dir.c_str(),
+		nullptr // userMappingHandle (unused)
+	);
+
+	if (!handle)
+	{
+		const char* err = dlerror();
+		Error::SetStringFmt(error,
+			"adrenotools_open_libvulkan failed for {} ({}): {}",
+			driver_name, driver_dir, err ? err : "<no dlerror>");
+		Console.Warning("VKLoader: %s — falling back to system loader.", error ? error->GetDescription().c_str() : "custom driver load failed");
+		return false;
+	}
+
+	library.Adopt(handle);
+	Console.WriteLn("VKLoader: adrenotools driver handle acquired.");
+	return true;
+}
+#endif
+
 bool Vulkan::IsVulkanLibraryLoaded()
 {
 	return s_vulkan_library.IsOpen();
@@ -56,153 +125,32 @@ bool Vulkan::LoadVulkanLibrary(Error* error)
 {
 	pxAssertRel(!s_vulkan_library.IsOpen(), "Vulkan module is not loaded.");
 
-	// Check for custom driver path from config
-	std::string custom_driver_path;
-	if (GSConfig.CustomDriverPath.empty())
-	{
-		char* libvulkan_env = getenv("LIBVULKAN_PATH");
-		if (libvulkan_env)
-			custom_driver_path = libvulkan_env;
-#if defined(USE_ADRENOTOOLS) && defined(__ANDROID__)
-		if (custom_driver_path.empty())
-		{
-			char* adreno_tools_path = getenv("ADRENOTOOLS_LIBVULKAN_PATH");
-			if (adreno_tools_path)
-				custom_driver_path = adreno_tools_path;
-		}
-#endif
-	}
-	else
-	{
-		custom_driver_path = GSConfig.CustomDriverPath;
-	}
-
-	// Try to load custom driver if specified
-	if (!custom_driver_path.empty())
-	{
-#if defined(__ANDROID__) && defined(USE_ADRENOTOOLS)
-		std::string custom_driver_dir;
-		std::string custom_driver_name;
-		
-		size_t last_slash = custom_driver_path.find_last_of("/\\");
-		if (last_slash != std::string::npos)
-		{
-			custom_driver_dir = custom_driver_path.substr(0, last_slash + 1);
-			custom_driver_name = custom_driver_path.substr(last_slash + 1);
-		}
-		else
-		{
-			custom_driver_name = custom_driver_path;
-		}
-
-		const char* hook_lib_dir = getenv("ANDROID_NATIVE_LIB_DIR");
-		if (!hook_lib_dir)
-		{
-			hook_lib_dir = getenv("ANDROID_DATA_DIR");
-		}
-		
-		if (hook_lib_dir && !custom_driver_dir.empty() && !custom_driver_name.empty())
-		{
-			Console.WriteLn(Color_StrongGreen, "Vulkan: Using libadrenotools to load custom driver: %s from %s", 
-				custom_driver_name.c_str(), custom_driver_dir.c_str());
-			
-			void* vulkan_handle = adrenotools_open_libvulkan(
-				RTLD_NOW | RTLD_LOCAL,  // dlopenMode
-				ADRENOTOOLS_DRIVER_CUSTOM,  // featureFlags
-				nullptr,  // tmpLibDir (nullptr for API 29+)
-				hook_lib_dir,  // hookLibDir
-				custom_driver_dir.c_str(),  // customDriverDir
-				custom_driver_name.c_str(),  // customDriverName
-				nullptr,  // fileRedirectDir
-				nullptr   // userMappingHandle
-			);
-			
-			if (vulkan_handle)
-			{
-				// Grab the handle from libadrenotools
-				s_vulkan_library.Adopt(vulkan_handle);
-				Console.WriteLn(Color_StrongGreen, "Vulkan: Successfully loaded custom driver via libadrenotools");
-			}
-			else
-			{
-				Console.Warning("Vulkan: libadrenotools failed to load custom driver, falling back to direct loading");
-				// Fall through to direct loading
-				if (s_vulkan_library.Open(custom_driver_path.c_str(), error))
-				{
-					Console.WriteLn(Color_StrongGreen, "Vulkan: Successfully loaded custom driver directly");
-				}
-				else
-				{
-					Console.Warning("Vulkan: Failed to load custom driver from '%s', falling back to system driver", custom_driver_path.c_str());
-				}
-			}
-		}
-		else
-		{
-			Console.Warning("Vulkan: libadrenotools requires ANDROID_NATIVE_LIB_DIR and valid custom driver path, falling back to direct loading");
-			if (s_vulkan_library.Open(custom_driver_path.c_str(), error))
-			{
-				Console.WriteLn(Color_StrongGreen, "Vulkan: Successfully loaded custom driver directly");
-			}
-			else
-			{
-				Console.Warning("Vulkan: Failed to load custom driver from '%s', falling back to system driver", custom_driver_path.c_str());
-			}
-		}
-#else
-		// Loading without libadrenotools
-		Console.WriteLn(Color_StrongGreen, "Vulkan: Attempting to load custom driver from: %s", custom_driver_path.c_str());
-		if (s_vulkan_library.Open(custom_driver_path.c_str(), error))
-		{
-			Console.WriteLn(Color_StrongGreen, "Vulkan: Successfully loaded custom driver");
-		}
-		else
-		{
-			Console.Warning("Vulkan: Failed to load custom driver from '%s', falling back to system driver", custom_driver_path.c_str());
-		}
-#endif
-	}
-
 #ifdef __APPLE__
-	// On macOS, try MoltenVK if custom driver failed or wasn't specified
+	// Check if a path to a specific Vulkan library has been specified.
+	char* libvulkan_env = getenv("LIBVULKAN_PATH");
+	if (libvulkan_env)
+		s_vulkan_library.Open(libvulkan_env, error);
 	if (!s_vulkan_library.IsOpen() &&
 		!s_vulkan_library.Open(DynamicLibrary::GetVersionedFilename("MoltenVK").c_str(), error))
 	{
 		return false;
 	}
 #else
-	// On other platforms, try versioned first, then unversioned system libraries
-	if (!s_vulkan_library.IsOpen())
-	{
 #if defined(__ANDROID__)
-		const char* android_native_lib_dir = getenv("ANDROID_NATIVE_LIB_DIR");
-		if (android_native_lib_dir)
-		{
-			std::string custom_lib_path = std::string(android_native_lib_dir) + "/libvulkan.so";
-			if (s_vulkan_library.Open(custom_lib_path.c_str(), error))
-			{
-				Console.WriteLn(Color_StrongGreen, "Vulkan: Loaded custom driver from app directory");
-			}
-		}
-		
-		if (!s_vulkan_library.IsOpen())
-		{
-			if (!s_vulkan_library.Open("libvulkan.so", error))
-			{
-				if (!s_vulkan_library.Open(DynamicLibrary::GetVersionedFilename("vulkan", 1).c_str(), error) &&
-					!s_vulkan_library.Open(DynamicLibrary::GetVersionedFilename("vulkan").c_str(), error))
-				{
-					return false;
-				}
-			}
-		}
-#else
-		if (!s_vulkan_library.Open(DynamicLibrary::GetVersionedFilename("vulkan", 1).c_str(), error) &&
-			!s_vulkan_library.Open(DynamicLibrary::GetVersionedFilename("vulkan").c_str(), error))
-		{
-			return false;
-		}
+	// User-picked custom driver (e.g. Mesa Turnip from K11MCH1/AdrenoToolsDrivers)
+	// takes priority. Falls back to the system loader on any failure so the boot
+	// still proceeds — the Console.Warning above already logged the cause.
+	if (TryOpenAdrenotoolsDriver(s_vulkan_library, error))
+	{
+		Error::Clear(error);
+	}
+	else
 #endif
+	// try versioned first, then unversioned.
+	if (!s_vulkan_library.Open(DynamicLibrary::GetVersionedFilename("vulkan", 1).c_str(), error) &&
+		!s_vulkan_library.Open(DynamicLibrary::GetVersionedFilename("vulkan").c_str(), error))
+	{
+		return false;
 	}
 #endif
 

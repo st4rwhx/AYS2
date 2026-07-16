@@ -17,27 +17,8 @@
 
 #include "fmt/format.h"
 
-#if defined(__APPLE__)
-#include <TargetConditionals.h>
-#if TARGET_OS_IPHONE
-#include <sys/sysctl.h>
-#endif
-#endif
-
 #include <cstdarg>
 #include <shared_mutex>
-
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-static std::string GetIOSVersionForUserAgent()
-{
-	char version[64] = {};
-	size_t version_len = sizeof(version);
-	if (sysctlbyname("kern.osproductversion", version, &version_len, nullptr, 0) == 0 && version[0] != '\0')
-		return fmt::format("iOS {}", version);
-
-	return GetOSVersionString();
-}
-#endif
 
 namespace Host
 {
@@ -176,12 +157,12 @@ void Host::ReportFormattedErrorAsync(const std::string_view title, const char* f
 
 std::string Host::GetHTTPUserAgent()
 {
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-	const char* core_version = (BuildVersion::GitTag && BuildVersion::GitTag[0]) ? BuildVersion::GitTag : BuildVersion::GitRev;
-	return fmt::format("ARMSX2-iOS/v2.2.2 ({}) pcsx2/{}", GetIOSVersionForUserAgent(), core_version);
-#else
-	return fmt::format("PCSX2 {} ({})", BuildVersion::GitRev, GetOSVersionString());
-#endif
+	// RetroAchievements identifies the client by the leading Name/Version token of
+	// this User-Agent, so report ARMSX2 with the stable dotted version the RA server
+	// has registered/pinned (matches the refresh-experimental Android build). A
+	// "PCSX2 <gitrev>" UA is rejected as an outdated/unknown emulator, which disables
+	// hardcore unlocks ("Warning: Outdated Emulator").
+	return fmt::format("ARMSX2/2.7.407.0 ({})", GetOSVersionString());
 }
 
 std::unique_lock<std::mutex> Host::GetSettingsLock()

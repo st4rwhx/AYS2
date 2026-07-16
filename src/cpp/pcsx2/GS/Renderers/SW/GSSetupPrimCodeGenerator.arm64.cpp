@@ -7,12 +7,19 @@
 #include "common/StringUtil.h"
 #include "common/Perf.h"
 
-#if defined(__APPLE__)
-#include "common/Darwin/DarwinMisc.h"
-#include <TargetConditionals.h>
-#endif
-
 #include <cstdint>
+
+// On iOS dual-map JIT, write through the RW alias (rx + g_code_rw_offset).
+// Identity no-op elsewhere. Mirrors armGetWritableCodePtr in pcsx2/arm64/AsmHelpers.cpp.
+#if defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+#include "common/Darwin/DarwinMisc.h"
+static void* gsGetWritableCodePtr(void* rx_ptr)
+{
+	return static_cast<u8*>(rx_ptr) + DarwinMisc::g_code_rw_offset;
+}
+#else
+static void* gsGetWritableCodePtr(void* rx_ptr) { return rx_ptr; }
+#endif
 
 MULTI_ISA_UNSHARED_IMPL;
 
@@ -32,19 +39,10 @@ static constexpr const GSScanlineConstantData128B& g_const = g_const_128b;
 #define _local(field) MemOperand(_locals, OFFSETOF(GSScanlineLocalData, field))
 #define armAsm (&m_emitter)
 
-static void* GetWritableCodePtr(void* code)
-{
-#if defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
-	return static_cast<u8*>(code) + DarwinMisc::g_code_rw_offset;
-#else
-	return code;
-#endif
-}
-
 GSSetupPrimCodeGenerator::GSSetupPrimCodeGenerator(u64 key, void* code, size_t maxsize)
-	: m_code(static_cast<const u8*>(code))
-	, m_emitter(static_cast<vixl::byte*>(GetWritableCodePtr(code)), maxsize, vixl::aarch64::PositionDependentCode)
+	: m_emitter(static_cast<vixl::byte*>(gsGetWritableCodePtr(code)), maxsize, vixl::aarch64::PositionDependentCode)
 	, m_sel(key)
+	, m_code_rx(static_cast<const u8*>(code))
 {
 	m_en.z = m_sel.zb ? 1 : 0;
 	m_en.f = m_sel.fb && m_sel.fge ? 1 : 0;

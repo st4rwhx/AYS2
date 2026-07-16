@@ -126,9 +126,16 @@ if(ARCH_X86)
 endif()
 
 if(WIN32)
-	enable_language(ASM_MASM)
+	# FastJmp is hand-written assembly (MSVC has no inline asm). x86 uses MASM
+	# (ml64); arm64 uses the Microsoft ARM assembler (armasm64 / ASM_MARMASM).
+	if(ARCH_ARM64)
+		enable_language(ASM_MARMASM)
+		target_sources(common PRIVATE FastJmp.aarch64.asm)
+	else()
+		enable_language(ASM_MASM)
+		target_sources(common PRIVATE FastJmp.asm)
+	endif()
 	target_sources(common PRIVATE
-		FastJmp.asm
 		HTTPDownloaderWinHTTP.cpp
 		HTTPDownloaderWinHTTP.h
 		StackWalker.cpp
@@ -142,31 +149,45 @@ if(WIN32)
 		winmm
 		pathcch
 	)
-elseif(APPLE)
+elseif(APPLE AND IOS)
 	target_sources(common PRIVATE
 		Darwin/DarwinThreads.cpp
 		Darwin/DarwinMisc.cpp
 		Darwin/DarwinMisc.h
 		Linux/LnxHostSys.cpp
 	)
-	if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
-		target_sources(common PRIVATE
-			CocoaTools.mm
-			CocoaTools.h
-		)
-		target_link_libraries(common PRIVATE
-			"-framework Foundation"
-			"-framework IOKit"
-			"-framework AppKit"
-		)
-	else()
-		target_link_libraries(common PRIVATE
-			"-framework Foundation"
-			"-framework UIKit"
-		)
-	endif()
 	target_compile_options(common PRIVATE -fobjc-arc)
 	target_link_options(common PRIVATE -fobjc-link-runtime)
+	target_link_libraries(common PRIVATE
+		"-framework Foundation"
+		"-framework UIKit"
+	)
+elseif(APPLE)
+	target_sources(common PRIVATE
+		CocoaTools.mm
+		CocoaTools.h
+		Darwin/DarwinThreads.cpp
+		Darwin/DarwinMisc.cpp
+		Darwin/DarwinMisc.h
+		Linux/LnxHostSys.cpp
+	)
+	target_compile_options(common PRIVATE -fobjc-arc)
+	target_link_options(common PRIVATE -fobjc-link-runtime)
+	target_link_libraries(common PRIVATE
+		"-framework Foundation"
+		"-framework IOKit"
+	)
+elseif(ANDROID)
+	# Android reuses the Linux host layer plus a JNI-backed HTTP downloader
+	# (relocated from the former android core fork). Source wiring only:
+	# validate against a real NDK build. See REFACTOR_STATUS.md.
+	target_sources(common PRIVATE
+		Linux/LnxHostSys.cpp
+		Linux/LnxThreads.cpp
+		Linux/LnxMisc.cpp
+		HTTPDownloaderAndroid.cpp
+		HTTPDownloaderAndroid.h
+	)
 else()
 	target_sources(common PRIVATE
 		Linux/LnxHostSys.cpp
@@ -199,53 +220,29 @@ if (USE_GCC AND CMAKE_INTERPROCEDURAL_OPTIMIZATION)
 	set_source_files_properties(FastJmp.cpp PROPERTIES COMPILE_FLAGS -fno-lto)
 endif()
 
-if(NOT WIN32)
-	# libcurl-based HTTPDownloader
-	if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT iPSX2_MACOS_BUILD)
-		target_sources(common PRIVATE
-			HTTPDownloaderCurl.cpp
-			HTTPDownloaderCurl.h
-		)
-		if(ANDROID)
-			target_link_libraries(common PRIVATE curl ssl crypto nghttp2 pcap)
-		else()
-			target_link_libraries(common PRIVATE
-				CURL::libcurl
-			)
-		endif()
-	endif()
+if(NOT WIN32 AND NOT ANDROID AND NOT IOS)
+	# libcurl-based HTTPDownloader (Android uses HTTPDownloaderAndroid instead)
+	target_sources(common PRIVATE
+		HTTPDownloaderCurl.cpp
+		HTTPDownloaderCurl.h
+	)
+	target_link_libraries(common PRIVATE
+		CURL::libcurl
+	)
 endif()
 
-if(ANDROID)
-	target_link_libraries(common PRIVATE
-		${LIBC_LIBRARIES}
-		jpeg
-		png16
-		webp
-		cpuinfo
-	)
-else()
-	target_link_libraries(common PRIVATE
-		${LIBC_LIBRARIES}
-		cpuinfo
-	)
-	if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-		target_link_libraries(common PRIVATE
-			webp
-		)
-	elseif(NOT iPSX2_MACOS_BUILD)
-		target_link_libraries(common PRIVATE
-			WebP::libwebp
-			JPEG::JPEG
-			PNG::PNG
-		)
-	endif()
-endif()
+target_link_libraries(common PRIVATE
+	${LIBC_LIBRARIES}
+	JPEG::JPEG
+	PNG::PNG
+	WebP::libwebp
+	cpuinfo
+)
 
 target_link_libraries(common PUBLIC
 	fmt::fmt
 	fast_float
-	rapidyaml::rapidyaml
+	ryml::ryml
 )
 
 fixup_file_properties(common)

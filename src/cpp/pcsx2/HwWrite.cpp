@@ -3,7 +3,6 @@
 
 #include "Common.h"
 #include "Hardware.h"
-#include "Hw.h"
 #include "Gif_Unit.h"
 #include "IopHw.h"
 #include "IopMem.h"
@@ -14,7 +13,6 @@
 #include "ps2/pgif.h"
 #include "SPU2/spu2.h"
 #include "R3000A.h"
-#include "Counters.h"  // g_FrameCount for INTC_MASK probe
 
 #include "CDVD/Ps1CD.h"
 #include "CDVD/CDVD.h"
@@ -35,27 +33,9 @@ template< uint page > void TAKES_R128 _hwWrite128(u32 mem, r128 value);
 
 
 template<uint page>
-void _hwWrite32_impl( u32 mem, u32 value )
+void _hwWrite32( u32 mem, u32 value )
 {
-	// [iter262] アンアライン HW 書き込みは abort せず警告のみで継続
-	if (mem & 0x03) {
-		static u32 s_unalign_n = 0;
-		if (++s_unalign_n <= 5)
-			Console.Warning("@@HWWRITE32_UNALIGNED@@ n=%u pc=%08x addr=%08x val=%08x page=%02x",
-				s_unalign_n, cpuRegs.pc, mem, value, page);
-		mem &= ~0x03u;
-	}
-
-	// [iter212] @@HW_WRITE_COUNT@@ – EE HW register書き込み総数
-	// Removal condition: BIOS HW 初期化skipcauseafter determined
-	{
-		static u32 s_hw_wr_n = 0;
-		++s_hw_wr_n;
-		if (s_hw_wr_n <= 20) {
-			Console.WriteLn("@@HW_WRITE32@@ n=%u pc=%08x addr=%08x val=%08x page=%02x",
-				s_hw_wr_n, cpuRegs.pc, mem, value, page);
-		}
-	}
+	pxAssume( (mem & 0x03) == 0 );
 
 	// Notes:
 	// All unknown registers on the EE are "reserved" as discarded writes and indeterminate
@@ -150,15 +130,6 @@ void _hwWrite32_impl( u32 mem, u32 value )
 
 		case 0x0f:
 		{
-			// [iter142] @@EE_SBUS_RANGE_WRITE@@ – SBUS エリア(0x1000F200-0x1000F2FF)への全書き込みをキャプチャ
-			if ((mem & 0xFFFFFF00u) == 0x1000F200u) {
-				static u32 s_sbus_rng_n = 0;
-				if (s_sbus_rng_n < 30) {
-					++s_sbus_rng_n;
-					Console.WriteLn("@@EE_SBUS_RANGE_WRITE@@ n=%u pc=0x%08x addr=0x%08x val=0x%08x",
-						s_sbus_rng_n, cpuRegs.pc, mem, value);
-				}
-			}
 			switch( HELPSWITCH(mem) )
 			{
 				mcase(INTC_STAT):
@@ -167,19 +138,8 @@ void _hwWrite32_impl( u32 mem, u32 value )
 				return;
 
 				mcase(INTC_MASK):
-				{
-					u32 old_mask = psHu32(INTC_MASK);
 					psHu32(INTC_MASK) ^= (u16)value;
-					u32 new_mask = psHu32(INTC_MASK);
-					// [TEMP_DIAG] INTC_MASK write probe — cap 50
-					static int s_intcmask_log_n = 0;
-					if (s_intcmask_log_n < 50) {
-						Console.WriteLn("@@INTC_MASK_WRITE@@ n=%d val=%08x old=%04x new=%04x pc=%08x vsync=%u",
-							s_intcmask_log_n, value, old_mask, new_mask, cpuRegs.pc, g_FrameCount);
-						s_intcmask_log_n++;
-					}
 					cpuTestINTCInts();
-				}
 				return;
 
 				mcase(SIO_TXFIFO):
@@ -201,48 +161,14 @@ void _hwWrite32_impl( u32 mem, u32 value )
 				break;
 
 				mcase(SBUS_F220):
-					// [iter141] @@EE_SBUS_F220_WRITE@@ – EE が IOP SIF ハンドシェイク用 MSFLG に書き込む
-					{
-						static u32 s_f220_n = 0;
-						if (s_f220_n < 8) {
-							++s_f220_n;
-							Console.WriteLn("@@EE_SBUS_F220_WRITE@@ n=%u pc=0x%08x val=0x%08x f220_before=0x%08x",
-								s_f220_n, cpuRegs.pc, value, psHu32(SBUS_F220));
-						}
-					}
 					psHu32(mem) |= value;
 				return;
 
 				mcase(SBUS_F230):
-				// [iter672] @@EE_SBUS_F230_WRITE@@ — EE 側 SMFLG ビットクリア追跡
-				{
-					static u32 s_ee_f230w_n = 0;
-					if (s_ee_f230w_n < 20) {
-						++s_ee_f230w_n;
-						Console.WriteLn("@@EE_SBUS_F230_WRITE@@ n=%u pc=0x%08x val=0x%08x f230_before=0x%08x",
-							s_ee_f230w_n, cpuRegs.pc, value, psHu32(SBUS_F230));
-					}
-					// [P37] H2 REMOVED — SBUS_F230 bit18 → kernel reg4 injection disabled
-					// Diagnostic only: log when bit18 acknowledge occurs, without modifying kernel state
-					if ((value & 0x40000u) && (psHu32(SBUS_F230) & 0x40000u) && eeMem) {
-						u32 kernel_reg4 = *(u32*)(eeMem->Main + 0x1A764);
-						static int s_f230_diag = 0;
-						if (s_f230_diag++ < 20)
-							Console.WriteLn("@@SBUS_F230_BIT18@@ n=%d kernel_reg4=%08x intc=%08x/%08x f230=%08x cycle=%u",
-								s_f230_diag, kernel_reg4, psHu32(INTC_STAT), psHu32(INTC_MASK), psHu32(SBUS_F230), cpuRegs.cycle);
-					}
-				}
 					psHu32(mem) &= ~value;
 				return;
 
 				mcase(SBUS_F240):
-					// [iter229] TEMP_DIAG: SIF control register write probe
-					{
-						static u32 s_f240_n = 0;
-						if (s_f240_n++ < 20)
-							Console.WriteLn("@@SBUS_F240_WRITE@@ n=%u pc=%08x val=%08x cur=%08x",
-								s_f240_n, cpuRegs.pc, value, psHu32(SBUS_F240));
-					}
 					if (value & (1 << 18))
 					{
 						iopIntcIrq(1);
@@ -269,13 +195,6 @@ void _hwWrite32_impl( u32 mem, u32 value )
 #if PSX_EXTRALOGS
 					DevCon.Warning("Write  SBUS_F260  %x ", psHu32(SBUS_F260));
 #endif
-					// [TEMP_DIAG] IOP reboot trigger detection — Removal condition: IOP reboot issue解決後
-					{
-						static int s_f260_n = 0;
-						if (s_f260_n < 20)
-							Console.WriteLn("@@SBUS_F260_WRITE@@ n=%d pc=%08x val=%08x old=%08x vsync=%u",
-								s_f260_n++, cpuRegs.pc, value, psHu32(SBUS_F260), g_FrameCount);
-					}
 					psHu32(mem) = value;
 				return;
 
@@ -315,18 +234,6 @@ void _hwWrite32_impl( u32 mem, u32 value )
 					if ((((value >> 16) & 0xFFF) == 0x21) && (((value >> 6) & 0xF) == 1) && (((psHu32(0xf440) >> 7) & 1) == 0))//INIT & SRP=0
 						rdram_sdevid = 0;	// if SIO repeater is cleared, reset sdevid
 					psHu32(mem) = value & ~0x80000000;	//kill the busy bit
-					// [iter55] @@MCH_WRITE@@ probe: confirm hwWrite32 is reached for MCH_RICM.
-					// Removal condition: s1 ビットマスクのroot causeが特定・fixされた後。
-					{
-						static int s_mch_write_count = 0;
-						if (s_mch_write_count < 20) {
-							s_mch_write_count++;
-							u32 sa   = (value >> 16) & 0xFFF;
-							u32 sdev = value & 0x1F;
-							Console.WriteLn("@@MCH_WRITE@@ #%d val=%08x SA=%03x SDEV=%02x sdevid=%d",
-								s_mch_write_count, value, sa, sdev, rdram_sdevid);
-						}
-					}
 				return;
 
 				mcase(MCH_DRD):
@@ -361,21 +268,9 @@ void _hwWrite32_impl( u32 mem, u32 value )
 }
 
 template<uint page>
-void _hwWrite32( u32 mem, u32 value )
-{
-    g_HwRegRing.Push(cpuRegs.pc, mem, mem, 32, value, true);
-    _hwWrite32_impl<page>( mem, value );
-}
-
-template<uint page>
 void hwWrite32( u32 mem, u32 value )
 {
 	eeHwTraceLog( mem, value, false );
-    // g_HwRegRing.Push merged into _hwWrite32
-    
-    static bool once = false;
-    if (!once) { Console.WriteLn("@@HWMON_HOOK@@ hwWrite32 alive"); once = true; }
-
 	_hwWrite32<page>( mem, value );
 }
 
@@ -384,7 +279,7 @@ void hwWrite32( u32 mem, u32 value )
 // --------------------------------------------------------------------------------------
 
 template< uint page >
-void _hwWrite8_impl(u32 mem, u8 value)
+void _hwWrite8(u32 mem, u8 value)
 {
 #if PSX_EXTRALOGS
 	if ((mem & 0x1000ff00) == 0x1000f300) DevCon.Warning("8bit Write to SIF Register %x value %x wibble", mem, value);
@@ -442,22 +337,14 @@ void _hwWrite8_impl(u32 mem, u8 value)
 }
 
 template< uint page >
-void _hwWrite8(u32 mem, u8 value)
-{
-    g_HwRegRing.Push(cpuRegs.pc, mem, mem, 8, value, true);
-    _hwWrite8_impl<page>(mem, value);
-}
-
-template< uint page >
 void hwWrite8(u32 mem, u8 value)
 {
 	eeHwTraceLog( mem, value, false );
-    // g_HwRegRing.Push merged into _hwWrite8
 	_hwWrite8<page>(mem, value);
 }
 
 template< uint page >
-void _hwWrite16_impl(u32 mem, u16 value)
+void _hwWrite16(u32 mem, u16 value)
 {
 	pxAssume( (mem & 0x01) == 0 );
 #if PSX_EXTRALOGS
@@ -481,22 +368,14 @@ void _hwWrite16_impl(u32 mem, u16 value)
 }
 
 template< uint page >
-void _hwWrite16(u32 mem, u16 value)
-{
-    g_HwRegRing.Push(cpuRegs.pc, mem, mem, 16, value, true);
-    _hwWrite16_impl<page>(mem, value);
-}
-
-template< uint page >
 void hwWrite16(u32 mem, u16 value)
 {
 	eeHwTraceLog( mem, value, false );
-    // g_HwRegRing.Push merged into _hwWrite16
 	_hwWrite16<page>(mem, value);
 }
 
 template<uint page>
-void _hwWrite64_impl( u32 mem, u64 value )
+void _hwWrite64( u32 mem, u64 value )
 {
 	pxAssume( (mem & 0x07) == 0 );
 
@@ -535,22 +414,14 @@ void _hwWrite64_impl( u32 mem, u64 value )
 }
 
 template<uint page>
-void _hwWrite64( u32 mem, u64 value )
-{
-    g_HwRegRing.Push(cpuRegs.pc, mem, mem, 64, value, true);
-    _hwWrite64_impl<page>( mem, value );
-}
-
-template<uint page>
 void hwWrite64( u32 mem, mem64_t value )
 {
 	eeHwTraceLog( mem, value, false );
-    // g_HwRegRing.Push merged into _hwWrite64
 	_hwWrite64<page>(mem, value);
 }
 
 template< uint page >
-void TAKES_R128 _hwWrite128_impl(u32 mem, r128 srcval)
+void TAKES_R128 _hwWrite128(u32 mem, r128 srcval)
 {
 	pxAssume( (mem & 0x0f) == 0 );
 
@@ -619,17 +490,9 @@ void TAKES_R128 _hwWrite128_impl(u32 mem, r128 srcval)
 }
 
 template< uint page >
-void TAKES_R128 _hwWrite128(u32 mem, r128 srcval)
-{
-    g_HwRegRing.Push(cpuRegs.pc, mem, mem, 128, r128_to_u64(srcval), true); // Saving lower 64 bits only
-    _hwWrite128_impl<page>(mem, srcval);
-}
-
-template< uint page >
 void TAKES_R128 hwWrite128(u32 mem, r128 srcval)
 {
 	eeHwTraceLog( mem, srcval, false );
-    // g_HwRegRing.Push merged into _hwWrite128
 	_hwWrite128<page>(mem, srcval);
 }
 

@@ -18,15 +18,15 @@
 
 #include "Common.h"
 #include "vtlb.h"
-#include <unistd.h> // [iter73] STDERR_FILENO for signal-safe write
-#ifdef __APPLE__
-#include <TargetConditionals.h>
-#endif
 #include "COP0.h"
 #include "Cache.h"
 #include "IopMem.h"
 #include "Host.h"
 #include "VMManager.h"
+
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 #include "common/BitUtils.h"
 #include "common/Error.h"
@@ -36,9 +36,7 @@
 #include "GS/GSVector.h"
 
 #include <bit>
-#include <atomic>
-#include <cstdarg>
-#include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <unordered_set>
 #include <unordered_map>
@@ -46,40 +44,10 @@
 #define FASTMEM_LOG(...)
 //#define FASTMEM_LOG(...) Console.WriteLn(__VA_ARGS__)
 
-#ifndef ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-#define ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS 0
-#endif
-
 using namespace R5900;
 using namespace vtlb_private;
 
 #define verify pxAssert
-
-namespace R5900::Interpreter::OpcodeImpl::COP0
-{
-	void TLBWI();
-	void TLBWR();
-}
-
-extern "C" void LogUnified(const char* fmt, ...)
-{
-	if (Log::ShouldSuppressLegacyProbeMessage(fmt))
-		return;
-
-	va_list args;
-	va_start(args, fmt);
-	std::vfprintf(stderr, fmt, args);
-	va_end(args);
-	std::fflush(stderr);
-}
-
-extern "C" void TraceJitStore(u32 /*pc*/, u32 /*addr*/, int /*mode*/)
-{
-}
-
-extern "C" void vtlb_LogSIFAccess(u32 /*addr*/, u32 /*pc*/, bool /*is_write*/)
-{
-}
 
 namespace vtlb_private
 {
@@ -91,12 +59,6 @@ static vtlbHandler vtlbHandlerCount = 0;
 static vtlbHandler DefaultPhyHandler;
 static vtlbHandler UnmappedVirtHandler;
 static vtlbHandler UnmappedPhyHandler;
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-static int s_tlb_vmap_probe_cfg = -1;
-static bool s_tlb_vmap_probe_map_done = false;
-static bool s_tlb_vmap_probe_mapbuf_done = false;
-static bool s_tlb_vmap_probe_unmap_done = false;
-#endif
 
 struct FastmemVirtualMapping
 {
@@ -109,7 +71,7 @@ struct LoadstoreBackpatchInfo
 	u32 guest_pc;
 	u32 gpr_bitmask;
 	u32 fpr_bitmask;
-	u16 code_size;
+	u8 code_size;
 	u8 address_register;
 	u8 data_register;
 	u8 size_in_bits;
@@ -127,6 +89,12 @@ static std::vector<u32> s_fastmem_virtual_mapping; // maps vaddr -> mainmem offs
 static std::unordered_multimap<u32, u32> s_fastmem_physical_mapping; // maps mainmem offset -> vaddr
 static std::unordered_map<uptr, LoadstoreBackpatchInfo> s_fastmem_backpatch_info;
 static std::unordered_set<u32> s_fastmem_faulting_pcs;
+
+// Sticky: the 4 GB fastmem area allocation failed on this device at least once.
+// Process-lifetime flag so LoadSettings's config reload can't silently re-enable
+// fastmem against a null base and crash the EE rec on its first load/store.
+static bool s_fastmem_area_unavailable = false;
+bool vtlb_FastmemAreaUnavailable() { return s_fastmem_area_unavailable; }
 
 vtlb_private::VTLBPhysical vtlb_private::VTLBPhysical::fromPointer(sptr ptr)
 {
@@ -236,21 +204,8 @@ DataType vtlb_memRead(u32 addr)
 			}
 		}
 
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-			if (sizeof(DataType) == 8 && addr >= 0x70003D80u && addr < 0x70003DA0u) {
-				static int s_spad64r_cfg = -1;
-				static int s_spad64r_cnt = 0;
-			if (s_spad64r_cfg < 0)
-				s_spad64r_cfg = iPSX2_GetRuntimeEnvBool("iPSX2_SPAD64_PROBE", false) ? 1 : 0;
-			if (s_spad64r_cfg == 1 && s_spad64r_cnt < 50) {
-				u64 curval = *reinterpret_cast<u64*>(vmv.assumePtr(addr));
-				Console.WriteLn("@@SPAD64_READ@@ #%d addr=%08x val=%016llx",
-						s_spad64r_cnt++, addr, (unsigned long long)curval);
-				}
-			}
-#endif
-			return *reinterpret_cast<DataType*>(vmv.assumePtr(addr));
-		}
+		return *reinterpret_cast<DataType*>(vmv.assumePtr(addr));
+	}
 
 	//has to: translate, find function, call function
 	u32 paddr = vmv.assumeHandlerGetPAddr(addr);
@@ -304,118 +259,7 @@ void vtlb_memWrite(u32 addr, DataType data)
 {
 	static const uint DataSize = sizeof(DataType) * 8;
 
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-		if (sizeof(DataType) == 8 && addr == 0x70003F80u) {
-			static int s_w64_cnt = 0;
-			if (s_w64_cnt < 50) {
-			Console.WriteLn("[TEMP_DIAG] @@SCRATCH_3F80@@ #%d pc=%08x val=%016llx",
-				s_w64_cnt++, cpuRegs.pc, (unsigned long long)(u64)data);
-		}
-	}
-
-		{
-			const u32 phys_ef = addr & 0x1FFFFFFFu;
-			if (phys_ef >= 0x0000ef20u && phys_ef <= 0x0000ef44u) {
-			static int s_wef_n = 0;
-			if (s_wef_n < 10)
-				Console.WriteLn("@@WRITE_EF30@@ n=%d pc=%08x addr=%08x phys=%08x sz=%u data=%08x",
-					s_wef_n++, cpuRegs.pc, addr, phys_ef, DataSize, (u32)(u64)data);
-		}
-	}
-
-		{
-			const u32 phys154 = addr & 0x1FFFFFFFu;
-			if (phys154 == 0x000154a4u) {
-			static int s_w154_n = 0;
-			if (s_w154_n < 50)
-				Console.WriteLn("@@WRITE_154A4@@ n=%d pc=%08x data=%08x ra=%08x",
-					s_w154_n++, cpuRegs.pc, (u32)(u64)data,
-					cpuRegs.GPR.n.ra.UL[0]);
-		}
-	}
-
-		{
-			u32 phys_sif = addr & 0x1FFFFFFFu;
-			if (phys_sif >= 0x00021380u && phys_sif < 0x000213C0u) {
-			static int s_wsif_n = 0;
-			if (s_wsif_n < 50) {
-				const char* mode = (Cpu != &intCpu) ? "JIT" : "Interp";
-				Console.WriteLn("@@WRITE_SIF_TAG@@ [%s] n=%d pc=%08x addr=%08x sz=%u data=%016llx ra=%08x sp=%08x "
-					"a3=%08x t0=%08x t1=%08x s1=%08x a0=%08x a1=%08x a2=%08x v0=%08x",
-					mode, s_wsif_n++, cpuRegs.pc, addr, DataSize, (unsigned long long)(u64)data,
-					cpuRegs.GPR.n.ra.UL[0], cpuRegs.GPR.n.sp.UL[0],
-					cpuRegs.GPR.n.a3.UL[0], cpuRegs.GPR.n.t0.UL[0],
-					cpuRegs.GPR.n.t1.UL[0], cpuRegs.GPR.n.s1.UL[0],
-					cpuRegs.GPR.n.a0.UL[0], cpuRegs.GPR.n.a1.UL[0],
-					cpuRegs.GPR.n.a2.UL[0], cpuRegs.GPR.n.v0.UL[0]);
-			}
-		}
-	}
-
-		{
-			u32 phys_ev = addr & 0x1FFFFFFFu;
-			if (phys_ev == 0x00000080u || phys_ev == 0x00000180u ||
-		    phys_ev == 0x00000084u || phys_ev == 0x00000184u) {
-			static int s_wev_n = 0;
-			if (s_wev_n < 30) {
-				Console.WriteLn("@@WRITE_EXCVEC@@ n=%d pc=%08x addr=%08x phys=%08x sz=%u data=%08x cyc=%u ra=%08x",
-					s_wev_n++, cpuRegs.pc, addr, phys_ev, DataSize, (u32)(u64)data,
-					cpuRegs.cycle, cpuRegs.GPR.n.ra.UL[0]);
-			}
-		}
-	}
-
-		{
-			u32 phys82 = addr & 0x1FFFFFFFu;
-			if (phys82 >= 0x00082000u && phys82 <= 0x00082010u) {
-			static int s_w82_n = 0;
-			if (s_w82_n < 10) {
-				const char* mode = (Cpu != &intCpu) ? "JIT" : "Interp";
-				Console.WriteLn("@@WRITE_82000@@ [%s] n=%d pc=%08x addr=%08x sz=%u data=%08x a0=%08x a1=%08x a2=%08x a3=%08x v0=%08x v1=%08x",
-					mode, s_w82_n++, cpuRegs.pc, addr, DataSize, (u32)(u64)data,
-					cpuRegs.GPR.n.a0.UL[0], cpuRegs.GPR.n.a1.UL[0],
-					cpuRegs.GPR.n.a2.UL[0], cpuRegs.GPR.n.a3.UL[0],
-					cpuRegs.GPR.n.v0.UL[0], cpuRegs.GPR.n.v1.UL[0]);
-			}
-		}
-	}
-
-		{
-			u32 phys99 = addr & 0x1FFFFFFFu;
-			if (phys99 >= 0x000991F0u && phys99 < 0x00099200u) {
-			static int s_w99_n = 0;
-			if (s_w99_n < 20) {
-				const char* mode = (Cpu != &intCpu) ? "JIT" : "Interp";
-				Console.WriteLn("@@WRITE_991F0@@ [%s] n=%d pc=%08x addr=%08x phys=%08x sz=%u data=%08x ra=%08x",
-					s_w99_n++, mode, cpuRegs.pc, addr, phys99, DataSize, (u32)(u64)data,
-					cpuRegs.GPR.n.ra.UL[0]);
-			}
-		}
-	}
-
-		{
-			u32 phys = addr & 0x1FFFFFFFu;
-			if (phys >= 0x00078000u && phys < 0x00079000u) {
-			static u32 s_kseg3w_n = 0;
-			if (s_kseg3w_n < 30) {
-				Console.WriteLn("@@KSEG3_WRITE_WATCH@@ n=%u pc=%08x addr=%08x phys=%08x sz=%u data=%08x",
-					s_kseg3w_n, cpuRegs.pc, addr, phys, DataSize,
-					(u32)(u64)data);
-				s_kseg3w_n++;
-			}
-		}
-		// @@WATCH_19DC@@ 物理 0x19D8-0x19DF (3c03aaaa 保護対象range) への書き込み監視
-		// Removal condition: eeRam19dc=3c03aaaa が JIT でverifyされた後
-			if (phys >= 0x19D8u && phys <= 0x19DFu) {
-				static int s_w19dc_n = 0;
-				if (s_w19dc_n < 20)
-				Console.WriteLn("@@WATCH_19DC@@ n=%d pc=%08x addr=%08x phys=%08x sz=%u data=%08x",
-						s_w19dc_n++, cpuRegs.pc, addr, phys, DataSize, (u32)(u64)data);
-			}
-		}
-#endif
-
-		auto vmv = vtlbdata.vmap[addr >> VTLB_PAGE_BITS];
+	auto vmv = vtlbdata.vmap[addr >> VTLB_PAGE_BITS];
 
 	if (!vmv.isHandler(addr))
 	{
@@ -441,108 +285,19 @@ void vtlb_memWrite(u32 addr, DataType data)
 			}
 		}
 
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-			if ((addr >= 0x00001000u && addr < 0x02000000u) ||
-			    (addr >= 0x80001000u && addr < 0x82000000u) ||
-			    (addr >= 0xA0001000u && addr < 0xA2000000u)) {
-			static bool s_eeramW_seen = false;
-			if (!s_eeramW_seen) {
-				s_eeramW_seen = true;
-				Console.WriteLn("@@EERAM_FIRST_WRITE@@ direct addr=%08x ee_pc=%08x ra=%08x sp=%08x sz=%u",
-						addr, cpuRegs.pc, cpuRegs.GPR.r[31].UL[0], cpuRegs.GPR.r[29].UL[0],
-						(u32)sizeof(DataType));
-				}
-			}
-
-			{
-				u32 waddr = addr & 0x1FFFFFFFu;
-				if (waddr >= 0x081fe0u && waddr < 0x081ff4u) {
-				static int s_sw_n = 0;
-				if (s_sw_n++ < 30) {
-					u64 dval = 0;
-					memcpy(&dval, &data, sizeof(DataType) < 8 ? sizeof(DataType) : 8);
-					Console.WriteLn("@@STUB_WRITE_WATCH@@ n=%d addr=%08x paddr=%08x pc=%08x ra=%08x data=0x%llx sz=%u cycle=%u",
-						s_sw_n, addr, waddr, cpuRegs.pc, cpuRegs.GPR.r[31].UL[0],
-						(unsigned long long)dval, (u32)sizeof(DataType), cpuRegs.cycle);
-					}
-				}
-			}
-#endif
-			*reinterpret_cast<DataType*>(vmv.assumePtr(addr)) = data;
-		}
-		else
-		{
-			//has to: translate, find function, call function
-			u32 paddr = vmv.assumeHandlerGetPAddr(addr);
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-			{
-				if (paddr >= 0x081fe0u && paddr < 0x081ff4u) {
-					static int s_swh_n = 0;
-				if (s_swh_n++ < 30) {
-					Console.WriteLn("@@STUB_WRITE_WATCH_H@@ n=%d addr=%08x paddr=%08x pc=%08x ra=%08x sz=%u cycle=%u",
-						s_swh_n, addr, paddr, cpuRegs.pc, cpuRegs.GPR.r[31].UL[0],
-						(u32)sizeof(DataType), cpuRegs.cycle);
-					}
-				}
-			}
-
-			if (paddr >= 0x00001000u && paddr < 0x02000000u) {
-				static bool s_eeramH_seen = false;
-				if (!s_eeramH_seen) {
-				s_eeramH_seen = true;
-				Console.WriteLn("@@EERAM_FIRST_WRITE@@ handler addr=%08x paddr=%08x ee_pc=%08x ra=%08x sz=%u",
-						addr, paddr, cpuRegs.pc, cpuRegs.GPR.r[31].UL[0], (u32)sizeof(DataType));
-				}
-			}
-#endif
-			return vmv.assumeHandler<sizeof(DataType) * 8, true>()(paddr, data);
-		}
+		*reinterpret_cast<DataType*>(vmv.assumePtr(addr)) = data;
 	}
+	else
+	{
+		//has to: translate, find function, call function
+		u32 paddr = vmv.assumeHandlerGetPAddr(addr);
+		//Console.WriteLn("Translated 0x%08X to 0x%08X", addr,paddr);
+		return vmv.assumeHandler<sizeof(DataType) * 8, true>()(paddr, data);
+	}
+}
 
 void TAKES_R128 vtlb_memWrite128(u32 mem, r128 value)
 {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-		{
-			u32 phys128 = mem & 0x1FFFFFFFu;
-			if (phys128 >= 0x00021380u && phys128 < 0x000213C0u) {
-			static int s_w128sif_n = 0;
-			if (s_w128sif_n < 30) {
-				u32 v128[4]; memcpy(v128, &value, 16);
-				const char* mode = (Cpu != &intCpu) ? "JIT" : "Interp";
-				Console.WriteLn("@@WRITE128_SIF_TAG@@ [%s] n=%d pc=%08x addr=%08x val=%08x_%08x_%08x_%08x ra=%08x",
-					mode, s_w128sif_n++, cpuRegs.pc, mem, v128[0], v128[1], v128[2], v128[3],
-					cpuRegs.GPR.n.ra.UL[0]);
-				}
-			}
-		}
-
-		{
-			u32 phys = mem & 0x1FFFFFFFu;
-			if (phys >= 0x19D0u && phys <= 0x19FFu) {
-			static int s_sq19_n = 0;
-			if (s_sq19_n < 20) {
-				u32 vals[4];
-				memcpy(vals, &value, 16);
-				Console.WriteLn("@@SQ_WRITE128_19D0@@ n=%d pc=%08x addr=%08x phys=%08x val[0]=%08x[1]=%08x[2]=%08x[3]=%08x",
-					s_sq19_n++, cpuRegs.pc, mem, phys, vals[0], vals[1], vals[2], vals[3]);
-				}
-			}
-		}
-
-		{
-			u32 phys128 = mem & 0x1FFFFFFFu;
-			if (phys128 < 0x00000200u) {
-			static int s_w128ev_n = 0;
-			if (s_w128ev_n < 20) {
-				u32 v128[4]; memcpy(v128, &value, 16);
-				Console.WriteLn("@@WRITE128_EXCVEC@@ n=%d pc=%08x addr=%08x phys=%08x val=%08x_%08x_%08x_%08x cyc=%u",
-					s_w128ev_n++, cpuRegs.pc, mem, phys128, v128[0], v128[1], v128[2], v128[3], cpuRegs.cycle);
-				}
-			}
-		}
-#endif
-
-
 	auto vmv = vtlbdata.vmap[mem >> VTLB_PAGE_BITS];
 
 	if (!vmv.isHandler(mem))
@@ -579,24 +334,29 @@ template void vtlb_memWrite<mem32_t>(u32 mem, mem32_t data);
 template void vtlb_memWrite<mem64_t>(u32 mem, mem64_t data);
 
 template <typename DataType>
-bool vtlb_ramRead(u32 addr, DataType* value)
+DataType vtlb_ramRead(u32 addr, bool* result)
 {
 	const auto vmv = vtlbdata.vmap[addr >> VTLB_PAGE_BITS];
-	if (vmv.isHandler(addr))
+	if (vmv.isHandler(addr)) [[unlikely]]
 	{
-		std::memset(value, 0, sizeof(DataType));
-		return false;
+		if (result)
+			*result = false;
+		return {};
 	}
 
-	std::memcpy(value, reinterpret_cast<DataType*>(vmv.assumePtr(addr)), sizeof(DataType));
-	return true;
+	DataType value = {};
+	std::memcpy(&value, reinterpret_cast<DataType*>(vmv.assumePtr(addr)), sizeof(DataType));
+
+	if (result)
+		*result = true;
+	return value;
 }
 
 template <typename DataType>
 bool vtlb_ramWrite(u32 addr, const DataType& data)
 {
 	const auto vmv = vtlbdata.vmap[addr >> VTLB_PAGE_BITS];
-	if (vmv.isHandler(addr))
+	if (vmv.isHandler(addr)) [[unlikely]]
 		return false;
 
 	std::memcpy(reinterpret_cast<DataType*>(vmv.assumePtr(addr)), &data, sizeof(DataType));
@@ -604,11 +364,11 @@ bool vtlb_ramWrite(u32 addr, const DataType& data)
 }
 
 
-template bool vtlb_ramRead<mem8_t>(u32 mem, mem8_t* value);
-template bool vtlb_ramRead<mem16_t>(u32 mem, mem16_t* value);
-template bool vtlb_ramRead<mem32_t>(u32 mem, mem32_t* value);
-template bool vtlb_ramRead<mem64_t>(u32 mem, mem64_t* value);
-template bool vtlb_ramRead<mem128_t>(u32 mem, mem128_t* value);
+template mem8_t vtlb_ramRead<mem8_t>(u32 mem, bool* result);
+template mem16_t vtlb_ramRead<mem16_t>(u32 mem, bool* result);
+template mem32_t vtlb_ramRead<mem32_t>(u32 mem, bool* result);
+template mem64_t vtlb_ramRead<mem64_t>(u32 mem, bool* result);
+template mem128_t vtlb_ramRead<mem128_t>(u32 mem, bool* result);
 template bool vtlb_ramWrite<mem8_t>(u32 mem, const mem8_t& data);
 template bool vtlb_ramWrite<mem16_t>(u32 mem, const mem16_t& data);
 template bool vtlb_ramWrite<mem32_t>(u32 mem, const mem32_t& data);
@@ -769,224 +529,21 @@ void GoemonUnloadTlb(u32 key)
 // Generates a tlbMiss Exception
 static __ri void vtlb_Miss(u32 addr, u32 mode)
 {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	static bool s_tlbmiss_1shot_done = false;
-	if (!s_tlbmiss_1shot_done && mode == 0 && cpuRegs.pc == 0x9fc437e8 && (addr & 0xffff0000u) == 0x70000000u)
-	{
-		s_tlbmiss_1shot_done = true;
-		Console.Error("@@TLBMISS_1SHOT@@ pc=%08x addr=%08x isDevBuild=%d cause=%08x sp=%08x ra=%08x a0=%08x a1=%08x t0=%08x t1=%08x entryHi=%08x entryLo0=%08x entryLo1=%08x index=%08x badVAddr=%08x",
-			cpuRegs.pc, addr, IsDevBuild ? 1 : 0, cpuRegs.CP0.n.Cause,
-			cpuRegs.GPR.n.sp.UL[0], cpuRegs.GPR.n.ra.UL[0], cpuRegs.GPR.n.a0.UL[0], cpuRegs.GPR.n.a1.UL[0],
-			cpuRegs.GPR.n.t0.UL[0], cpuRegs.GPR.n.t1.UL[0],
-			cpuRegs.CP0.n.EntryHi, cpuRegs.CP0.n.EntryLo0, cpuRegs.CP0.n.EntryLo1, cpuRegs.CP0.n.Index, cpuRegs.CP0.n.BadVAddr);
-		u32 code = 0;
-		if (const void* p = vtlb_GetPhyPtr(cpuRegs.pc & 0x1fffffff))
-		{
-			std::memcpy(&code, p, sizeof(code));
-			Console.Error("@@TLBMISS_INS@@ pc=%08x code=%08x", cpuRegs.pc, code);
-		}
-	}
-#endif
-	[[maybe_unused]] static int s_tlb_after_probe_cfg = -1;
-	[[maybe_unused]] static bool s_tlb_after_probe_done = false;
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	if (s_tlb_after_probe_cfg < 0)
-	{
-		s_tlb_after_probe_cfg = iPSX2_GetRuntimeEnvBool("iPSX2_TLB_AFTER_PROBE", false) ? 1 : 0;
-		Console.WriteLn("@@CFG@@ iPSX2_TLB_AFTER_PROBE=%d", s_tlb_after_probe_cfg);
-	}
-	const bool do_tlb_after_probe =
-		(s_tlb_after_probe_cfg == 1 && !s_tlb_after_probe_done && mode == 0 && cpuRegs.pc == 0x9fc437e8 && (addr & 0xFFFFF000u) == 0x70004000u);
-#else
-	const bool do_tlb_after_probe = false;
-#endif
-
 	if (EmuConfig.Gamefixes.GoemonTlbHack)
 		GoemonTlbMissDebug();
 
 	// Hack to handle expected tlb miss by some games.
 	if (Cpu == &intCpu)
 	{
-		if (do_tlb_after_probe)
-		{
-			Console.Error("@@TLB_BEFORE@@ pc=%08x addr=%08x entryHi=%08x entryLo0=%08x entryLo1=%08x index=%08x status=%08x cause=%08x badVAddr=%08x",
-				cpuRegs.pc, addr, cpuRegs.CP0.n.EntryHi, cpuRegs.CP0.n.EntryLo0, cpuRegs.CP0.n.EntryLo1, cpuRegs.CP0.n.Index,
-				cpuRegs.CP0.n.Status, cpuRegs.CP0.n.Cause, cpuRegs.CP0.n.BadVAddr);
-		}
-		// [P9 TEMP_DIAG] EE RAM (VA 0-32MB) TLB miss を identity mapping で自動解決。
-		// BIOS TLBL handler (0xBFC004B8) は NOP loop のため、ここに到達すると EE が
-		// 永久に止まる。real R5900 では BIOS kernel が TLB flush 後に EE RAM を直接
-		// アクセスする前に必ず mapping を再configするはずだが、interpreterでは
-		// タイミングの差でそれが起きない。vtlb identity mapping を install してリトライ。
-			// Removal condition: P9 interpreter参照トレース取得after completed。
-			if (addr < Ps2MemSize::MainRam) {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-				static u32 s_automap_cap = 0;
-				if (s_automap_cap < 20) {
-					// cpuRegs.code = instruction that caused this miss (set by execI before execution)
-					Console.WriteLn("@@INTERP_AUTOMAP@@ pc=%08x addr=%08x mode=%u code=%08x [%u/20]",
-						cpuRegs.pc, addr, mode, cpuRegs.code, ++s_automap_cap);
-				}
-#endif
-				const u32 page_va = addr & ~VTLB_PAGE_MASK;
-				vtlb_VMap(page_va, page_va, VTLB_PAGE_SIZE);
-				Cpu->CancelInstruction();
-			return;
-		}
-
 		if (mode)
 			cpuTlbMissW(addr, cpuRegs.branch);
 		else
 			cpuTlbMissR(addr, cpuRegs.branch);
-		if (do_tlb_after_probe)
-		{
-			Console.Error("@@TLB_AFTER@@ pc=%08x addr=%08x entryHi=%08x entryLo0=%08x entryLo1=%08x index=%08x status=%08x cause=%08x badVAddr=%08x",
-				cpuRegs.pc, addr, cpuRegs.CP0.n.EntryHi, cpuRegs.CP0.n.EntryLo0, cpuRegs.CP0.n.EntryLo1, cpuRegs.CP0.n.Index,
-				cpuRegs.CP0.n.Status, cpuRegs.CP0.n.Cause, cpuRegs.CP0.n.BadVAddr);
-			const u32 probe_vaddr = 0x70004000u;
-			const auto vmv_after = vtlbdata.vmap[probe_vaddr >> VTLB_PAGE_BITS];
-			const bool is_handler_after = vmv_after.isHandler(probe_vaddr);
-			const u32 handler_id_after = is_handler_after ? vmv_after.assumeHandlerGetID() : 0xFFFFFFFFu;
-			const u32 paddr_after = is_handler_after ? vmv_after.assumeHandlerGetPAddr(probe_vaddr) : 0;
-			const u32 ppmap_after = vtlbdata.ppmap ? vtlbdata.ppmap[probe_vaddr >> VTLB_PAGE_BITS] : 0xFFFFFFFFu;
-			const bool mapped_after = (!is_handler_after || handler_id_after != static_cast<u32>(UnmappedVirtHandler));
-			Console.Error("@@TLB_MAP_AFTER@@ vaddr=%08x mapped=%d is_handler=%d handler=%08x paddr=%08x ppmap=%08x vmraw=%016llx",
-				probe_vaddr, mapped_after ? 1 : 0, is_handler_after ? 1 : 0, handler_id_after, paddr_after, ppmap_after,
-				static_cast<unsigned long long>(vmv_after.raw()));
-			s_tlb_after_probe_done = true;
-		}
 
 		// Exception handled. Current instruction need to be stopped
 		Cpu->CancelInstruction();
 		return;
 	}
-
-	static int s_tlbmiss_recomp_exception_cfg = -1;
-	static int s_tlb_recomp_refill_probe_cfg = -1;
-	static int s_tlb_recomp_synth_tlbwi_cfg = -1;
-	static bool s_tlb_recomp_refill_probe_done = false;
-	static u32 s_tlb_recomp_synth_tlbwi_count = 0;
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	if (s_tlbmiss_recomp_exception_cfg < 0)
-	{
-		s_tlbmiss_recomp_exception_cfg = iPSX2_GetRuntimeEnvBool("iPSX2_TLBMISS_RECOMP_EXCEPTION", false) ? 1 : 0;
-		Console.WriteLn("@@CFG@@ iPSX2_TLBMISS_RECOMP_EXCEPTION=%d", s_tlbmiss_recomp_exception_cfg);
-	}
-	if (s_tlb_recomp_refill_probe_cfg < 0)
-	{
-		s_tlb_recomp_refill_probe_cfg = iPSX2_GetRuntimeEnvBool("iPSX2_TLB_RECOMP_REFILL_PROBE", false) ? 1 : 0;
-		Console.WriteLn("@@CFG@@ iPSX2_TLB_RECOMP_REFILL_PROBE=%d", s_tlb_recomp_refill_probe_cfg);
-	}
-	if (s_tlb_recomp_synth_tlbwi_cfg < 0)
-	{
-		s_tlb_recomp_synth_tlbwi_cfg = iPSX2_GetRuntimeEnvBool("iPSX2_TLBMISS_RECOMP_SYNTH_TLBWI", false) ? 1 : 0;
-		Console.WriteLn("@@CFG@@ iPSX2_TLBMISS_RECOMP_SYNTH_TLBWI=%d", s_tlb_recomp_synth_tlbwi_cfg);
-	}
-#endif
-	if (s_tlbmiss_recomp_exception_cfg == 1)
-	{
-		const bool do_tlb_recomp_refill_probe =
-			(s_tlb_recomp_refill_probe_cfg == 1 && !s_tlb_recomp_refill_probe_done && (addr & 0xFFFFF000u) == 0x70004000u);
-		const u32 miss_page = addr >> VTLB_PAGE_BITS;
-		const auto vmv_before = vtlbdata.vmap[miss_page];
-		if (do_tlb_recomp_refill_probe)
-		{
-			Console.Error("@@TLB_RECOMP_BEFORE@@ pc=%08x addr=%08x isLoad=%d entryHi=%08x entryLo0=%08x entryLo1=%08x index=%08x status=%08x cause=%08x badVAddr=%08x vmap_raw=%016llx",
-				cpuRegs.pc, addr, mode ? 0 : 1, cpuRegs.CP0.n.EntryHi, cpuRegs.CP0.n.EntryLo0, cpuRegs.CP0.n.EntryLo1, cpuRegs.CP0.n.Index,
-				cpuRegs.CP0.n.Status, cpuRegs.CP0.n.Cause, cpuRegs.CP0.n.BadVAddr, static_cast<unsigned long long>(vmv_before.raw()));
-		}
-		if (do_tlb_after_probe)
-		{
-			Console.Error("@@TLB_BEFORE@@ pc=%08x addr=%08x entryHi=%08x entryLo0=%08x entryLo1=%08x index=%08x status=%08x cause=%08x badVAddr=%08x",
-				cpuRegs.pc, addr, cpuRegs.CP0.n.EntryHi, cpuRegs.CP0.n.EntryLo0, cpuRegs.CP0.n.EntryLo1, cpuRegs.CP0.n.Index,
-				cpuRegs.CP0.n.Status, cpuRegs.CP0.n.Cause, cpuRegs.CP0.n.BadVAddr);
-		}
-		if (mode)
-			cpuTlbMissW(addr, cpuRegs.branch);
-		else
-			cpuTlbMissR(addr, cpuRegs.branch);
-		if (s_tlb_recomp_synth_tlbwi_cfg == 1 && (addr & 0xFFFF0000u) == 0x70000000u)
-		{
-			const auto vmv_after_miss = vtlbdata.vmap[miss_page];
-			const bool is_handler_after_miss = vmv_after_miss.isHandler(addr);
-			const u32 handler_id_after_miss = is_handler_after_miss ? vmv_after_miss.assumeHandlerGetID() : static_cast<u32>(UnmappedVirtHandler);
-			const bool mapped_after_miss = (!is_handler_after_miss || handler_id_after_miss != static_cast<u32>(UnmappedVirtHandler));
-			if (!mapped_after_miss)
-			{
-				R5900::Interpreter::OpcodeImpl::COP0::TLBWR();
-				if (s_tlb_recomp_synth_tlbwi_count < 8)
-				{
-					Console.Error("@@TLB_RECOMP_SYNTH_TLBWI@@ n=%u pc=%08x addr=%08x random=%08x entryHi=%08x entryLo0=%08x entryLo1=%08x",
-						s_tlb_recomp_synth_tlbwi_count, cpuRegs.pc, addr, cpuRegs.CP0.n.Random, cpuRegs.CP0.n.EntryHi, cpuRegs.CP0.n.EntryLo0, cpuRegs.CP0.n.EntryLo1);
-				}
-				s_tlb_recomp_synth_tlbwi_count++;
-			}
-		}
-		if (do_tlb_recomp_refill_probe)
-		{
-			const auto vmv_after_recomp = vtlbdata.vmap[miss_page];
-			const bool is_handler_after_recomp = vmv_after_recomp.isHandler(addr);
-			const u32 handler_id_after_recomp = is_handler_after_recomp ? vmv_after_recomp.assumeHandlerGetID() : static_cast<u32>(UnmappedVirtHandler);
-			const bool mapped_now = (!is_handler_after_recomp || handler_id_after_recomp != static_cast<u32>(UnmappedVirtHandler));
-			const char* kind = mapped_now ? (is_handler_after_recomp ? "handler" : "direct") : "none";
-			Console.Error("@@TLB_RECOMP_AFTER@@ pc=%08x addr=%08x isLoad=%d entryHi=%08x entryLo0=%08x entryLo1=%08x index=%08x status=%08x cause=%08x badVAddr=%08x vmap_raw=%016llx",
-				cpuRegs.pc, addr, mode ? 0 : 1, cpuRegs.CP0.n.EntryHi, cpuRegs.CP0.n.EntryLo0, cpuRegs.CP0.n.EntryLo1, cpuRegs.CP0.n.Index,
-				cpuRegs.CP0.n.Status, cpuRegs.CP0.n.Cause, cpuRegs.CP0.n.BadVAddr, static_cast<unsigned long long>(vmv_after_recomp.raw()));
-			Console.Error("@@TLB_RECOMP_MAP_AFTER@@ pc=%08x addr=%08x mapped_now=%d kind=%s",
-				cpuRegs.pc, addr, mapped_now ? 1 : 0, kind);
-			s_tlb_recomp_refill_probe_done = true;
-		}
-		if (do_tlb_after_probe)
-		{
-			Console.Error("@@TLB_AFTER@@ pc=%08x addr=%08x entryHi=%08x entryLo0=%08x entryLo1=%08x index=%08x status=%08x cause=%08x badVAddr=%08x",
-				cpuRegs.pc, addr, cpuRegs.CP0.n.EntryHi, cpuRegs.CP0.n.EntryLo0, cpuRegs.CP0.n.EntryLo1, cpuRegs.CP0.n.Index,
-				cpuRegs.CP0.n.Status, cpuRegs.CP0.n.Cause, cpuRegs.CP0.n.BadVAddr);
-			const u32 probe_vaddr = 0x70004000u;
-			const auto vmv_after = vtlbdata.vmap[probe_vaddr >> VTLB_PAGE_BITS];
-			const bool is_handler_after = vmv_after.isHandler(probe_vaddr);
-			const u32 handler_id_after = is_handler_after ? vmv_after.assumeHandlerGetID() : 0xFFFFFFFFu;
-			const u32 paddr_after = is_handler_after ? vmv_after.assumeHandlerGetPAddr(probe_vaddr) : 0;
-			const u32 ppmap_after = vtlbdata.ppmap ? vtlbdata.ppmap[probe_vaddr >> VTLB_PAGE_BITS] : 0xFFFFFFFFu;
-			const bool mapped_after = (!is_handler_after || handler_id_after != static_cast<u32>(UnmappedVirtHandler));
-			Console.Error("@@TLB_MAP_AFTER@@ vaddr=%08x mapped=%d is_handler=%d handler=%08x paddr=%08x ppmap=%08x vmraw=%016llx",
-				probe_vaddr, mapped_after ? 1 : 0, is_handler_after ? 1 : 0, handler_id_after, paddr_after, ppmap_after,
-				static_cast<unsigned long long>(vmv_after.raw()));
-			s_tlb_after_probe_done = true;
-		}
-		Cpu->ExitExecution();
-		return;
-	}
-
-	static int s_tlbmiss_mirror_cfg = -1;
-		if (s_tlbmiss_mirror_cfg < 0)
-		{
-			s_tlbmiss_mirror_cfg = iPSX2_GetRuntimeEnvBool("iPSX2_TLBMISS_MIRROR_SPR_70004000", true) ? 1 : 0;
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-			Console.WriteLn("@@CFG@@ iPSX2_TLBMISS_MIRROR_SPR_70004000=%d", s_tlbmiss_mirror_cfg);
-#endif
-		}
-		const u32 miss_page = addr & 0xFFFFF000u;
-		if (s_tlbmiss_mirror_cfg == 1 && miss_page >= 0x70000000u && miss_page <= 0x700FFFFFu)
-		{
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-			static bool s_tlbmiss_mirror_logged = false;
-#endif
-			static u32 s_tlbmiss_mirror_count = 0;
-			if (s_tlbmiss_mirror_count < 1024)
-			{
-				const u32 spr_off = miss_page & (Ps2MemSize::Scratch - 1u);
-				vtlb_VMapBuffer(miss_page, eeMem->Scratch + spr_off, VTLB_PAGE_SIZE);
-				s_tlbmiss_mirror_count++;
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-				if (!s_tlbmiss_mirror_logged)
-				{
-					s_tlbmiss_mirror_logged = true;
-					Console.Error("@@TLBMISS_MIRROR@@ pc=%08x addr=%08x mapped=1 mode=page", cpuRegs.pc, addr);
-				}
-#endif
-			}
-			return;
-		}
 
 	const std::string message(fmt::format("TLB Miss, pc=0x{:x} addr=0x{:x} [{}]", cpuRegs.pc, addr, mode ? "store" : "load"));
 	if (EmuConfig.Cpu.Recompiler.PauseOnTLBMiss)
@@ -999,10 +556,7 @@ static __ri void vtlb_Miss(u32 addr, u32 mode)
 	}
 
 	static int spamStop = 0;
-	static int s_tlbmiss_spam = -1;
-	if (s_tlbmiss_spam < 0)
-		s_tlbmiss_spam = iPSX2_GetRuntimeEnvBool("iPSX2_TLBMISS_SPAM", false) ? 1 : 0;
-	if (spamStop++ < 50 || s_tlbmiss_spam == 1)
+	if (spamStop++ < 50 || IsDevBuild)
 		Console.Error(message);
 }
 
@@ -1011,22 +565,6 @@ static __ri void vtlb_Miss(u32 addr, u32 mode)
 // time of the exception.
 static __ri void vtlb_BusError(u32 addr, u32 mode)
 {
-	// [iter222] BIOS writes to unmapped IO ports (e.g. 0xB000F180→phys 0x1000F180).
-	// On real PS2 hardware, stores to unmapped addresses are silently ignored.
-	// Suppress Bus Error for store mode to prevent BIOS init failure.
-	// Removal condition: vtlb handlermappingが実機相当にfixされた後
-	if (mode == 1) {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-		static std::atomic<int> s_be_store_count{0};
-		int n = s_be_store_count.fetch_add(1, std::memory_order_relaxed);
-		if (n < 5) {
-			Console.WriteLn("@@BUS_ERROR_STORE_SKIP@@ n=%d addr=%08x ee_pc=%08x (silently ignored)",
-				n, addr, cpuRegs.pc);
-		}
-#endif
-		return;
-	}
-
 	const std::string message(fmt::format("Bus Error, addr=0x{:x} [{}]", addr, mode ? "store" : "load"));
 	if (EmuConfig.Cpu.Recompiler.PauseOnTLBMiss)
 	{
@@ -1037,128 +575,20 @@ static __ri void vtlb_BusError(u32 addr, u32 mode)
 		return;
 	}
 
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	{
-		static std::atomic<int> s_be_count{0};
-		int be_n = s_be_count.fetch_add(1, std::memory_order_relaxed);
-		if (be_n < 50) {
-			Console.WriteLn("@@BUS_ERROR_PC@@ n=%d addr=%08x mode=%u ee_pc=%08x cycle=%u",
-				be_n, addr, mode, cpuRegs.pc, cpuRegs.cycle);
-		}
-		if (be_n == 0 && eeMem) {
-			// Dump loop-start opcodes (cpuRegs.pc - 0x9c = 0x100b68) and block-start opcodes
-			// [iter170] extended to 40 instructions to cover gap at pc-0x1c (0x100be8-0x100c00)
-			if (cpuRegs.pc >= 0x9c && (cpuRegs.pc - 0x9c + 160) < Ps2MemSize::MainRam) {
-				const u32* lo = reinterpret_cast<const u32*>(eeMem->Main + cpuRegs.pc - 0x9c);
-				Console.WriteLn("@@LOOP_OPS0@@ pc=%08x: %08x %08x %08x %08x %08x %08x %08x %08x", cpuRegs.pc - 0x9c,
-					lo[0], lo[1], lo[2], lo[3], lo[4], lo[5], lo[6], lo[7]);
-				Console.WriteLn("@@LOOP_OPS1@@ pc=%08x: %08x %08x %08x %08x %08x %08x %08x %08x", cpuRegs.pc - 0x7c,
-					lo[8], lo[9], lo[10], lo[11], lo[12], lo[13], lo[14], lo[15]);
-				Console.WriteLn("@@LOOP_OPS2@@ pc=%08x: %08x %08x %08x %08x %08x %08x %08x %08x", cpuRegs.pc - 0x5c,
-					lo[16], lo[17], lo[18], lo[19], lo[20], lo[21], lo[22], lo[23]);
-				Console.WriteLn("@@LOOP_OPS3@@ pc=%08x: %08x %08x %08x %08x %08x %08x %08x %08x", cpuRegs.pc - 0x3c,
-					lo[24], lo[25], lo[26], lo[27], lo[28], lo[29], lo[30], lo[31]);
-				// GAP coverage: 8 more instructions (0x100be8-0x100c04)
-				Console.WriteLn("@@LOOP_OPS4@@ pc=%08x: %08x %08x %08x %08x %08x %08x %08x %08x", cpuRegs.pc - 0x1c,
-					lo[32], lo[33], lo[34], lo[35], lo[36], lo[37], lo[38], lo[39]);
-			}
-			if (cpuRegs.pc + 64 < Ps2MemSize::MainRam) {
-				const u32* ops = reinterpret_cast<const u32*>(eeMem->Main + cpuRegs.pc);
-				Console.WriteLn("@@BLOCK_OPS@@ pc=%08x: %08x %08x %08x %08x %08x %08x %08x %08x", cpuRegs.pc,
-					ops[0], ops[1], ops[2], ops[3], ops[4], ops[5], ops[6], ops[7]);
-				Console.WriteLn("@@BLOCK_OPS2@@ pc=%08x: %08x %08x %08x %08x %08x %08x %08x %08x", cpuRegs.pc+32,
-					ops[8], ops[9], ops[10], ops[11], ops[12], ops[13], ops[14], ops[15]);
-			}
-			// Read actual return address from stack: LD ra, 0x60(sp) at epilogue → [sp+0x60]
-			// Also read JAL 0x100c60 subroutine opcodes (the loop bit-buffer refill routine)
-			{
-				u32 sp_val = cpuRegs.GPR.r[29].UL[0]; // stale sp (should be correct: sp is callee-saved)
-				u32 stack_ra_addr = sp_val + 0x60;
-				if (stack_ra_addr + 4 <= Ps2MemSize::MainRam) {
-					u32 ra_actual = *(const u32*)(eeMem->Main + stack_ra_addr);
-					Console.WriteLn("@@STACK_RA@@ sp=%08x [sp+0x60]=%08x (actual return addr)", sp_val, ra_actual);
-					// Also read opcodes at the return address to see what caller does after decompressor exits
-					if (ra_actual < Ps2MemSize::MainRam - 32) {
-						const u32* caller = reinterpret_cast<const u32*>(eeMem->Main + ra_actual);
-						Console.WriteLn("@@CALLER_OPS@@ pc=%08x: %08x %08x %08x %08x %08x %08x %08x %08x",
-							ra_actual, caller[0], caller[1], caller[2], caller[3],
-							caller[4], caller[5], caller[6], caller[7]);
-					}
-				}
-				// JAL 0x100c60: the bit-buffer refill subroutine (called every 30 iterations, advances s3)
-				// [iter171] extended to 48 instructions to find JR ra and check if s3 is written
-				u32 jal_target = 0x100c60;
-				if (jal_target + 192 < Ps2MemSize::MainRam) {
-					const u32* jal = reinterpret_cast<const u32*>(eeMem->Main + jal_target);
-					Console.WriteLn("@@JAL_OPS@@ pc=%08x: %08x %08x %08x %08x %08x %08x %08x %08x",
-						jal_target, jal[0], jal[1], jal[2], jal[3], jal[4], jal[5], jal[6], jal[7]);
-					Console.WriteLn("@@JAL_OPS2@@ pc=%08x: %08x %08x %08x %08x %08x %08x %08x %08x",
-						jal_target+32, jal[8], jal[9], jal[10], jal[11], jal[12], jal[13], jal[14], jal[15]);
-					Console.WriteLn("@@JAL_OPS3@@ pc=%08x: %08x %08x %08x %08x %08x %08x %08x %08x",
-						jal_target+64, jal[16], jal[17], jal[18], jal[19], jal[20], jal[21], jal[22], jal[23]);
-					Console.WriteLn("@@JAL_OPS4@@ pc=%08x: %08x %08x %08x %08x %08x %08x %08x %08x",
-						jal_target+96, jal[24], jal[25], jal[26], jal[27], jal[28], jal[29], jal[30], jal[31]);
-					Console.WriteLn("@@JAL_OPS5@@ pc=%08x: %08x %08x %08x %08x %08x %08x %08x %08x",
-						jal_target+128, jal[32], jal[33], jal[34], jal[35], jal[36], jal[37], jal[38], jal[39]);
-					Console.WriteLn("@@JAL_OPS6@@ pc=%08x: %08x %08x %08x %08x %08x %08x %08x %08x",
-						jal_target+160, jal[40], jal[41], jal[42], jal[43], jal[44], jal[45], jal[46], jal[47]);
-				}
-			}
-		}
-		// [iter42] Specific probe for 0x32000000 (unmapped physical load causing hang).
-		// Removal condition: 0x32000000 アクセス元 EE 命令 (PC) およびcauseafter determined。
-		if (addr == 0x32000000) {
-			static bool s_32_seen = false;
-			if (!s_32_seen) {
-				s_32_seen = true;
-				Console.WriteLn("@@BUS_ERROR_32@@ addr=%08x mode=%u ee_pc=%08x ra=%08x t0=%08x a0=%08x a6=%08x",
-					addr, mode, cpuRegs.pc, cpuRegs.GPR.r[31].UL[0],
-					cpuRegs.GPR.r[8].UL[0], cpuRegs.GPR.r[4].UL[0], cpuRegs.GPR.r[10].UL[0]);
-			}
-		}
-	}
-#endif
 	Console.Error(message);
 }
 
 // clang-format off
 template <typename OperandType>
-static OperandType vtlbUnmappedVReadSm(u32 addr) {
-	vtlb_Miss(addr, 0);
-	// If vtlb_Miss installed a buffer mapping (mirror path), retry the read.
-	const auto vmv = vtlbdata.vmap[addr >> VTLB_PAGE_BITS];
-	if (!vmv.isHandler(addr))
-		return *reinterpret_cast<const OperandType*>(vmv.assumePtr(addr));
-	return 0;
-}
+static OperandType vtlbUnmappedVReadSm(u32 addr) { vtlb_Miss(addr, 0); return 0; }
 static RETURNS_R128 vtlbUnmappedVReadLg(u32 addr) { vtlb_Miss(addr, 0); return r128_zero(); }
 
 template <typename OperandType>
-static void vtlbUnmappedVWriteSm(u32 addr, OperandType data) {
-	vtlb_Miss(addr, 1);
-	// If vtlb_Miss installed a buffer mapping (mirror path), retry the write.
-	const auto vmv = vtlbdata.vmap[addr >> VTLB_PAGE_BITS];
-	if (!vmv.isHandler(addr))
-		*reinterpret_cast<OperandType*>(vmv.assumePtr(addr)) = data;
-}
+static void vtlbUnmappedVWriteSm(u32 addr, OperandType data) { vtlb_Miss(addr, 1); }
 static void TAKES_R128 vtlbUnmappedVWriteLg(u32 addr, r128 data) { vtlb_Miss(addr, 1); }
 
 template <typename OperandType>
 static OperandType vtlbUnmappedPReadSm(u32 addr) {
-	// [iter419] PS1DRV HW reg alias: 0x40000000-0x40FFFFFF -> 0x10000000-0x10FFFFFF
-	// Use pmap direct dispatch (NOT vtlb_memRead) to avoid vmap-based infinite recursion.
-	if (addr >= 0x40000000u && addr < 0x41000000u) {
-		const u32 hw = addr - 0x30000000u;
-		static u32 s_redir_cnt = 0;
-		if (s_redir_cnt < 4) Console.WriteLn("@@PS1DRV_HW_REDIR@@ rd addr=0x%08x->0x%08x sz=%u n=%u", addr, hw, (u32)sizeof(OperandType), s_redir_cnt++);
-		const auto& phys = vtlbdata.pmap[hw >> VTLB_PAGE_BITS];
-		if (phys.isHandler()) {
-			using FP = vtlbMemFP<sizeof(OperandType)*8, false>;
-			auto fn = (typename FP::fn*)vtlbdata.RWFT[FP::Index][0][phys.assumeHandler()];
-			if (fn) return fn(hw);
-		}
-		return 0;
-	}
 	vtlb_BusError(addr, 0);
 	if (!CHECK_EEREC && CHECK_CACHE && CheckCache(addr)){
 		switch (sizeof(OperandType)) {
@@ -1175,20 +605,6 @@ static RETURNS_R128 vtlbUnmappedPReadLg(u32 addr) { vtlb_BusError(addr, 0); if (
 
 template <typename OperandType>
 static void vtlbUnmappedPWriteSm(u32 addr, OperandType data) {
-	// [iter419] PS1DRV HW reg alias: 0x40000000-0x40FFFFFF -> 0x10000000-0x10FFFFFF
-	// Use pmap direct dispatch to avoid vmap-based infinite recursion.
-	if (addr >= 0x40000000u && addr < 0x41000000u) {
-		const u32 hw = addr - 0x30000000u;
-		static u32 s_redir_cnt = 0;
-		if (s_redir_cnt < 4) Console.WriteLn("@@PS1DRV_HW_REDIR@@ wr addr=0x%08x->0x%08x sz=%u n=%u", addr, hw, (u32)sizeof(OperandType), s_redir_cnt++);
-		const auto& phys = vtlbdata.pmap[hw >> VTLB_PAGE_BITS];
-		if (phys.isHandler()) {
-			using FP = vtlbMemFP<sizeof(OperandType)*8, true>;
-			auto fn = (typename FP::fn*)vtlbdata.RWFT[FP::Index][1][phys.assumeHandler()];
-			if (fn) fn(hw, data);
-		}
-		return;
-	}
 	vtlb_BusError(addr, 1);
 	if (!CHECK_EEREC && CHECK_CACHE && CheckCache(addr)) {
 		switch (sizeof(OperandType)) {
@@ -1210,102 +626,59 @@ static void TAKES_R128 vtlbUnmappedPWriteLg(u32 addr, r128 data) { vtlb_BusError
 // properly.  All addressable physical memory should be configured as TLBMiss or Bus Error.
 //
 
-// [iter216] All vtlbDefault handlers: pxFail → capped warning.
-// Corrupted vtlb mappings may route accesses to unmapped physical space.
-// Real PS2 silently ignores these. pxFail causes SIGABRT loop on iOS debug.
 static mem8_t vtlbDefaultPhyRead8(u32 addr)
 {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	static u32 s_cnt = 0;
-	if (s_cnt < 3) Console.Warning("@@VTLB_UNMAP_R8@@ addr=0x%08x n=%u", addr, s_cnt++);
-#endif
+	pxFail(fmt::format("(VTLB) Attempted read8 from unmapped physical address @ 0x{:08X}.", addr).c_str());
 	return 0;
 }
 
 static mem16_t vtlbDefaultPhyRead16(u32 addr)
 {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	static u32 s_cnt = 0;
-	if (s_cnt < 3) Console.Warning("@@VTLB_UNMAP_R16@@ addr=0x%08x n=%u", addr, s_cnt++);
-#endif
+	pxFail(fmt::format("(VTLB) Attempted read16 from unmapped physical address @ 0x{:08X}.", addr).c_str());
 	return 0;
 }
 
 static mem32_t vtlbDefaultPhyRead32(u32 addr)
 {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	static u32 s_cnt = 0;
-	if (s_cnt < 3) Console.Warning("@@VTLB_UNMAP_R32@@ addr=0x%08x n=%u", addr, s_cnt++);
-#endif
+	pxFail(fmt::format("(VTLB) Attempted read32 from unmapped physical address @ 0x{:08X}.", addr).c_str());
 	return 0;
 }
 
 static mem64_t vtlbDefaultPhyRead64(u32 addr)
 {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	static u32 s_cnt = 0;
-	if (s_cnt < 3) Console.Warning("@@VTLB_UNMAP_R64@@ addr=0x%08x n=%u", addr, s_cnt++);
-#endif
+	pxFail(fmt::format("(VTLB) Attempted read64 from unmapped physical address @ 0x{:08X}.", addr).c_str());
 	return 0;
 }
 
 static RETURNS_R128 vtlbDefaultPhyRead128(u32 addr)
 {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	static u32 s_cnt = 0;
-	if (s_cnt < 3) Console.Warning("@@VTLB_UNMAP_R128@@ addr=0x%08x n=%u", addr, s_cnt++);
-#endif
+	pxFail(fmt::format("(VTLB) Attempted read128 from unmapped physical address @ 0x{:08X}.", addr).c_str());
 	return r128_zero();
 }
 
 static void vtlbDefaultPhyWrite8(u32 addr, mem8_t data)
 {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	static u32 s_cnt = 0;
-	if (s_cnt < 3) Console.Warning("@@VTLB_UNMAP_W8@@ addr=0x%08x n=%u", addr, s_cnt++);
-#endif
+	pxFail(fmt::format("(VTLB) Attempted write8 to unmapped physical address @ 0x{:08X}.", addr).c_str());
 }
 
 static void vtlbDefaultPhyWrite16(u32 addr, mem16_t data)
 {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	static u32 s_cnt = 0;
-	if (s_cnt < 3) Console.Warning("@@VTLB_UNMAP_W16@@ addr=0x%08x n=%u", addr, s_cnt++);
-#endif
+	pxFail(fmt::format("(VTLB) Attempted write16 to unmapped physical address @ 0x{:08X}.", addr).c_str());
 }
 
 static void vtlbDefaultPhyWrite32(u32 addr, mem32_t data)
 {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	static u32 s_cnt = 0;
-	if (s_cnt < 3) Console.Warning("@@VTLB_UNMAP_W32@@ addr=0x%08x n=%u", addr, s_cnt++);
-#endif
+	pxFail(fmt::format("(VTLB) Attempted write32 to unmapped physical address @ 0x{:08X}.", addr).c_str());
 }
 
 static void vtlbDefaultPhyWrite64(u32 addr, mem64_t data)
 {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	// [iPSX2] @@UNMAPPED_PHY_WRITE64@@ (iter175): BIOS at EE PC=0x9FC43420 writes to
-	// physical 0x12040000 (GS region + 256KB, unmapped). Real PS2 hardware silently absorbs
-	// writes to unmapped physical addresses. pxFail() here causes SIGABRT→signal loop on iOS
-	// debug builds. Convert to capped warning to allow execution to continue, matching release
-	// build behavior. Removal: once BIOS proceeds past this point and output is confirmed.
-	static int s_unmapped_wr64_cnt = 0;
-	if (s_unmapped_wr64_cnt < 5)
-	{
-		Console.WriteLn("@@UNMAPPED_PHY_WRITE64@@ addr=0x%08x data=0x%016llx cnt=%d",
-			addr, (unsigned long long)data, s_unmapped_wr64_cnt);
-		++s_unmapped_wr64_cnt;
-	}
-#endif
+	pxFail(fmt::format("(VTLB) Attempted write64 to unmapped physical address @ 0x{:08X}.", addr).c_str());
 }
 
 static void TAKES_R128 vtlbDefaultPhyWrite128(u32 addr, r128 data)
 {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	static u32 s_cnt = 0;
-	if (s_cnt < 3) Console.Warning("@@VTLB_UNMAP_W128@@ addr=0x%08x n=%u", addr, s_cnt++);
-#endif
+	pxFail(fmt::format("(VTLB) Attempted write128 to unmapped physical address @ 0x{:08X}.", addr).c_str());
 }
 
 // ===========================================================================================
@@ -1511,13 +884,6 @@ static bool vtlb_GetMainMemoryOffsetFromPtr(uptr ptr, u32* mainmem_offset, u32* 
 	if (ptr >= (uptr)eeMem->Main && page_end <= (uptr)eeMem->ZeroRead)
 	{
 		const u32 eemem_offset = static_cast<u32>(ptr - (uptr)eeMem->Main);
-
-		// [FIX] Prevent fastmem mappings from extending past EEmemSize into IOP memory.
-		// sizeof(EEVM_MemoryAllocMess) > EEmemSize, so ROM2's upper pages would overlap
-		// with IOP memory in the shared data file. Fall back to slowmem for those pages.
-		if ((eemem_offset + VTLB_PAGE_SIZE) > HostMemoryMap::EEmemSize)
-			return false;
-
 		const bool writeable = ((eemem_offset < Ps2MemSize::ExposedRam) ? (mmap_GetRamPageInfo(eemem_offset) != ProtMode_Write) : true);
 		*mainmem_offset = (eemem_offset + HostMemoryMap::EEmemOffset);
 		*mainmem_size = (offsetof(EEVM_MemoryAllocMess, ZeroRead) - eemem_offset);
@@ -1567,6 +933,8 @@ static bool vtlb_GetMainMemoryOffset(u32 paddr, u32* mainmem_offset, u32* mainme
 
 static void vtlb_CreateFastmemMapping(u32 vaddr, u32 mainmem_offset, const PageProtectionMode& mode)
 {
+	// Bail if the fastmem area was never allocated (e.g. 4 GB reservation
+	// failed on a low-memory iOS device). Mirrors vtlb_RemoveFastmemMappings.
 	if (s_fastmem_virtual_mapping.empty())
 		return;
 
@@ -1612,7 +980,6 @@ static void vtlb_CreateFastmemMapping(u32 vaddr, u32 mainmem_offset, const PageP
 			s_fastmem_virtual_mapping[page] = NO_FASTMEM_MAPPING;
 			return;
 		}
-
 	}
 
 	s_fastmem_physical_mapping.emplace(mainmem_offset, vaddr);
@@ -1620,9 +987,6 @@ static void vtlb_CreateFastmemMapping(u32 vaddr, u32 mainmem_offset, const PageP
 
 static void vtlb_RemoveFastmemMapping(u32 vaddr)
 {
-	if (s_fastmem_virtual_mapping.empty())
-		return;
-
 	const u32 page = vaddr / VTLB_PAGE_SIZE;
 	if (s_fastmem_virtual_mapping[page] == NO_FASTMEM_MAPPING)
 		return;
@@ -1647,6 +1011,10 @@ static void vtlb_RemoveFastmemMapping(u32 vaddr)
 
 static void vtlb_RemoveFastmemMappings(u32 vaddr, u32 size)
 {
+	// When the 4 GB fastmem area reservation fails (e.g. on low-memory iOS
+	// devices like the iPhone SE 2), s_fastmem_virtual_mapping is never
+	// resized and remains empty. Indexing it would dereference NULL, so bail
+	// out early — there are no mappings to remove.
 	if (s_fastmem_virtual_mapping.empty())
 		return;
 
@@ -1757,13 +1125,13 @@ void vtlb_ClearLoadStoreInfo()
 
 void vtlb_AddLoadStoreInfo(uptr code_address, u32 code_size, u32 guest_pc, u32 gpr_bitmask, u32 fpr_bitmask, u8 address_register, u8 data_register, u8 size_in_bits, bool is_signed, bool is_load, bool is_fpr)
 {
-	pxAssert(code_size <= std::numeric_limits<u16>::max());
+	pxAssert(code_size < std::numeric_limits<u8>::max());
 
 	auto iter = s_fastmem_backpatch_info.find(code_address);
 	if (iter != s_fastmem_backpatch_info.end())
 		s_fastmem_backpatch_info.erase(iter);
 
-	LoadstoreBackpatchInfo info{guest_pc, gpr_bitmask, fpr_bitmask, static_cast<u16>(code_size), address_register, data_register, size_in_bits, is_signed, is_load, is_fpr};
+	LoadstoreBackpatchInfo info{guest_pc, gpr_bitmask, fpr_bitmask, static_cast<u8>(code_size), address_register, data_register, size_in_bits, is_signed, is_load, is_fpr};
 	s_fastmem_backpatch_info.emplace(code_address, info);
 }
 
@@ -1805,13 +1173,6 @@ void vtlb_VMap(u32 vaddr, u32 paddr, u32 size)
 	verify(0 == (vaddr & VTLB_PAGE_MASK));
 	verify(0 == (paddr & VTLB_PAGE_MASK));
 	verify(0 == (size & VTLB_PAGE_MASK) && size > 0);
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	if (s_tlb_vmap_probe_cfg < 0)
-	{
-		s_tlb_vmap_probe_cfg = iPSX2_GetRuntimeEnvBool("iPSX2_TLB_VMAP_PROBE", false) ? 1 : 0;
-		Console.WriteLn("@@CFG@@ iPSX2_TLB_VMAP_PROBE=%d", s_tlb_vmap_probe_cfg);
-	}
-#endif
 
 	if (CHECK_FASTMEM)
 	{
@@ -1832,14 +1193,6 @@ void vtlb_VMap(u32 vaddr, u32 paddr, u32 size)
 
 	while (size > 0)
 	{
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-		if (s_tlb_vmap_probe_cfg == 1 && !s_tlb_vmap_probe_map_done && (vaddr & 0xFFFFF000u) == 0x70004000u)
-		{
-			Console.Error("@@TLB_VMAP@@ op=map vaddr=%08x paddr=%08x size=%08x pc=%08x entryHi=%08x badVAddr=%08x",
-				vaddr, paddr, size, cpuRegs.pc, cpuRegs.CP0.n.EntryHi, cpuRegs.CP0.n.BadVAddr);
-			s_tlb_vmap_probe_map_done = true;
-		}
-#endif
 		VTLBVirtual vmv;
 		if (paddr >= VTLB_PMAP_SZ)
 			vmv = VTLBVirtual(VTLBPhysical::fromHandler(UnmappedPhyHandler), paddr, vaddr);
@@ -1863,19 +1216,6 @@ void vtlb_VMapBuffer(u32 vaddr, void* buffer, u32 size)
 {
 	verify(0 == (vaddr & VTLB_PAGE_MASK));
 	verify(0 == (size & VTLB_PAGE_MASK) && size > 0);
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	if (s_tlb_vmap_probe_cfg < 0)
-	{
-		s_tlb_vmap_probe_cfg = iPSX2_GetRuntimeEnvBool("iPSX2_TLB_VMAP_PROBE", false) ? 1 : 0;
-		Console.WriteLn("@@CFG@@ iPSX2_TLB_VMAP_PROBE=%d", s_tlb_vmap_probe_cfg);
-	}
-	if (s_tlb_vmap_probe_cfg == 1 && !s_tlb_vmap_probe_mapbuf_done && (vaddr & 0xFFFFF000u) == 0x70004000u)
-	{
-		Console.Error("@@TLB_VMAP@@ op=mapbuf vaddr=%08x size=%08x is_scratch=%d pc=%08x entryHi=%08x badVAddr=%08x",
-			vaddr, size, (buffer == eeMem->Scratch) ? 1 : 0, cpuRegs.pc, cpuRegs.CP0.n.EntryHi, cpuRegs.CP0.n.BadVAddr);
-		s_tlb_vmap_probe_mapbuf_done = true;
-	}
-#endif
 
 	if (CHECK_FASTMEM)
 	{
@@ -1912,14 +1252,6 @@ void vtlb_VMapUnmap(u32 vaddr, u32 size)
 
 	while (size > 0)
 	{
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-		if (s_tlb_vmap_probe_cfg == 1 && !s_tlb_vmap_probe_unmap_done && (vaddr & 0xFFFFF000u) == 0x70004000u)
-		{
-			Console.Error("@@TLB_VMAP@@ op=unmap vaddr=%08x size=%08x pc=%08x entryHi=%08x badVAddr=%08x",
-				vaddr, size, cpuRegs.pc, cpuRegs.CP0.n.EntryHi, cpuRegs.CP0.n.BadVAddr);
-			s_tlb_vmap_probe_unmap_done = true;
-		}
-#endif
 		vtlbdata.vmap[vaddr >> VTLB_PAGE_BITS] = VTLBVirtual(VTLBPhysical::fromHandler(UnmappedVirtHandler), vaddr, vaddr);
 		vaddr += VTLB_PAGE_SIZE;
 		size -= VTLB_PAGE_SIZE;
@@ -1947,27 +1279,6 @@ void vtlb_Init()
 	UnmappedVirtHandler = vtlb_RegisterHandler(VTLB_BuildUnmappedHandler(vtlbUnmappedV));
 	UnmappedPhyHandler = vtlb_RegisterHandler(VTLB_BuildUnmappedHandler(vtlbUnmappedP));
 	DefaultPhyHandler = vtlb_RegisterHandler(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-
-	// [P15] Fill all unregistered RWFT slots (vtlbHandlerCount..127) with default stubs.
-	// DynGen_IndirectTlbDispatcher indexes RWFT by handler ID from the vtlb entry's low byte.
-	// If a corrupted or out-of-range handler ID is used, the slot would be NULL (from memset)
-	// causing BLR to address 0 → SIGSEGV. Fill with safe stubs to prevent this crash.
-	// Removal condition: なし（恒久fix）
-	for (u32 h = vtlbHandlerCount; h < VTLB_HANDLER_ITEMS; h++)
-	{
-		vtlbdata.RWFT[0][0][h] = (void*)vtlbDefaultPhyRead8;
-		vtlbdata.RWFT[1][0][h] = (void*)vtlbDefaultPhyRead16;
-		vtlbdata.RWFT[2][0][h] = (void*)vtlbDefaultPhyRead32;
-		vtlbdata.RWFT[3][0][h] = (void*)vtlbDefaultPhyRead64;
-		vtlbdata.RWFT[4][0][h] = (void*)vtlbDefaultPhyRead128;
-		vtlbdata.RWFT[0][1][h] = (void*)vtlbDefaultPhyWrite8;
-		vtlbdata.RWFT[1][1][h] = (void*)vtlbDefaultPhyWrite16;
-		vtlbdata.RWFT[2][1][h] = (void*)vtlbDefaultPhyWrite32;
-		vtlbdata.RWFT[3][1][h] = (void*)vtlbDefaultPhyWrite64;
-		vtlbdata.RWFT[4][1][h] = (void*)vtlbDefaultPhyWrite128;
-	}
-	Console.WriteLn("@@VTLB_INIT@@ registered_handlers=%u, filled RWFT slots %u..%u with default stubs",
-		vtlbHandlerCount, vtlbHandlerCount, VTLB_HANDLER_ITEMS - 1);
 
 	//done !
 
@@ -2011,6 +1322,11 @@ void vtlb_ResetFastmem()
 	if (!CHECK_FASTMEM || !CHECK_EEREC || !vtlbdata.vmap)
 		return;
 
+	// If the reservation failed at boot, fastmem is permanently unavailable --
+	// don't let a config change resurrect it.
+	if (s_fastmem_area_unavailable)
+		return;
+
 	// we need to go through and look at the vtlb pointers, to remap the host area
 	for (size_t i = 0; i < VTLB_VMAP_ITEMS; i++)
 	{
@@ -2047,32 +1363,33 @@ bool vtlb_Core_Alloc()
 	s_fastmem_area = SharedMemoryMappingArea::Create(FASTMEM_AREA_SIZE);
 	if (!s_fastmem_area)
 	{
-		// 4GB virtual reservation can fail on devices with limited VA space (e.g. iPhone SE 2).
+		// 4 GB virtual reservation can fail on devices with limited VA space
+		// (e.g. iPhone SE 2 with 4 GB RAM under LiveContainer). On iOS we
+		// continue without fastmem instead of aborting boot.
 #if TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
-		Console.Warning("@@FASTMEM_SKIP@@ 4GB fastmem area allocation failed — continuing without fastmem");
-		std::fprintf(stderr, "@@FASTMEM_SKIP@@ area_create_failed size=%zu\n", static_cast<size_t>(FASTMEM_AREA_SIZE));
-		std::fflush(stderr);
+		Console.Warning("Fastmem disabled: 4 GB virtual-address reservation failed; continuing without fastmem");
 		vtlbdata.fastmem_base = 0;
 		EmuConfig.Cpu.Recompiler.EnableFastmem = false;
-		Console.Warning("@@FASTMEM_SKIP@@ EnableFastmem forced OFF (CHECK_FASTMEM will be false)");
+		s_fastmem_area_unavailable = true;
 #else
 		Host::ReportErrorAsync("Error", "Failed to allocate fastmem area");
 		return false;
 #endif
 	}
 
-	// [P49] Force-disable fastmem: env var override OR INI setting (EnableFastmem=false)
+	// Force-disable fastmem if explicitly requested via env var or INI.
+	if (s_fastmem_area)
 	{
-		const bool env_force = getenv("iPSX2_FORCE_NO_FASTMEM") && atoi(getenv("iPSX2_FORCE_NO_FASTMEM")) == 1;
+		const char* env = std::getenv("iPSX2_FORCE_NO_FASTMEM");
+		const bool env_force = env && std::atoi(env) == 1;
 		const bool ini_disabled = !EmuConfig.Cpu.Recompiler.EnableFastmem;
-		if (s_fastmem_area && (env_force || ini_disabled))
+		if (env_force || ini_disabled)
 		{
-			Console.Warning("@@FASTMEM_SKIP@@ Fastmem disabled (env=%d ini=%d) — releasing fastmem area",
+			Console.Warning("Fastmem disabled (env=%d ini=%d); releasing fastmem area",
 				(int)env_force, (int)ini_disabled);
 			s_fastmem_area.reset();
 			vtlbdata.fastmem_base = 0;
 			EmuConfig.Cpu.Recompiler.EnableFastmem = false;
-			Console.Warning("@@FASTMEM_SKIP@@ EnableFastmem forced OFF (CHECK_FASTMEM will be false)");
 		}
 	}
 
@@ -2082,10 +1399,6 @@ bool vtlb_Core_Alloc()
 		vtlbdata.fastmem_base = (uptr)s_fastmem_area->BasePointer();
 		DevCon.WriteLn(Color_StrongGreen, "Fastmem area: %p - %p",
 			vtlbdata.fastmem_base, vtlbdata.fastmem_base + (FASTMEM_AREA_SIZE - 1));
-		std::fprintf(stderr, "@@FASTMEM_ENABLE@@ base=%p size=%zu pages=%zu\n",
-			s_fastmem_area->BasePointer(), static_cast<size_t>(FASTMEM_AREA_SIZE),
-			static_cast<size_t>(FASTMEM_PAGE_COUNT));
-		std::fflush(stderr);
 	}
 
 	Error error;
@@ -2127,24 +1440,6 @@ void vtlb_Core_Free()
 	decltype(s_fastmem_physical_mapping)().swap(s_fastmem_physical_mapping);
 	decltype(s_fastmem_virtual_mapping)().swap(s_fastmem_virtual_mapping);
 	s_fastmem_area.reset();
-}
-
-int vtlb_ScanFastmemForOffset(u32 target_offset)
-{
-	int count = 0;
-	const u32 page_offset = target_offset & ~(VTLB_PAGE_SIZE - 1);
-	for (u32 i = 0; i < s_fastmem_virtual_mapping.size(); i++) {
-		u32 mapping = s_fastmem_virtual_mapping[i];
-		if (mapping != NO_FASTMEM_MAPPING) {
-			u32 map_page_offset = mapping & ~(VTLB_PAGE_SIZE - 1);
-			if (map_page_offset == page_offset) {
-				Console.Error("@@FASTMEM_IOP_OVERLAP@@ vpage=%u (vaddr=%08x) -> file_offset=%08x (target=%08x)",
-					i, i * VTLB_PAGE_SIZE, mapping, target_offset);
-				count++;
-			}
-		}
-	}
-	return count;
 }
 
 // ===========================================================================================
@@ -2240,43 +1535,11 @@ void mmap_MarkCountedRamPage(u32 paddr)
 // offset - offset of address relative to psM.
 // All recompiled blocks belonging to the page are cleared, and any new blocks recompiled
 // from code residing in this page will use manual protection.
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-std::atomic<uint32_t> g_mmap_clear_count{0};
-std::atomic<uint32_t> g_mmap_clear_page_top{0};      // page cleared most often
-std::atomic<uint32_t> g_mmap_clear_page_top_count{0}; // its count
-static uint32_t s_mmap_clear_per_page[Ps2MemSize::TotalRam >> __pageshift] = {};
-#endif
-
 static __fi void mmap_ClearCpuBlock(uint offset)
 {
 	pxAssert(eeMem);
 
 	int rampage = offset >> __pageshift;
-
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	{
-		g_mmap_clear_count.fetch_add(1, std::memory_order_relaxed);
-		if (rampage >= 0 && rampage < (int)(Ps2MemSize::TotalRam >> __pageshift)) {
-			s_mmap_clear_per_page[rampage]++;
-			if (s_mmap_clear_per_page[rampage] > g_mmap_clear_page_top_count.load(std::memory_order_relaxed)) {
-				g_mmap_clear_page_top.store((uint32_t)rampage, std::memory_order_relaxed);
-				g_mmap_clear_page_top_count.store(s_mmap_clear_per_page[rampage], std::memory_order_relaxed);
-			}
-		}
-	}
-
-	{
-		static u32 s_cb_n = 0;
-		if (s_cb_n < 4)
-		{
-			char buf[128];
-			int nn = snprintf(buf, sizeof(buf), "@@CLEAR_BLOCK@@ n=%u offset=%u rampage=%d mode=%d\n",
-				s_cb_n, offset, rampage, (int)m_PageProtectInfo[rampage].Mode);
-			write(STDERR_FILENO, buf, nn);
-			s_cb_n++;
-		}
-	}
-#endif
 
 	// Assertion: This function should never be run on a block that's already under
 	// manual protection.  Indicates a logic error in the recompiler or protection code.
@@ -2289,71 +1552,44 @@ static __fi void mmap_ClearCpuBlock(uint offset)
 	Cpu->Clear(m_PageProtectInfo[rampage].ReverseRamMap, __pagesize);
 }
 
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-std::atomic<uint64_t> g_hpf_cnt{0};
-std::atomic<uintptr_t> g_hpf_last_fa{0};
-std::atomic<uintptr_t> g_hpf_last_epc{0};
-std::atomic<uint32_t> g_hpf_last_path{0}; // 0=unknown, 1=fastmem_write, 2=fastmem_bp, 3=outside, 4=eemem
-#endif
-
 PageFaultHandler::HandlerResult PageFaultHandler::HandlePageFault(void* exception_pc, void* fault_address, bool is_write)
 {
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-	uint64_t cnt = g_hpf_cnt.fetch_add(1, std::memory_order_relaxed);
-	// [iter685] store fault info — only overwrite if real fault (non-zero fa) or first time
-	uintptr_t fa_val = reinterpret_cast<uintptr_t>(fault_address);
-	if (fa_val != 0 || cnt == 0) {
-		g_hpf_last_fa.store(fa_val, std::memory_order_relaxed);
-		g_hpf_last_epc.store(reinterpret_cast<uintptr_t>(exception_pc), std::memory_order_relaxed);
-	}
-#endif
-
 	pxAssert(eeMem);
 
 	u32 vaddr;
 	if (CHECK_FASTMEM && vtlb_GetGuestAddress(reinterpret_cast<uptr>(fault_address), &vaddr))
 	{
 		// this was inside the fastmem area. check if it's a code page
+		// fprintf(stderr, "Fault on fastmem %p vaddr %08X\n", info.addr, vaddr);
 
 		uptr ptr = (uptr)PSM(vaddr);
 		uptr offset = (ptr - (uptr)eeMem->Main);
-			if (ptr && m_PageProtectInfo[offset >> __pageshift].Mode == ProtMode_Write)
-			{
-				mmap_ClearCpuBlock(offset);
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-				g_hpf_last_path.store(1, std::memory_order_relaxed); // fastmem_write
-#endif
-				return HandlerResult::ContinueExecution;
-			}
-			else
-			{
-				bool ok = vtlb_BackpatchLoadStore(reinterpret_cast<uptr>(exception_pc),
-						   reinterpret_cast<uptr>(fault_address));
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-				g_hpf_last_path.store(2, std::memory_order_relaxed); // fastmem_bp
-#endif
-				return ok ? HandlerResult::ContinueExecution : HandlerResult::ExecuteNextHandler;
-			}
+		if (ptr && m_PageProtectInfo[offset >> __pageshift].Mode == ProtMode_Write)
+		{
+			// fprintf(stderr, "Not backpatching code write at %08X\n", vaddr);
+			mmap_ClearCpuBlock(offset);
+			return HandlerResult::ContinueExecution;
 		}
+		else
+		{
+			// fprintf(stderr, "Trying backpatching vaddr %08X\n", vaddr);
+			return vtlb_BackpatchLoadStore(reinterpret_cast<uptr>(exception_pc),
+					   reinterpret_cast<uptr>(fault_address)) ?
+					   HandlerResult::ContinueExecution :
+					   HandlerResult::ExecuteNextHandler;
+		}
+	}
 	else
 	{
 		// get bad virtual address
-			uptr offset = reinterpret_cast<uptr>(fault_address) - reinterpret_cast<uptr>(eeMem->Main);
-			if (offset >= Ps2MemSize::ExposedRam)
-			{
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-				g_hpf_last_path.store(3, std::memory_order_relaxed); // outside
-#endif
-				return HandlerResult::ExecuteNextHandler;
-			}
+		uptr offset = reinterpret_cast<uptr>(fault_address) - reinterpret_cast<uptr>(eeMem->Main);
+		if (offset >= Ps2MemSize::ExposedRam)
+			return HandlerResult::ExecuteNextHandler;
 
-			mmap_ClearCpuBlock(offset);
-#if ARMSX2_ENABLE_EE_HOTPATH_DIAGNOSTICS
-			g_hpf_last_path.store(4, std::memory_order_relaxed); // eemem
-#endif
-			return HandlerResult::ContinueExecution;
-		}
+		mmap_ClearCpuBlock(offset);
+		return HandlerResult::ContinueExecution;
 	}
+}
 
 // Clears all block tracking statuses, manual protection flags, and write protection.
 // This does not clear any recompiler blocks.  It is assumed (and necessary) for the caller

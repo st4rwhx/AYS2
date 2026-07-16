@@ -47,6 +47,9 @@ namespace ImGuiManager
 	/// Updates scaling of the on-screen elements.
 	void RequestScaleUpdate();
 
+	/// Sets safe-area insets for OSD elements (iOS rounded-corner clearance).
+	void SetOSDSafeAreaInsets(float left, float top, float right, float bottom);
+
 	/// Rebuilds the ImGui font atlas using current settings.
 	void ReloadFonts();
 
@@ -105,7 +108,10 @@ namespace ImGuiManager
 	bool ProcessHostKeyEvent(InputBindingKey key, float value);
 
 	/// Called on the CPU thread when any input event fires. Allows imgui to take over controller navigation.
-	bool ProcessGenericInputEvent(GenericInputBinding key, InputLayout layout, float value);
+	bool ProcessGenericInputEvent(GenericInputBinding key, InputLayout layout, float value, u32 controller_id = 0);
+
+	/// Called on the CPU thread for a bidirectional analog axis event.
+	void ProcessGenericAxisEvent(GenericInputBinding negative_key, GenericInputBinding positive_key, InputLayout layout, float value, u32 controller_id = 0);
 
 	/// Called to swap North/West gamepad buttons within ImGui
 	void SwapGamepadNorthWest(bool value);

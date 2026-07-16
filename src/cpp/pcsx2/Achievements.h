@@ -67,6 +67,9 @@ namespace Achievements
 	/// Called when the system changes game, or is booting.
 	void GameChanged(u32 disc_crc, u32 crc);
 
+	/// Play achievement related sounds effects
+	void PlayAchievementSound(bool is_specific_sound_enabled, const std::string& custom_sound_name, const std::string& default_sound_name);
+
 	/// Re-enables hardcode mode if it is enabled in the settings.
 	bool ResetHardcoreMode(bool is_booting);
 
@@ -90,54 +93,6 @@ namespace Achievements
 	/// Returns true if the achievement system is active. Achievements can be active without a valid client.
 	bool IsActive();
 
-	struct UserStats
-	{
-		std::string username;
-		std::string display_name;
-		std::string avatar_path;
-		u32 points = 0;
-		u32 softcore_points = 0;
-		u32 unread_messages = 0;
-	};
-
-	struct GameStats
-	{
-		std::string title;
-		std::string rich_presence;
-		std::string icon_path;
-		std::string icon_url;
-		u32 game_id = 0;
-		u32 unlocked_achievements = 0;
-		u32 total_achievements = 0;
-		u32 unlocked_points = 0;
-		u32 total_points = 0;
-		bool has_achievements = false;
-		bool has_leaderboards = false;
-		bool has_rich_presence = false;
-	};
-
-	struct AchievementInfo
-	{
-		std::string title;
-		std::string description;
-		std::string badge_path;
-		std::string measured_progress;
-		u32 id = 0;
-		u32 points = 0;
-		u32 unlock_time = 0;
-		u32 state = 0;
-		u32 category = 0;
-		u32 bucket = 0;
-		u32 unlocked = 0;
-		float measured_percent = 0.0f;
-		float rarity = 0.0f;
-		float rarity_hardcore = 0.0f;
-	};
-
-	bool GetCurrentUserStats(UserStats* stats);
-	bool GetCurrentGameStats(GameStats* stats);
-	bool GetCurrentAchievementList(std::vector<AchievementInfo>* achievements);
-
 	/// Returns true if RetroAchievements game data has been loaded.
 	bool HasActiveGame();
 
@@ -149,6 +104,24 @@ namespace Achievements
 
 	/// Returns true if the current game has any achievements.
 	bool HasAchievements();
+
+	/// Snapshot the current game's achievements as JSON for the in-game
+	/// overlay's right-side panel. Walks rc_client buckets in display
+	/// order (active challenge → recently unlocked → unlocked → almost
+	/// there → locked → unofficial → unsupported). Empty array when no
+	/// active game / not logged in. Format:
+	///   {
+	///     "active": bool,           // game has any achievements
+	///     "loggedIn": bool,         // a user is logged in to RA
+	///     "userName": "string",     // display name when loggedIn
+	///     "items": [
+	///       { "id": int, "title": "...", "description": "...",
+	///         "points": int, "unlocked": bool, "bucket": int,
+	///         "rarity": float, "measuredProgress": "..." }
+	///     ]
+	///   }
+	/// Self-contained — no rcheevos headers needed by the caller.
+	std::string GetAchievementsAsJSON();
 
 	/// Returns true if the current game has any leaderboards.
 	bool HasLeaderboards();
@@ -209,6 +182,54 @@ namespace Achievements
 		void ActivateMenuItem(int item);
 	} // namespace RAIntegration
 #endif
+
+	struct UserStats
+	{
+		std::string username;
+		std::string display_name;
+		std::string avatar_path;
+		u32 points = 0;
+		u32 softcore_points = 0;
+		u32 unread_messages = 0;
+	};
+
+	struct GameStats
+	{
+		std::string title;
+		std::string rich_presence;
+		std::string icon_path;
+		std::string icon_url;
+		u32 game_id = 0;
+		u32 unlocked_achievements = 0;
+		u32 total_achievements = 0;
+		u32 unlocked_points = 0;
+		u32 total_points = 0;
+		bool has_achievements = false;
+		bool has_leaderboards = false;
+		bool has_rich_presence = false;
+	};
+
+	struct AchievementInfo
+	{
+		std::string title;
+		std::string description;
+		std::string badge_path;
+		std::string measured_progress;
+		u32 id = 0;
+		u32 points = 0;
+		u32 unlock_time = 0;
+		u32 state = 0;
+		u32 category = 0;
+		u32 bucket = 0;
+		u32 unlocked = 0;
+		float measured_percent = 0.0f;
+		float rarity = 0.0f;
+		float rarity_hardcore = 0.0f;
+	};
+
+	bool GetCurrentUserStats(UserStats* stats);
+	bool GetCurrentGameStats(GameStats* stats);
+	bool GetCurrentAchievementList(std::vector<AchievementInfo>* achievements);
 } // namespace Achievements
 
 /// Functions implemented in the frontend.

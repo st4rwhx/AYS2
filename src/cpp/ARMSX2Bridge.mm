@@ -2,6 +2,23 @@
 // SPDX-License-Identifier: GPL-3.0+
 
 #import "ARMSX2Bridge.h"
+
+// Xcode names the generated Swift bridge header after the Swift module.
+#if __has_include("ARMSX2iOS-Swift.h")
+#import "ARMSX2iOS-Swift.h"
+#define ARMSX2_HAS_SWIFTUI_HOST 1
+#elif __has_include("ARMSX2-Swift.h")
+#import "ARMSX2-Swift.h"
+#define ARMSX2_HAS_SWIFTUI_HOST 1
+#else
+#define ARMSX2_HAS_SWIFTUI_HOST 0
+#endif
+
+// MetalFX spatial upscaler is iOS 16+ and weak-linked (see PCSX2 CMake). Both
+// headers are pulled in here so isMetalFXSupported can probe device capability.
+#import <Metal/Metal.h>
+#import <MetalFX/MetalFX.h>
+
 #include "common/Darwin/DarwinMisc.h"
 #include <SDL3/SDL.h>
 
@@ -4041,3 +4058,18 @@ extern int s_buttonMap[16];
 }
 
 @end
+
+// Probes whether MetalFX Spatial upscaling is available on this device. This is
+// a standalone check that works from the main menu before any GS device exists,
+// so the settings UI can decide whether to show the Upscaler section at all. It
+// returns NO on pre-iOS-16, the simulator, and any GPU that fails the framework
+// capability probe.
++ (BOOL)isMetalFXSupported {
+    if (@available(iOS 16.0, *)) {
+        MRCOwned<id<MTLDevice>> device = MRCTransfer(MTLCreateSystemDefaultDevice());
+        if (!device)
+            return NO;
+        return [MTLFXSpatialScalerDescriptor supportsDevice:device];
+    }
+    return NO;
+}

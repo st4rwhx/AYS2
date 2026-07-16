@@ -13,10 +13,13 @@
 #include "common/HostSys.h"
 #include "fmt/format.h"
 
+#include <atomic>
+#include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <errno.h>
 #include <dlfcn.h>
 #include <setjmp.h>
 #include <optional>
@@ -107,7 +110,15 @@ static const u64 tickfreq = []() {
 // GetTickFrequency() to maintain good precision.
 u64 GetTickFrequency()
 {
+#if defined(__APPLE__) && TARGET_OS_IPHONE && defined(__aarch64__)
+	// iOS: read the frequency of the architected virtual counter directly,
+	// avoiding the mach_absolute_time trap overhead on every GetCPUTicks call.
+	u64 freq;
+	asm volatile("mrs %0, cntfrq_el0" : "=r"(freq));
+	return freq;
+#else
 	return tickfreq;
+#endif
 }
 
 // return the number of "ticks" since some arbitrary, fixed time in the
@@ -116,7 +127,15 @@ u64 GetTickFrequency()
 // nanoseconds.
 u64 GetCPUTicks()
 {
+#if defined(__APPLE__) && TARGET_OS_IPHONE && defined(__aarch64__)
+	// iOS: read the monotonic architected virtual counter directly, avoiding
+	// the mach_absolute_time trap on every tick (frame limiter, profiling).
+	u64 val;
+	asm volatile("mrs %0, cntvct_el0" : "=r"(val)::"memory");
+	return val;
+#else
 	return mach_absolute_time();
+#endif
 }
 
 static std::string sysctl_str(int category, int name)
@@ -158,9 +177,7 @@ static IOPMAssertionID s_pm_assertion;
 
 bool Common::InhibitScreensaver(bool inhibit)
 {
-#if TARGET_OS_IPHONE
-	return true;
-#else
+#if !TARGET_OS_IPHONE
 	if (s_pm_assertion)
 	{
 		IOPMAssertionRelease(s_pm_assertion);
@@ -169,14 +186,18 @@ bool Common::InhibitScreensaver(bool inhibit)
 
 	if (inhibit)
 		IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleDisplaySleep, kIOPMAssertionLevelOn, CFSTR("Playing a game"), &s_pm_assertion);
-
-	return true;
 #endif
+	return true;
 }
 
+#if TARGET_OS_IPHONE
+// iOS has no mouse cursor — stub these out.
+void Common::SetMousePosition(int x, int y) {}
+bool Common::AttachMousePositionCb(std::function<void(int, int)> cb) { return false; }
+void Common::DetachMousePositionCb() {}
+#else
 void Common::SetMousePosition(int x, int y)
 {
-#if !TARGET_OS_IPHONE
 	// Little bit ugly but;
 	// Creating mouse move events and posting them wasn't very reliable.
 	// Calling CGWarpMouseCursorPosition without CGAssociateMouseAndMouseCursorPosition(false)
@@ -184,11 +205,9 @@ void Common::SetMousePosition(int x, int y)
 	CGAssociateMouseAndMouseCursorPosition(false);
 	CGWarpMouseCursorPosition(CGPointMake(x, y));
 	CGAssociateMouseAndMouseCursorPosition(true); // The default state
-#endif
 	return;
 }
 
-#if !TARGET_OS_IPHONE
 CFMachPortRef mouseEventTap = nullptr;
 CFRunLoopSourceRef mouseRunLoopSource = nullptr;
 
@@ -202,13 +221,9 @@ CGEventRef mouseMoveCallback(CGEventTapProxy, CGEventType type, CGEventRef event
 	}
 	return event;
 }
-#endif
 
 bool Common::AttachMousePositionCb(std::function<void(int, int)> cb)
 {
-#if TARGET_OS_IPHONE
-	return false;
-#else
 	if (!AXIsProcessTrusted())
 	{
 		Console.Warning("Process isn't trusted with accessibility permissions. Mouse tracking will not work!");
@@ -227,12 +242,10 @@ bool Common::AttachMousePositionCb(std::function<void(int, int)> cb)
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), mouseRunLoopSource, kCFRunLoopCommonModes);
 
 	return true;
-#endif
 }
 
 void Common::DetachMousePositionCb()
 {
-#if !TARGET_OS_IPHONE
 	if (mouseRunLoopSource)
 	{
 		CFRunLoopRemoveSource(CFRunLoopGetCurrent(), mouseRunLoopSource, kCFRunLoopCommonModes);
@@ -244,8 +257,8 @@ void Common::DetachMousePositionCb()
 	}
 	mouseRunLoopSource = nullptr;
 	mouseEventTap = nullptr;
-#endif
 }
+#endif // !TARGET_OS_IPHONE
 
 void Threading::Sleep(int ms)
 {
@@ -254,6 +267,24 @@ void Threading::Sleep(int ms)
 
 void Threading::SleepUntil(u64 ticks)
 {
+#if defined(__APPLE__) && TARGET_OS_IPHONE && defined(__aarch64__)
+	// iOS: convert the remaining counter ticks and retry after interrupted sleeps.
+	for (;;)
+	{
+		const s64 diff = static_cast<s64>(ticks - GetCPUTicks());
+		if (diff <= 0)
+			return;
+
+		const u64 freq = GetTickFrequency();
+		struct timespec ts;
+		ts.tv_sec = static_cast<time_t>(static_cast<u64>(diff) / freq);
+		ts.tv_nsec = static_cast<long>(((static_cast<u64>(diff) % freq) * 1000000000ULL) / freq);
+
+		const int err = nanosleep(&ts, nullptr);
+		if (err != 0 && errno != EINTR)
+			return;
+	}
+#else
 	// This is definitely sub-optimal, but apparently clock_nanosleep() doesn't exist.
 	const s64 diff = static_cast<s64>(ticks - GetCPUTicks());
 	if (diff <= 0)
@@ -267,6 +298,7 @@ void Threading::SleepUntil(u64 ticks)
 	ts.tv_sec = nanos / 1000000000ULL;
 	ts.tv_nsec = nanos % 1000000000ULL;
 	nanosleep(&ts, nullptr);
+#endif
 }
 
 std::vector<DarwinMisc::CPUClass> DarwinMisc::GetCPUClasses()
@@ -595,6 +627,8 @@ void DarwinMisc::SetCrashLogFD(int fd)
 
 void DarwinMisc::SetJitRange(void* base, size_t size)
 {
+	if (!base || size == 0)
+		return; // interpreter-only mode: no code region
 	s_jit_base = reinterpret_cast<uintptr_t>(base);
 	s_jit_end = s_jit_base + size;
 }
@@ -705,6 +739,44 @@ bool DarwinMisc::IsJITAvailable()
 	return true;
 #else
 	return true;
+#endif
+}
+
+bool DarwinMisc::ValidateJITAlive()
+{
+#if TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+	// Check 1: CS_DEBUGGED still set?
+	u32 cs_flags = 0;
+	const int rv = csops(getpid(), 0, &cs_flags, sizeof(cs_flags));
+	const bool cs_debugged = (rv == 0) && ((cs_flags & 0x10000000u) != 0);
+	if (!cs_debugged)
+	{
+		std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=0 reason=cs_debugged_revoked\n");
+		std::fflush(stderr);
+		return false;
+	}
+
+	// Check 2: RW alias still writable? Write a canary, read it back.
+	if (g_code_rw_base != 0 && g_code_rw_size > 0)
+	{
+		volatile u8* canary = reinterpret_cast<volatile u8*>(g_code_rw_base);
+		const u8 saved = *canary;
+		*canary = 0x42;
+		const u8 readback = *canary;
+		*canary = saved; // restore so we don't corrupt the first code byte
+		if (readback != 0x42)
+		{
+			std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=0 reason=rw_alias_dead readback=0x%02x\n", readback);
+			std::fflush(stderr);
+			return false;
+		}
+	}
+
+	std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=1 cs_debugged=1 canary=ok\n");
+	std::fflush(stderr);
+	return true;
+#else
+	return true; // macOS and Simulator always have JIT
 #endif
 }
 
@@ -849,7 +921,7 @@ void* DarwinMisc::MmapCodeDualMap(size_t size)
 
 	if (mode == JitMode::LuckTXM)
 	{
-		static sigjmp_buf s_alloc_brk_jmp;
+		static thread_local sigjmp_buf s_alloc_brk_jmp;
 		struct sigaction sa_brk = {};
 		struct sigaction sa_brk_old = {};
 		sa_brk.sa_handler = +[](int) { siglongjmp(s_alloc_brk_jmp, 1); };
@@ -885,37 +957,91 @@ void* DarwinMisc::MmapCodeDualMap(size_t size)
 				std::fflush(stderr);
 			}
 		}
-		else
+		else // universal protocol
 		{
+			// Run TXM prepare on a worker thread with an 8-second timeout.
+			// The brk #0xf00d instruction can hang on large code regions; if it
+			// doesn't complete in 8 seconds, fall back to the Legacy brk #0x69 path.
+			std::atomic<bool> universal_done{false};
+			std::atomic<bool> universal_ok{false};
+
 			std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_universal_begin rx=%p size=0x%zx\n", rx_ptr, size);
 			std::fflush(stderr);
-			if (sigsetjmp(s_alloc_brk_jmp, 1) == 0)
-			{
-				JIT26PrepareRegion(rx_ptr, size);
-				std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_universal_ok\n");
-				std::fflush(stderr);
 
-				std::fprintf(stderr, "@@JIT_ALLOC@@ txm_detach_begin\n");
+			std::thread txm_worker([&]() {
+				if (sigsetjmp(s_alloc_brk_jmp, 1) == 0)
+				{
+					JIT26PrepareRegion(rx_ptr, size);
+					std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_universal_ok\n");
+					std::fflush(stderr);
+
+					std::fprintf(stderr, "@@JIT_ALLOC@@ txm_detach_begin\n");
+					std::fflush(stderr);
+					if (sigsetjmp(s_alloc_brk_jmp, 1) == 0)
+					{
+						JIT26Detach();
+						universal_ok.store(true);
+						std::fprintf(stderr, "@@JIT_ALLOC@@ txm_detach_ok\n");
+						std::fflush(stderr);
+					}
+					else
+					{
+						std::fprintf(stderr, "@@JIT_ALLOC@@ txm_detach_sigtrap\n");
+						std::fflush(stderr);
+					}
+				}
+				else
+				{
+					std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_universal_sigtrap\n");
+					std::fflush(stderr);
+				}
+				universal_done.store(true);
+			});
+			txm_worker.detach();
+
+			// Wait up to 8 seconds
+			for (int i = 0; i < 80; i++)
+			{
+				if (universal_done.load(std::memory_order_relaxed))
+					break;
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			}
+
+			if (universal_done.load() && universal_ok.load())
+			{
+				brk_ok = true;
+			}
+			else if (!universal_done.load())
+			{
+				// Worker hung — try Legacy fallback
+				std::fprintf(stderr, "@@JIT_ALLOC@@ txm_universal_timeout — falling back to legacy brk #0x69\n");
+				std::fflush(stderr);
+				// The worker thread is still running (hung). It's detached so it won't
+				// block shutdown, but the SIGTRAP handler is still installed. Try Legacy.
+				std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_begin rx=%p size=0x%zx\n", rx_ptr, size);
 				std::fflush(stderr);
 				if (sigsetjmp(s_alloc_brk_jmp, 1) == 0)
 				{
-					JIT26Detach();
+					asm volatile("mov x0, %0\n"
+					             "mov x1, %1\n"
+					             "brk #0x69"
+					             :: "r"(rx_ptr), "r"(size) : "x0", "x1");
 					brk_ok = true;
-					std::fprintf(stderr, "@@JIT_ALLOC@@ txm_detach_ok\n");
+					std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_ok\n");
 					std::fflush(stderr);
 				}
 				else
 				{
-					std::fprintf(stderr, "@@JIT_ALLOC@@ txm_detach_sigtrap\n");
+					std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_sigtrap\n");
 					std::fflush(stderr);
 				}
 			}
-			else
-			{
-				std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_universal_sigtrap\n");
-				std::fflush(stderr);
-			}
+			// else: universal completed but failed (sigtrap) — brk_ok stays false
 		}
+		// NOTE: If the Universal TXM worker (detached, possibly hung) traps late
+		// after the Legacy fallback, it may hit the handler after restoration.
+		// This race is bounded: it only occurs with Universal protocol + hang +
+		// late trap. ARMSX2_JIT_PROTOCOL=legacy avoids the Universal path entirely.
 		sigaction(SIGTRAP, &sa_brk_old, nullptr);
 
 		if (!brk_ok)
