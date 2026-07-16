@@ -1,19 +1,20 @@
 # AYS2 — PlayStation 2 Emulator for iOS
 
-<!-- Badges Row 1: License, Version, Platform -->
+<!-- Badges Row 1: License, Platform, Swift -->
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg?style=flat-square&logo=gnu)](LICENSE)
-[![GitHub Release](https://img.shields.io/github/v/release/st4rwhx/AYS2?style=flat-square&logo=github&label=Release)](https://github.com/st4rwhx/AYS2/releases)
 [![iOS Minimum](https://img.shields.io/badge/iOS-17.0+-black?style=flat-square&logo=apple)](https://www.apple.com/ios)
 [![Swift](https://img.shields.io/badge/Swift-6.0-FA7343?style=flat-square&logo=swift)](https://www.swift.org)
+[![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?style=flat-square&logo=cplusplus)](https://en.cppreference.com/)
 
-<!-- Badges Row 2: Build, Status, Community -->
-[![Build Status](https://img.shields.io/github/actions/workflow/status/st4rwhx/AYS2/build-ios.yml?style=flat-square&logo=github-actions&label=Build)](https://github.com/st4rwhx/AYS2/actions/workflows/build-ios.yml)
+<!-- Badges Row 2: Status & Community -->
+[![Build Status](https://img.shields.io/github/actions/workflow/status/st4rwhx/AYS2/build-ios.yml?branch=main&style=flat-square&logo=github-actions&label=Build)](https://github.com/st4rwhx/AYS2/actions/workflows/build-ios.yml)
 [![GitHub Issues](https://img.shields.io/github/issues/st4rwhx/AYS2?style=flat-square&logo=github)](https://github.com/st4rwhx/AYS2/issues)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865f2?style=flat-square&logo=discord)](https://discord.gg/AXAzExECSv)
-[![Contributors](https://img.shields.io/github/contributors/st4rwhx/AYS2?style=flat-square&logo=github)](https://github.com/st4rwhx/AYS2/graphs/contributors)
+[![Last Commit](https://img.shields.io/github/last-commit/st4rwhx/AYS2?style=flat-square&logo=github)](https://github.com/st4rwhx/AYS2/commits)
 
 ## Table of Contents
 
+- [Quick Install](#-quick-install)
 - [Quick Start](#quick-start)
 - [Features](#features)
 - [Requirements](#requirements)
@@ -21,6 +22,16 @@
 - [Documentation](#documentation)
 - [Community](#community)
 - [License](#license)
+
+---
+
+## ⚡ Quick Install
+
+**One-tap install on iPhone/iPad:**
+
+[![Add to SideStore](https://img.shields.io/badge/📱%20Install%20on%20SideStore-blue?style=for-the-badge&logo=apple&logoColor=white)](https://aysx2.ayanokiyotakaxpsycoworld.workers.dev/install)
+
+**Direct URL:** https://aysx2.ayanokiyotakaxpsycoworld.workers.dev/install
 
 ---
 
@@ -36,19 +47,23 @@
 
 ### Installation
 
-1. **Get SideStore/AltStore** on your iOS device
-2. **Add the Source:**
+**Easiest Method:** Use the one-tap install link above 👆
+
+**Or manually:**
+
+1. **Install SideStore or AltStore** on your iOS device
+   - [SideStore](https://sidestore.io) (recommended)
+   - [AltStore](https://altstore.io)
+
+2. **Add the Source** in the app:
    ```
    https://aysx2.ayanokiyotakaxpsycoworld.workers.dev
    ```
-3. **One-tap Install:**
-   ```
-   https://aysx2.ayanokiyotakaxpsycoworld.workers.dev/install
-   ```
 
-Or manually add from Releases:
-- Download the latest `.ipa` from [Releases](https://github.com/st4rwhx/AYS2/releases)
-- Sideload using Sideloadly or Xcode
+3. **Install AYS2** and tap "Get"
+
+**Alternative:** Download from [Releases](https://github.com/st4rwhx/AYS2/releases):
+- Use Sideloadly or Xcode to sideload the `.ipa`
 
 ### Requirements
 
