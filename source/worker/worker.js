@@ -85,204 +85,141 @@ function installPage(feed) {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#0a5f9c">
-  <meta name="description" content="Install ${APP_NAME} - ${APP_SUBTITLE} for iOS">
-  <title>Install ${APP_NAME}</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Install ${APP_NAME} - ${APP_SUBTITLE}">
+  <title>${APP_NAME}</title>
   <style>
-    * { box-sizing: border-box; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     html { color-scheme: dark; }
     body {
-      margin: 0;
-      padding: 0;
-      min-height: 100dvh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f0f0f;
+      color: #e8e8e8;
+      min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-      background: linear-gradient(135deg, #0a3d7a 0%, #0a5f9c 50%, #062c4a 100%);
-      overflow-x: hidden;
+      padding: 16px;
     }
     
-    .container {
+    main {
+      max-width: 400px;
       width: 100%;
-      max-width: 480px;
-      padding: 20px;
-    }
-    
-    .card {
-      border-radius: 20px;
-      padding: 32px 24px;
-      text-align: center;
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      backdrop-filter: blur(20px) saturate(180%);
-      box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-      animation: slideIn 0.6s ease-out;
-    }
-    
-    @keyframes slideIn {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-    
-    .icon {
-      width: 80px;
-      height: 80px;
-      margin: 0 auto 20px;
-      background: linear-gradient(135deg, #7cc8f5, #0a5f9c);
-      border-radius: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 40px;
-      box-shadow: 0 8px 16px rgba(4, 40, 80, 0.4);
     }
     
     h1 {
-      margin: 0 0 8px 0;
-      font-size: 28px;
-      font-weight: 700;
-      color: #ffffff;
+      font-size: 32px;
+      font-weight: 600;
+      margin-bottom: 6px;
       letter-spacing: -0.5px;
     }
     
-    .subtitle {
-      color: #bfe9ff;
+    .tagline {
+      color: #a8a8a8;
       font-size: 14px;
-      margin: 0 0 24px 0;
-      font-weight: 500;
+      margin-bottom: 32px;
     }
     
     .description {
-      color: #d4e9ff;
+      color: #c0c0c0;
       font-size: 15px;
       line-height: 1.6;
-      margin: 0 0 28px 0;
+      margin-bottom: 32px;
     }
     
-    .buttons {
+    .cta {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
+      margin-bottom: 40px;
     }
     
-    a.btn {
-      display: block;
+    a {
       text-decoration: none;
-      font-weight: 600;
-      font-size: 16px;
-      padding: 14px 20px;
-      border-radius: 14px;
-      transition: all 0.3s ease;
-      cursor: pointer;
-      border: 2px solid transparent;
-    }
-    
-    a.btn-primary {
-      background: linear-gradient(135deg, #7cc8f5 0%, #5ab3f0 100%);
-      color: #03245a;
-      box-shadow: 0 8px 16px rgba(124, 200, 245, 0.3);
-    }
-    
-    a.btn-primary:active {
-      transform: scale(0.98);
-      box-shadow: 0 4px 8px rgba(124, 200, 245, 0.3);
-    }
-    
-    a.btn-secondary {
-      background: transparent;
-      color: #7cc8f5;
-      border: 2px solid rgba(124, 200, 245, 0.5);
+      border-radius: 8px;
+      padding: 12px 16px;
       font-size: 15px;
+      font-weight: 500;
+      transition: opacity 0.2s, background 0.2s;
+      text-align: center;
+      border: none;
+      cursor: pointer;
     }
     
-    a.btn-secondary:active {
-      background: rgba(124, 200, 245, 0.1);
+    .btn-primary {
+      background: #0084ff;
+      color: white;
     }
     
-    .footer {
-      margin-top: 28px;
+    .btn-primary:active {
+      opacity: 0.8;
+    }
+    
+    .btn-secondary {
+      background: #262626;
+      color: #e8e8e8;
+      border: 1px solid #404040;
+    }
+    
+    .btn-secondary:active {
+      background: #323232;
+    }
+    
+    .source-info {
+      border-top: 1px solid #262626;
       padding-top: 24px;
-      border-top: 1px solid rgba(255, 255, 255, 0.1);
     }
     
-    .hint-title {
-      color: #7cc8f5;
+    .source-label {
       font-size: 12px;
-      font-weight: 600;
+      color: #808080;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      margin: 0 0 8px 0;
+      margin-bottom: 8px;
     }
     
-    .url-box {
-      background: rgba(0, 0, 0, 0.3);
+    .source-url {
+      background: #1a1a1a;
+      border: 1px solid #262626;
+      border-radius: 6px;
       padding: 10px 12px;
-      border-radius: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      word-break: break-all;
-      font-family: "Monaco", "Courier New", monospace;
+      font-family: "SF Mono", Monaco, monospace;
       font-size: 12px;
-      color: #bfe9ff;
+      color: #b0b0b0;
+      word-break: break-all;
       line-height: 1.4;
     }
     
     .note {
       font-size: 12px;
-      color: #a0d5ff;
-      margin: 12px 0 0 0;
-    }
-    
-    @media (max-width: 380px) {
-      .card {
-        padding: 24px 18px;
-      }
-      h1 {
-        font-size: 24px;
-      }
-      .icon {
-        width: 64px;
-        height: 64px;
-        font-size: 32px;
-      }
+      color: #707070;
+      margin-top: 12px;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="card">
-      <div class="icon">📱</div>
-      <h1>${APP_NAME}</h1>
-      <div class="subtitle">${APP_SUBTITLE}</div>
-      <div class="description">
-        Add the source to SideStore or AltStore to get 1-tap installations and automatic updates.
-      </div>
-      
-      <div class="buttons">
-        <a class="btn btn-primary" href="${sidestore}">Add to SideStore</a>
-        <a class="btn btn-secondary" href="${altstore}">or use AltStore</a>
-      </div>
-      
-      <div class="footer">
-        <div class="hint-title">Source URL</div>
-        <div class="url-box">${feed}</div>
-        <div class="note">SideStore / AltStore must be installed to continue.</div>
-      </div>
+  <main>
+    <h1>${APP_NAME}</h1>
+    <div class="tagline">${APP_SUBTITLE}</div>
+    
+    <p class="description">
+      Add this source to SideStore or AltStore for one-tap installs and automatic updates.
+    </p>
+    
+    <div class="cta">
+      <a href="${sidestore}" class="btn-primary">Add to SideStore</a>
+      <a href="${altstore}" class="btn-secondary">Use AltStore instead</a>
     </div>
-  </div>
+    
+    <div class="source-info">
+      <div class="source-label">Source URL</div>
+      <div class="source-url">${feed}</div>
+      <div class="note">SideStore / AltStore must be installed.</div>
+    </div>
+  </main>
   
   <script>
-    // Auto-open the SideStore deep link once on load
-    setTimeout(function() {
-      location.href = ${JSON.stringify(sidestore)};
-    }, 400);
+    setTimeout(() => { location.href = ${JSON.stringify(sidestore)}; }, 300);
   </script>
 </body>
 </html>`;
