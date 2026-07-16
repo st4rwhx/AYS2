@@ -247,6 +247,54 @@ function installPage(feed) {
       color: #ffffff;
       border-color: #5865f2;
     }
+    
+    .app-footer {
+      margin-top: 48px;
+      padding-top: 32px;
+      border-top: 1px solid #262626;
+      font-size: 13px;
+    }
+    
+    .footer-section {
+      margin-bottom: 24px;
+    }
+    
+    .footer-label {
+      color: #808080;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-size: 11px;
+      margin: 0 0 8px 0;
+    }
+    
+    .footer-text {
+      color: #a0a0a0;
+      line-height: 1.6;
+      margin: 0;
+    }
+    
+    .footer-link {
+      color: #5ab3f0;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    
+    .footer-link:hover {
+      color: #7cc8f5;
+    }
+    
+    .footer-bottom {
+      padding-top: 24px;
+      border-top: 1px solid #262626;
+      margin-top: 24px;
+    }
+    
+    .copyright {
+      color: #808080;
+      font-size: 12px;
+      margin: 0;
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
@@ -285,10 +333,32 @@ function installPage(feed) {
       <a href="https://github.com/st4rwhx/AYS2" class="link-btn">
         <span class="link-icon">⚙️</span> Source Code
       </a>
-      <a href="https://discord.gg/AXAzExECSv" class="link-btn">
-        <span class="link-icon">💬</span> Discord
-      </a>
     </div>
+    
+    <footer class="app-footer">
+      <div class="footer-section">
+        <p class="footer-text">
+          ${APP_NAME} is a PlayStation 2 emulator based on ARMSX2, 
+          licensed under <strong>GNU General Public License v3.0</strong>.
+        </p>
+      </div>
+      
+      <div class="footer-section">
+        <p class="footer-label">GPL-3.0 Compliance</p>
+        <p class="footer-text">
+          The complete source code is available at 
+          <a href="https://github.com/st4rwhx/AYS2" class="footer-link">GitHub</a>.
+          See <strong>SOURCE-OFFER.txt</strong> in releases for GPL compliance details.
+        </p>
+      </div>
+      
+      <div class="footer-bottom">
+        <p class="copyright">
+          © 2024-2026 AYS2 Contributors • Based on <a href="https://github.com/ARMSX2/armsx2-ios" class="footer-link">ARMSX2</a> • 
+          <a href="https://github.com/st4rwhx/AYS2/blob/main/LICENSE" class="footer-link">View License</a>
+        </p>
+      </div>
+    </footer>
   </main>
   
   <script>
