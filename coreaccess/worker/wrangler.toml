@@ -11,11 +11,13 @@ binding = "ENTITLEMENTS"
 id = "REPLACE_WITH_KV_NAMESPACE_ID"
 
 [vars]
-# Stripe Payment Links (create them in the Stripe Dashboard — see README.md).
-LINK_MONTHLY = "https://buy.stripe.com/REPLACE_monthly"
-LINK_QUARTERLY = "https://buy.stripe.com/REPLACE_quarterly"
-LINK_YEARLY = "https://buy.stripe.com/REPLACE_yearly"
-LINK_LIFETIME = "https://buy.stripe.com/REPLACE_lifetime"
+# Stripe Payment Links. These are TEST-mode links — swap for live before launch.
+# Each link MUST carry metadata { plan: monthly|quarterly|yearly|lifetime } so
+# the webhook can map the purchase to a tier (see README.md).
+LINK_MONTHLY = "https://buy.stripe.com/test_aFa4gB4Vo6tI7vjcs25gc00"
+LINK_QUARTERLY = "https://buy.stripe.com/test_8x2eVfbjM19o9Dr8bM5gc01"
+LINK_YEARLY = "https://buy.stripe.com/test_9B614pdrUcS6eXL1No5gc02"
+LINK_LIFETIME = "https://buy.stripe.com/test_8x200l1Jc19oeXL77I5gc03"
 
 # Secret (never in this file):
 #   npx wrangler secret put STRIPE_WEBHOOK_SECRET

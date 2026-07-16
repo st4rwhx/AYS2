@@ -23,28 +23,37 @@ final class CoreAccessStore: @unchecked Sendable {
     // MARK: - Plans (display copy; checkout happens on the worker/Stripe side)
 
     struct Plan: Identifiable {
-        let id: String        // worker /subscribe?plan=<id>
+        let id: String        // matches the `plan` metadata on the Stripe link
         let title: String
         let price: String
         let cadence: String
         let badge: String?    // "POPULAR" / "BEST VALUE" / "FOUNDER"
         let detail: String
+        let link: String      // direct Stripe Payment Link (works without the worker)
     }
 
+    // Stripe TEST-mode payment links. Swap the `test_` links for live ones (and
+    // flip apiBase's worker to live) when going to production. The `id` here MUST
+    // equal the `plan` metadata set on each Stripe link so the webhook maps it.
     static let plans: [Plan] = [
         Plan(id: "monthly",   title: "1 Month",   price: "3,99 €",  cadence: "/month",
-             badge: nil,           detail: "Try CORE ACCESS"),
+             badge: nil,           detail: "Try CORE ACCESS",
+             link: "https://buy.stripe.com/test_aFa4gB4Vo6tI7vjcs25gc00"),
         Plan(id: "quarterly", title: "3 Months",  price: "9,99 €",  cadence: "/3 months",
-             badge: "POPULAR",     detail: "≈ 3,33 €/month"),
+             badge: "POPULAR",     detail: "≈ 3,33 €/month",
+             link: "https://buy.stripe.com/test_8x2eVfbjM19o9Dr8bM5gc01"),
         Plan(id: "yearly",    title: "12 Months", price: "29,99 €", cadence: "/year",
-             badge: "BEST VALUE",  detail: "≈ 2,50 €/month · −37%"),
+             badge: "BEST VALUE",  detail: "≈ 2,50 €/month · −37%",
+             link: "https://buy.stripe.com/test_9B614pdrUcS6eXL1No5gc02"),
         Plan(id: "lifetime",  title: "Lifetime",  price: "79,99 €", cadence: "once",
-             badge: "FOUNDER",     detail: "Forever. Founding member badge"),
+             badge: "FOUNDER",     detail: "Forever. Founding member badge",
+             link: "https://buy.stripe.com/test_8x200l1Jc19oeXL77I5gc03"),
     ]
 
     static func checkoutURL(plan: Plan) -> URL {
-        apiBase.appendingPathComponent("subscribe")
-            .appending(queryItems: [URLQueryItem(name: "plan", value: plan.id)])
+        // Open the Stripe link directly so buying works even before the worker
+        // is deployed. (The worker still handles the webhook → entitlement side.)
+        URL(string: plan.link) ?? apiBase
     }
 
     // MARK: - Entitlement state
