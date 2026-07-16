@@ -6,11 +6,16 @@
 [![Swift](https://img.shields.io/badge/Swift-6.0-FA7343?style=flat-square&logo=swift)](https://www.swift.org)
 [![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?style=flat-square&logo=cplusplus)](https://en.cppreference.com/)
 
-<!-- Badges Row 2: Status & Community -->
+<!-- Badges Row 2: Release & Status -->
+[![GitHub Latest Release](https://img.shields.io/github/v/release/st4rwhx/AYS2?display_name=tag&style=flat-square&logo=github)](https://github.com/st4rwhx/AYS2/releases)
+[![GitHub All Releases](https://img.shields.io/github/downloads/st4rwhx/AYS2/total?style=flat-square&logo=github)](https://github.com/st4rwhx/AYS2/releases)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/st4rwhx/AYS2/build-ios.yml?branch=main&style=flat-square&logo=github-actions&label=Build)](https://github.com/st4rwhx/AYS2/actions/workflows/build-ios.yml)
+[![Last Commit](https://img.shields.io/github/last-commit/st4rwhx/AYS2?style=flat-square&logo=github)](https://github.com/st4rwhx/AYS2/commits)
+
+<!-- Badges Row 3: Community -->
 [![GitHub Issues](https://img.shields.io/github/issues/st4rwhx/AYS2?style=flat-square&logo=github)](https://github.com/st4rwhx/AYS2/issues)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865f2?style=flat-square&logo=discord)](https://discord.gg/AXAzExECSv)
-[![Last Commit](https://img.shields.io/github/last-commit/st4rwhx/AYS2?style=flat-square&logo=github)](https://github.com/st4rwhx/AYS2/commits)
+[![GitHub Discussions](https://img.shields.io/github/discussions/st4rwhx/AYS2?style=flat-square&logo=github)](https://github.com/st4rwhx/AYS2/discussions)
 
 ## Table of Contents
 
