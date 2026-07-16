@@ -1,10 +1,10 @@
-# Cloudflare Worker that serves the ELORIS-PRISM source.json at a short URL.
+# Cloudflare Worker that serves the AYS2 source.json at a short URL.
 # Free tier — no custom domain needed. After `wrangler deploy` the source is at:
-#   https://elorisprism.<your-account-subdomain>.workers.dev
+#   https://aysx2.<your-account-subdomain>.workers.dev
 #
 # The <your-account-subdomain> is chosen once per Cloudflare account
 # (Workers & Pages → your subdomain). The Worker NAME below is the first label.
-name = "elorisprism"
+name = "aysx2"
 main = "worker.js"
 compatibility_date = "2026-07-01"
 

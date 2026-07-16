@@ -3,7 +3,7 @@
 
 import Foundation
 import SwiftUI
-import UIKit // ELORIS-PRISM: app-wide appearance (seam)
+import UIKit // AYS2: app-wide appearance (seam)
 
 /// [P51] OSD preset levels
 enum OsdPreset: Int, CaseIterable {
@@ -68,7 +68,7 @@ struct GameFixOption: Identifiable, Hashable {
     var id: String { key }
 }
 
-// ELORIS-PRISM: app-wide appearance choice (seam). `.system` follows the device;
+// AYS2: app-wide appearance choice (seam). `.system` follows the device;
 // the others force light or dark across the whole app (NXE chrome + ARMSX2 views).
 enum AppColorScheme: String, CaseIterable, Identifiable {
     case system, light, dark
@@ -941,7 +941,7 @@ final class SettingsStore: @unchecked Sendable {
         }
     }
     var libraryBackgroundRevision = 0
-    // ELORIS-PRISM: app-wide appearance preference (seam). Drives the window's
+    // AYS2: app-wide appearance preference (seam). Drives the window's
     // interface style so both our NXE chrome and the underlying ARMSX2 views flip.
     var appColorScheme: AppColorScheme {
         didSet {
@@ -1184,7 +1184,7 @@ final class SettingsStore: @unchecked Sendable {
         libraryLandscapeBackgroundPath = UserDefaults.standard.string(forKey: "ARMSX2iOSLibraryLandscapeBackgroundPath") ?? ""
         let savedDim = UserDefaults.standard.object(forKey: "ARMSX2iOSLibraryBackgroundDim") as? Double
         libraryBackgroundDim = Self.clampedLibraryBackgroundDim(savedDim ?? 0.35)
-        // ELORIS-PRISM: app-wide appearance (seam)
+        // AYS2: app-wide appearance (seam)
         appColorScheme = AppColorScheme(rawValue: UserDefaults.standard.string(forKey: "ARMSX2iOSAppColorScheme") ?? "") ?? .system
         normalizeDEV9Settings()
         VPadSkinLibraryStore.shared.adoptLegacySelection(virtualPadSkin)

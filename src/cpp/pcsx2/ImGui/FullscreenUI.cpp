@@ -1282,8 +1282,8 @@ void FullscreenUI::DrawLandingTemplate(ImVec2* menu_pos, ImVec2* menu_size)
 			dl->AddImage(reinterpret_cast<ImTextureID>(GetCachedTexture("icons/AppIconLarge.png")->GetNativeHandle()),
 				logo_pos, logo_pos + logo_size);
 			const ImVec2 branding_pos(logo_pos.x + logo_size.x + LayoutScale(LAYOUT_MENU_BUTTON_X_PADDING), logo_pos.y);
-			// ELORIS-PRISM: fullscreen heading brand (seam)
-			ImGuiFullscreen::AddTextWithShadow(dl, heading_font, branding_pos, ImGui::GetColorU32(ImGuiCol_Text), "ELORIS-PRISM");
+			// AYS2: fullscreen heading brand (seam)
+			ImGuiFullscreen::AddTextWithShadow(dl, heading_font, branding_pos, ImGui::GetColorU32(ImGuiCol_Text), "AYS2");
 		}
 
 		// draw time

@@ -782,7 +782,7 @@ static int ARMSX2GetIOSMajorVersion()
 
 static const char* ARMSX2DefaultJITScriptProtocol()
 {
-    // ELORIS-PRISM: JIT default = legacy brk #0x69 (seam) — the DolphiniOS/StikDebug
+    // AYS2: JIT default = legacy brk #0x69 (seam) — the DolphiniOS/StikDebug
     // handshake that actually works on iOS sideload setups incl. iOS 26. The
     // universal brk #0xf00d path SIGTRAPs there and blocks boot, so default to
     // legacy on every version; users can opt into universal from Settings.
@@ -804,7 +804,7 @@ static void ARMSX2MigrateJITScriptProtocolForIOS(SettingsInterface* si, const ch
     if (!si)
         return;
 
-    // ELORIS-PRISM: JIT migration V2 (seam) — one-time reset of the old "universal"
+    // AYS2: JIT migration V2 (seam) — one-time reset of the old "universal"
     // default that SIGTRAPs on the StikDebug (brk #0x69) enabler most users have.
     const int iosMajor = ARMSX2GetIOSMajorVersion();
     const char* defaultProtocol = ARMSX2DefaultJITScriptProtocol();

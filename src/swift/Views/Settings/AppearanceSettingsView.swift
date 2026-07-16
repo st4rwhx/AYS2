@@ -23,7 +23,7 @@ struct AppearanceSettingsView: View {
 
     var body: some View {
         Form {
-            // ELORIS-PRISM: app-wide theme picker (seam)
+            // AYS2: app-wide theme picker (seam)
             Section {
                 Picker(settings.localized("Theme"), selection: $settings.appColorScheme) {
                     ForEach(AppColorScheme.allCases) { scheme in

@@ -26,8 +26,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	if(ARMSX2_MAC_CATALYST)
 		set(ARMSX2_DEFAULT_BUNDLE_IDENTIFIER "com.armsx2.macos")
 	else()
-		# ELORIS-PRISM: bundle id (seam) — HARD CONSTRAINT, never change (preserves install/data)
-		set(ARMSX2_DEFAULT_BUNDLE_IDENTIFIER "com.balaj.elorisprism")
+		# AYS2: bundle id (seam) — HARD CONSTRAINT, never change (preserves install/data)
+		set(ARMSX2_DEFAULT_BUNDLE_IDENTIFIER "com.ayano.aysx2")
 	endif()
 	set(ARMSX2_BUNDLE_IDENTIFIER "${ARMSX2_DEFAULT_BUNDLE_IDENTIFIER}" CACHE STRING "Apple bundle identifier")
 	set(ARMSX2_DEVELOPMENT_TEAM "" CACHE STRING "Apple Development Team ID for device signing")
@@ -138,7 +138,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 
 	set(SWIFT_SOURCES
 		${CMAKE_SOURCE_DIR}/../swift/Views/RootView.swift
-		# ELORIS-PRISM: additive Swift sources (seam)
+		# AYS2: additive Swift sources (seam)
 		${CMAKE_SOURCE_DIR}/../swift/Views/DashboardView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/RetroKit.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/CommunityView.swift
@@ -234,7 +234,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 	set_target_properties(ARMSX2iOS PROPERTIES
 		MACOSX_BUNDLE TRUE
 		MACOSX_BUNDLE_GUI_IDENTIFIER "${ARMSX2_BUNDLE_IDENTIFIER}"
-		MACOSX_BUNDLE_BUNDLE_NAME "ELORIS-PRISM"   # ELORIS-PRISM: app name (seam)
+		MACOSX_BUNDLE_BUNDLE_NAME "AYS2"   # AYS2: app name (seam)
 		MACOSX_BUNDLE_BUNDLE_VERSION "${ARMSX2_BUILD_NUMBER}"
 		MACOSX_BUNDLE_SHORT_VERSION_STRING "${ARMSX2_VERSION}"
 		MACOSX_BUNDLE_INFO_PLIST "${CMAKE_BINARY_DIR}/Info.plist"

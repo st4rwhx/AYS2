@@ -1,8 +1,8 @@
-# SideStore Community-Source submission — ELORIS-PRISM
+# SideStore Community-Source submission — AYS2
 
 Ready-to-post material for a Pull Request to
 [SideStore/Community-Source](https://github.com/SideStore/Community-Source)
-(gets ELORIS-PRISM into "SideStore Team Picks").
+(gets AYS2 into "SideStore Team Picks").
 
 > Post the PR from the account that owns the source repo. Attach the checklist
 > items below. Screenshots must be added once the Frutiger Aero redesign ships.
@@ -11,11 +11,11 @@ Ready-to-post material for a Pull Request to
 
 ## PR title
 
-Add ELORIS-PRISM (PlayStation 2 emulator for iPhone & iPad)
+Add AYS2 (PlayStation 2 emulator for iPhone & iPad)
 
 ## PR description (paste this)
 
-**App:** ELORIS-PRISM — a PlayStation 2 emulator for iOS.
+**App:** AYS2 — a PlayStation 2 emulator for iOS.
 
 **What it does:** Loads the user's own PS2 BIOS dump and disc images
 (.iso / .bin / .chd / .img) and plays them with a JIT recompiler. Save states,
@@ -31,10 +31,10 @@ UX and a frictionless setup.
 
 **Not pirated:** ships no BIOS and no games; the user supplies their own dumps.
 
-**Source URL:** `https://elorisprism.<account>.workers.dev`
+**Source URL:** `https://aysx2.<account>.workers.dev`
 (short proxy of the GitHub release `source.json`; downloads are on GitHub Releases)
 
-**Bundle id:** `com.balaj.elorisprism`
+**Bundle id:** `com.ayano.aysx2`
 
 **Entitlements:** the app uses no special entitlements beyond standard sandbox
 (file access for imported ISO/BIOS via the Files app). No network entitlement

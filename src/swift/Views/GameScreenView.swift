@@ -252,7 +252,11 @@ struct GameScreenView: View {
             .preference(key: GameScreenSizePreferenceKey.self, value: geo.size)
         }
         .onPreferenceChange(GameScreenSizePreferenceKey.self) { _ in
-            syncFullscreenStateFromWindow()
+            // AYS2: onPreferenceChange's closure is @Sendable (nonisolated); hop to the
+            // main actor before touching main-actor state (seam)
+            Task { @MainActor in
+                syncFullscreenStateFromWindow()
+            }
         }
         .sheet(isPresented: childPresentedBinding(.saveStates)) {
             SaveStatesPanel { message, isImportant in
@@ -433,7 +437,7 @@ struct GameScreenView: View {
         // invisible at 30pt over gameplay. Using a template SF Symbol with a strong
         // white foreground guarantees the icon is readable on both dark and bright
         // gameplay regardless of any bundled asset, so the button is never iconless.
-        // ELORIS-PRISM: pause glyph instead of "..." (seam)
+        // AYS2: pause glyph instead of "..." (seam)
         Image(systemName: "pause.fill")
             .font(.system(size: 18, weight: .heavy))
             .symbolRenderingMode(.hierarchical)

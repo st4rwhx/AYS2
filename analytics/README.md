@@ -1,4 +1,4 @@
-# ELORIS-PRISM — Anonymous diagnostics
+# AYS2 — Anonymous diagnostics
 
 When the app crashes or hits a fatal error, it sends an **anonymous** report so
 bugs can be found and fixed. No account, no personal data — a random install

@@ -1,4 +1,4 @@
-name: Build iPSX2 iOS
+name: Build AYS2 iOS
 
 # Déclenche sur chaque push sur main, ou manuellement depuis l'onglet Actions
 on:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    name: Build iPSX2 (iOS arm64)
+    name: Build AYS2 (iOS arm64)
     runs-on: macos-14 # Apple Silicon — stable Xcode/SDK set
     timeout-minutes: 90 # Sécurité : 1h30 max
 
@@ -62,7 +62,7 @@ jobs:
           key: cmake-ios-${{ hashFiles('src/cpp/CMakeLists.txt', 'src/cpp/common/CMakeLists.txt', 'src/cpp/pcsx2/CMakeLists.txt', 'cmake/**') }}
           restore-keys: cmake-ios-
 
-      # ── 5. Configurer cmake → génère iPSX2.xcodeproj ───────────────────────
+      # ── 5. Configurer cmake → génère AYS2.xcodeproj ───────────────────────
       - name: CMake configure
         run: |
           # --fresh wipes the cached CMakeCache/CMakeFiles and reruns configure
@@ -82,7 +82,7 @@ jobs:
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -DCMAKE_CXX_STANDARD=20 \
             -DCMAKE_CXX_STANDARD_REQUIRED=ON \
-            -DARMSX2_BUNDLE_IDENTIFIER="com.balaj.elorisprism" \
+            -DARMSX2_BUNDLE_IDENTIFIER="com.ayano.aysx2" \
             "$GITHUB_WORKSPACE/src/cpp" 2>&1 | tee cmake_output.txt
           # Extraire erreurs et les mettre dans le Summary public
           echo '## CMake Output' >> $GITHUB_STEP_SUMMARY
@@ -90,7 +90,7 @@ jobs:
           grep -E '(Error|error|Warning|CMake Error|failed|FAILED)' cmake_output.txt | tail -50 >> $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
           # Echouer si cmake a échoué
-          grep -q 'Configuring incomplete\|Error\|error' cmake_output.txt && exit 1 || exit 0
+          grep -qE 'Configuring incomplete|Error|error' cmake_output.txt && exit 1 || exit 0
 
       # ── 6. Compiler avec xcodebuild ─────────────────────────────────────────
       - name: Build (xcodebuild)
@@ -138,7 +138,7 @@ jobs:
           # ARMSX2_VERSION (2.2.x); only the outward-facing bundle version is
           # rewritten here. Without this the store refuses to install with
           # "The downloaded version does not match the version specified by the source".
-          # ELORIS-PRISM: pin IPA version to SideStore feed version 0.1.<run> (seam)
+          # AYS2: pin IPA version to SideStore feed version 0.1.<run> (seam)
           VERSION="0.1.${GITHUB_RUN_NUMBER}"
           APP_PLIST="$GITHUB_WORKSPACE/Payload/ARMSX2iOS.app/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_PLIST"
@@ -146,15 +146,15 @@ jobs:
           echo "Pinned bundle version → $VERSION (CFBundleVersion ${GITHUB_RUN_NUMBER})"
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PLIST"
           cd "$GITHUB_WORKSPACE"
-          zip -r iPSX2.ipa Payload/
-          ls -lh iPSX2.ipa
+          zip -r AYS2.ipa Payload/
+          ls -lh AYS2.ipa
 
       # ── 8. Upload l'IPA comme artifact téléchargeable ──────────────────────
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: iPSX2-${{ github.sha }}
-          path: iPSX2.ipa
+          name: AYS2-${{ github.sha }}
+          path: AYS2.ipa
           retention-days: 14 # Dispo 2 semaines
 
       # ── 8b. Publier l'IPA en GitHub Release (lien direct pour Sideloadly) ───
@@ -162,38 +162,27 @@ jobs:
       # pointe toujours vers le dernier IPA. Sur un repo public, l'asset a une
       # URL de téléchargement directe (sans login) utilisable dans Sideloadly.
       - name: Publish IPA to rolling Release
-        # Publishes to the PUBLIC storefront repo (ELORIS-PRISM), NEVER to this
-        # source repo. Requires a repo-scoped PAT stored as the RELEASE_TOKEN
-        # secret (the default GITHUB_TOKEN can't write to another repo). If the
-        # secret/repo isn't set up yet this step no-ops instead of failing the
-        # build — the IPA is always available as an artifact above.
-        continue-on-error: true
+        # Publishes directly to this repo (st4rwhx/AYS2) using the native GITHUB_TOKEN
+        # which has write access to the repo triggering the workflow.
         env:
-          # Target public storefront repo (@handle/ELORIS-PRISM). Change this
-          # once the storefront account exists.
-          RELEASE_REPO: ayanodeath/ELORIS-PRISM
+          RELEASE_REPO: st4rwhx/AYS2
           # Contact for the GPL-3.0 written offer (§6). Anyone who has the app
           # can request the corresponding source here. Fill in your email.
           SOURCE_CONTACT: "ayanoxkiyotakaxpsycoworld@gmail.com"
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [[ -z "${GH_TOKEN:-}" ]]; then
-            echo "::warning::RELEASE_TOKEN secret not set — skipping publish to $RELEASE_REPO."
-            echo "Create a repo-scoped PAT and add it as the RELEASE_TOKEN secret to enable auto-publish."
-            exit 0
-          fi
           TAG="latest"
           VERSION="0.1.${GITHUB_RUN_NUMBER}"
-          # Public-facing asset is branded ELORIS-PRISM; internal build target
-          # stays iPSX2 (scheme/paths), so rename the packaged IPA here.
+          # Public-facing asset is branded AYS2; internal build target
+          # stays AYS2 (scheme/paths), so rename the packaged IPA here.
           # Versioned filename → the download URL is IMMUTABLE per version. A
           # client whose cached source.json is a build or two behind still
           # resolves to a matching IPA (no "downloaded version does not match"),
           # because the rolling release is never deleted and old versioned IPAs
           # stay reachable. Only the feed files (source.json/icon) are refreshed.
-          IPA_NAME="ELORIS-PRISM-${VERSION}.ipa"
-          cp iPSX2.ipa "$IPA_NAME"
+          IPA_NAME="AYS2-${VERSION}.ipa"
+          cp AYS2.ipa "$IPA_NAME"
           IPA_SIZE=$(stat -f%z "$IPA_NAME" 2>/dev/null || stat -c%s "$IPA_NAME")
           TODAY=$(date +%F)
           # Integrity hashes — required by SideStore's Community-Source submission
@@ -217,7 +206,7 @@ jobs:
           # is the ONLY compliance pointer needed — it names no repo and says
           # nothing about what the app is, so it stays SEO-neutral.
           cat > SOURCE-OFFER.txt <<OFFER
-          ELORIS-PRISM includes components licensed under the GNU General Public
+          AYS2 includes components licensed under the GNU General Public
           License, version 3 (GPL-3.0). In accordance with section 6 of that
           license, the complete corresponding source code is available to any
           person who possesses this software, at no charge, on request for a
@@ -267,9 +256,9 @@ jobs:
           # files (source.json/icon/offer/checksums) are always refreshed.
           gh release view "$TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1 || \
             gh release create "$TAG" --repo "$RELEASE_REPO" \
-              --title "ELORIS-PRISM (rolling)" \
+              --title "AYS2 (rolling)" \
               --prerelease \
-              --notes "Rolling ELORIS-PRISM release. Add this source in SideStore/AltStore for 1-tap updates:
+              --notes "Rolling AYS2 release. Add this source in SideStore/AltStore for 1-tap updates:
           \`https://github.com/${RELEASE_REPO}/releases/download/${TAG}/source.json\`"
           gh release upload "$TAG" "$IPA_NAME" source.json icon.png SOURCE-OFFER.txt checksums.txt \
             --repo "$RELEASE_REPO" --clobber

@@ -1,4 +1,4 @@
-// ELORIS-PRISM telemetry ingest — Cloudflare Worker.
+// AYS2 telemetry ingest — Cloudflare Worker.
 // SPDX-License-Identifier: GPL-3.0+
 //
 // Receives anonymous crash/error reports POSTed by the app and files them as
@@ -14,7 +14,7 @@ const MAX_BODY = 64 * 1024; // reject oversized payloads
 
 export default {
   async fetch(request, env) {
-    if (request.method === 'GET') return new Response('eloris-prism telemetry ingest', { status: 200 });
+    if (request.method === 'GET') return new Response('ays2 telemetry ingest', { status: 200 });
     if (request.method !== 'POST') return json({ error: 'method' }, 405);
 
     if (env.INGEST_KEY && request.headers.get('X-Ingest-Key') !== env.INGEST_KEY)
@@ -44,7 +44,7 @@ export default {
     const gh = {
       'Authorization': `Bearer ${token}`,
       'Accept': 'application/vnd.github+json',
-      'User-Agent': 'eloris-prism-telemetry',
+      'User-Agent': 'ays2-telemetry',
       'Content-Type': 'application/json',
       'X-GitHub-Api-Version': '2022-11-28',
     };
