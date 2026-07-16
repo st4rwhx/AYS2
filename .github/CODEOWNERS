@@ -1,0 +1,12 @@
+# AYS2 Code Ownership
+
+# Default owners
+* @st4rwhx
+
+# Specific paths
+/src/cpp/ @st4rwhx
+/src/swift/ @st4rwhx
+/.github/workflows/ @st4rwhx
+/source/worker/ @st4rwhx
+/analytics/ @st4rwhx
+/docs/ @st4rwhx
