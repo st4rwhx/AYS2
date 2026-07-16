@@ -118,6 +118,7 @@ write_svnrev_h()
 
 # AYS2: Flat structure - direct subdirectories (not from ARMSX2_ROOT)
 add_subdirectory(common)
+add_subdirectory(Casting)
 add_subdirectory(pcsx2)
 
 if (WIN32)
@@ -296,6 +297,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 
 	target_link_libraries(ARMSX2iOS PRIVATE
 		PCSX2
+		casting
 		SDL3::SDL3
 		${ARMSX2_APPLE_FRAMEWORKS}
 	)

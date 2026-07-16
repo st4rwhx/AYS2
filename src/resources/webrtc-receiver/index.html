@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AYS2 WebRTC Receiver</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="container">
+        <div id="video-container">
+            <video id="video" autoplay playsinline></video>
+            <div id="fullscreen-btn" class="control-btn" title="Fullscreen">⛶</div>
+        </div>
+        
+        <div id="stats-panel">
+            <div class="stat-row">
+                <span class="stat-label">Status:</span>
+                <span id="status" class="stat-value status-connecting">Connecting...</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Frames:</span>
+                <span id="frames" class="stat-value">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Latency:</span>
+                <span id="latency" class="stat-value">-- ms</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Bitrate:</span>
+                <span id="bitrate" class="stat-value">-- Mbps</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Packets Lost:</span>
+                <span id="packets-lost" class="stat-value">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Connection:</span>
+                <span id="connection-state" class="stat-value">--</span>
+            </div>
+            <button id="stats-toggle" class="toggle-btn">Hide Stats</button>
+        </div>
+    </div>
+
+    <script src="receiver.js"></script>
+</body>
+</html>

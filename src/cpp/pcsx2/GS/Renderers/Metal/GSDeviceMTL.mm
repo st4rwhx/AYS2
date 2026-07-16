@@ -15,6 +15,11 @@
 #include "cpuinfo.h"
 #include "imgui.h"
 
+#include <chrono>
+
+// AYS2: Include frame capture for AirPlay casting
+#include "Casting/AirPlayFrameCapture.h"
+
 #ifdef __APPLE__
 #include "GSMTLSharedHeader.h"
 
@@ -1582,6 +1587,19 @@ void GSDeviceMTL::EndPresent()
 	ImGui::Render();
 	RenderImGui(ImGui::GetDrawData());
 	EndRenderPass();
+	
+	// AYS2: Capture frame for AirPlay casting (before drawable presentation)
+	if (m_current_drawable) {
+		AYS2::Casting::AirPlayFrameCapture::getInstance().captureRenderTarget(
+			(__bridge void*)[m_current_drawable texture],
+			GetWindowSize().x,
+			GetWindowSize().y,
+			std::chrono::duration_cast<std::chrono::microseconds>(
+				std::chrono::high_resolution_clock::now().time_since_epoch()
+			).count()
+		);
+	}
+	
 	if (m_current_drawable)
 	{
 		const bool use_present_drawable = m_use_present_drawable == UsePresentDrawable::Always ||
