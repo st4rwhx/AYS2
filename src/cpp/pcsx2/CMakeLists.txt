@@ -95,6 +95,7 @@ set(pcsx2Sources
 	Patch.cpp
 	Pcsx2Config.cpp
 	PerformanceMetrics.cpp
+	AYS2Diagnostics.cpp
 	PrecompiledHeader.cpp
 	R3000A.cpp
 	R3000AInterpreter.cpp

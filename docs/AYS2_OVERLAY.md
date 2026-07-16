@@ -50,6 +50,9 @@ Copied forward untouched on every rebase.
 | `src/swift/Models/CoreAccessStore.swift` | CORE ACCESS membership: entitlement via our worker, upsell cadence |
 | `src/swift/Views/CoreAccessView.swift` | CORE ACCESS storefront + post-game upsell sheet |
 | `coreaccess/worker/*` | Stripe checkout redirect + entitlement API (Cloudflare Worker) |
+| `src/cpp/pcsx2/AYS2Diagnostics.{h,cpp}` | Flight Recorder: ring buffer of per-window metric snapshots (Layer 1) |
+| `src/swift/Models/DiagnosticsStore.swift` | Reads the recorder + honest rules pass (Layer 3) |
+| `src/swift/Views/DiagnosticsView.swift` | Diagnostics screen: recorder toggle, chart, findings |
 | `src/swift/Views/TermsOfUseView.swift` | Terms of use / privacy screen |
 | `src/assets/Assets.xcassets/AppIcon.appiconset/*` | Our app icon (13 sizes) |
 
@@ -68,6 +71,8 @@ Copied forward untouched on every rebase.
 | `src/cpp/pcsx2/ImGui/ImGuiOverlays.cpp` | in-game OSD brand → `AYS2` |
 | `src/cpp/pcsx2/ImGui/FullscreenUI.cpp` | fullscreen heading brand → `AYS2` |
 | `src/cpp/ARMSX2Bridge.mm` | `buildVersion()` → `AYS2 v…` |
+| `src/cpp/pcsx2/PerformanceMetrics.cpp` | one-line Flight Recorder snapshot call in Update() |
+| `src/cpp/pcsx2/CMakeLists.txt` | compile `AYS2Diagnostics.cpp` into the core |
 | `src/cpp/CMakeLists.txt` | bundle id `com.ayano.aysx2`, app name, our SWIFT_SOURCES additions |
 | `src/cpp/Info.plist.in` | `CFBundleDisplayName` → AYS2 |
 | `.github/workflows/build-ios.yml` | pin IPA version to `0.1.<run>`, SideStore publish, checksums |

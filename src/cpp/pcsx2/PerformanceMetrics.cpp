@@ -8,6 +8,7 @@
 #include "common/Threading.h"
 
 #include "PerformanceMetrics.h"
+#include "AYS2Diagnostics.h" // AYS2: flight recorder (seam)
 
 #include "GS.h"
 #include "GS/GSCapture.h"
@@ -224,6 +225,8 @@ void PerformanceMetrics::Update(bool gs_register_write, bool fb_blit, bool is_sk
 	s_frames_since_last_update = 0;
 	s_unskipped_frames_since_last_update = 0;
 	s_presents_since_last_update = 0;
+
+	AYS2Diagnostics::RecordFrame(); // AYS2: flight recorder snapshot (seam)
 
 	Host::OnPerformanceMetricsUpdated();
 }
