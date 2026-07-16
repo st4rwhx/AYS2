@@ -432,6 +432,8 @@ struct SettingsGridView: View {
                                  systemImage: "circle.lefthalf.filled") { AppearanceSettingsView() }
                     SettingsTile(title: "System", subtitle: "Sounds · About · Version",
                                  systemImage: "gearshape") { SystemSettingsView() }
+                    SettingsTile(title: "Core Access", subtitle: "Support · Perks · Betas",
+                                 systemImage: "crown.fill") { CoreAccessView(showsClose: false) }
                 }
                 .padding(16)
             }

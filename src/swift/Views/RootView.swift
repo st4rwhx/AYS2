@@ -24,6 +24,7 @@ struct RootView: View {
     @State private var fileImporter = FileImportHandler.shared
     @State private var showBootSplash = true
     @State private var showCommunityWelcome = false
+    @State private var showCoreAccessUpsell = false // AYS2: post-game upsell (seam)
 
     var body: some View {
         ZStack {
@@ -60,6 +61,21 @@ struct RootView: View {
         }
         .onChange(of: settings.appColorScheme) { _, newValue in
             applyAppColorScheme(newValue)
+        }
+        // AYS2: polite CORE ACCESS upsell after the player closes a game (seam).
+        // CoreAccessStore enforces the cadence (never the first 3 days, ≥4 days
+        // apart, never for members, permanent opt-out).
+        .onChange(of: appState.currentScreen) { oldScreen, newScreen in
+            if oldScreen == .playing, newScreen == .menu,
+               CoreAccessStore.shared.shouldShowPostGameUpsell {
+                CoreAccessStore.shared.markUpsellShown()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                    showCoreAccessUpsell = true
+                }
+            }
+        }
+        .sheet(isPresented: $showCoreAccessUpsell) {
+            CoreAccessUpsellSheet()
         }
         .onOpenURL { url in
             if !ARMSX2DeepLinkHandler.handle(url) {

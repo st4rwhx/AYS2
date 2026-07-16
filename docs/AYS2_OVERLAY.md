@@ -47,6 +47,9 @@ Copied forward untouched on every rebase.
 | `src/swift/Views/CommunityView.swift` | Discord/GitHub welcome sheet + floating community bar |
 | `src/swift/Views/DiscordLogoShape.swift` | Discord logo drawn natively as a SwiftUI Shape |
 | `src/swift/Models/SoundManager.swift` | UI sounds |
+| `src/swift/Models/CoreAccessStore.swift` | CORE ACCESS membership: entitlement via our worker, upsell cadence |
+| `src/swift/Views/CoreAccessView.swift` | CORE ACCESS storefront + post-game upsell sheet |
+| `coreaccess/worker/*` | Stripe checkout redirect + entitlement API (Cloudflare Worker) |
 | `src/swift/Views/TermsOfUseView.swift` | Terms of use / privacy screen |
 | `src/assets/Assets.xcassets/AppIcon.appiconset/*` | Our app icon (13 sizes) |
 
@@ -54,7 +57,7 @@ Copied forward untouched on every rebase.
 
 | File | Seam (what we change) |
 |---|---|
-| `src/swift/Views/RootView.swift` | show `DashboardView()` instead of the tab menu; app color-scheme apply; community welcome sheet |
+| `src/swift/Views/RootView.swift` | show `DashboardView()` instead of the tab menu; app color-scheme apply; community welcome sheet; post-game CORE ACCESS upsell |
 | `src/swift/Views/GameScreenView.swift` | pause button icon → `pause.fill` (menu itself is upstream's QuickMenuView; tile-grid redesign deferred) |
 | `src/swift/Models/SettingsStore.swift` | `AppColorScheme` (system/light/dark) setting |
 | `src/swift/Views/Settings/AppearanceSettingsView.swift` | Theme picker |

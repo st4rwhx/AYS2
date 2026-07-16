@@ -145,6 +145,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		${CMAKE_SOURCE_DIR}/../swift/Views/DiscordLogoShape.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/TermsOfUseView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/SoundManager.swift
+		${CMAKE_SOURCE_DIR}/../swift/Models/CoreAccessStore.swift
+		${CMAKE_SOURCE_DIR}/../swift/Views/CoreAccessView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/BootSplashView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/GameListView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/PerGameSettingsPanel.swift
