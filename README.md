@@ -1,13 +1,28 @@
 # AYS2 — PlayStation 2 Emulator for iOS
 
-[![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](LICENSE)
-[![GitHub release](https://img.shields.io/github/v/release/st4rwhx/AYS2?include_prereleases)](https://github.com/st4rwhx/AYS2/releases)
-[![iOS 17.0+](https://img.shields.io/badge/iOS-17.0+-blue.svg)](#requirements)
-[![Build Status](https://github.com/st4rwhx/AYS2/actions/workflows/build-ios.yml/badge.svg)](https://github.com/st4rwhx/AYS2/actions)
+<!-- Badges Row 1: License, Version, Platform -->
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg?style=flat-square&logo=gnu)](LICENSE)
+[![GitHub Release](https://img.shields.io/github/v/release/st4rwhx/AYS2?style=flat-square&logo=github&label=Release)](https://github.com/st4rwhx/AYS2/releases)
+[![iOS Minimum](https://img.shields.io/badge/iOS-17.0+-black?style=flat-square&logo=apple)](https://www.apple.com/ios)
+[![Swift](https://img.shields.io/badge/Swift-6.0-FA7343?style=flat-square&logo=swift)](https://www.swift.org)
 
-**AYS2** is a free and open-source PlayStation 2 emulator for iOS, based on [ARMSX2](https://github.com/ARMSX2/ARMSX2). It brings PS2 gaming to iPhone and iPad with high compatibility and performance.
+<!-- Badges Row 2: Build, Status, Community -->
+[![Build Status](https://img.shields.io/github/actions/workflow/status/st4rwhx/AYS2/build-ios.yml?style=flat-square&logo=github-actions&label=Build)](https://github.com/st4rwhx/AYS2/actions/workflows/build-ios.yml)
+[![GitHub Issues](https://img.shields.io/github/issues/st4rwhx/AYS2?style=flat-square&logo=github)](https://github.com/st4rwhx/AYS2/issues)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865f2?style=flat-square&logo=discord)](https://discord.gg/AXAzExECSv)
+[![Contributors](https://img.shields.io/github/contributors/st4rwhx/AYS2?style=flat-square&logo=github)](https://github.com/st4rwhx/AYS2/graphs/contributors)
 
-## Features
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Features](#features)
+- [Requirements](#requirements)
+- [Building from Source](#building-from-source)
+- [Documentation](#documentation)
+- [Community](#community)
+- [License](#license)
+
+---
 
 - 🎮 **Full PS2 Emulation** — Play your favorite PlayStation 2 games on iOS
 - ⚡ **JIT Compilation** — High-speed emulation with x86 → ARM64 recompilation
