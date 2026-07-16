@@ -25,6 +25,7 @@ struct RootView: View {
     @State private var showBootSplash = true
     @State private var showCommunityWelcome = false
     @State private var showCoreAccessUpsell = false // AYS2: post-game upsell (seam)
+    @State private var showCoreAccessLaunch = false // AYS2: subscription on launch (seam)
 
     var body: some View {
         ZStack {
@@ -42,10 +43,16 @@ struct RootView: View {
                     withAnimation(.easeOut(duration: 0.2)) {
                         showBootSplash = false
                     }
-                    // Warm Discord / GitHub-star invite, once the splash clears.
+                    // AYS2: on launch, show CORE ACCESS first for non-members
+                    // (with its always-visible top-right X); members instead get
+                    // the Discord / GitHub-star community invite. One sheet only.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                         if appState.currentScreen == .menu {
-                            showCommunityWelcome = true
+                            if CoreAccessStore.shared.isActive {
+                                showCommunityWelcome = true
+                            } else {
+                                showCoreAccessLaunch = true
+                            }
                         }
                     }
                 }
@@ -89,6 +96,11 @@ struct RootView: View {
         }
         .sheet(isPresented: $showCommunityWelcome) {
             CommunityWelcomeView()
+        }
+        // AYS2: CORE ACCESS on launch (non-members). CoreAccessView shows its
+        // small top-right X by default (showsClose), so it's always dismissible.
+        .sheet(isPresented: $showCoreAccessLaunch) {
+            CoreAccessView()
         }
     }
 }
