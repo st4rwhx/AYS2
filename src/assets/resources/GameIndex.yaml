@@ -2577,7 +2577,7 @@ SCAJ-20190:
   gsHWFixes:
     halfPixelOffset: 5 # Fixes misaligned bloom.
     alignSprite: 1 # Fixes water vertical lines.
-    autoFlush: 1 # Fixes sun occlusion.
+    autoFlush: 0 # Test: Disabled for iOS Metal GPU-CPU sync bottleneck. Monitor sun occlusion visual glitches.
     nativeScaling: 1 # Fixes light blooms.
 SCAJ-20191:
   name: "Super Robot Taisen OG - Original Generations Gaiden [Limited Edition]"
