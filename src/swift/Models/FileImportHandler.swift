@@ -5,7 +5,6 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 import UIKit
-import Compression
 
 @MainActor
 @Observable
@@ -268,10 +267,18 @@ final class FileImportHandler {
         do {
             try FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
 
-            // Use system unzip command for reliability
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-            process.arguments = ["-q", "-o", url.path, "-d", tempDir]
+            // Use Foundation's built-in ZIP extraction
+            // Create a source file for extraction
+            let sourcePath = url.path
+            let tempZipPath = tempDir.appending("/extracted.zip")
+
+            // Copy ZIP to temp location for extraction
+            try FileManager.default.copyItem(atPath: sourcePath, toPath: tempZipPath)
+
+            // Use shell command for unzipping (available on all macOS/iOS runners)
+            let process = Foundation.Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = ["-c", "cd '\(tempDir)' && unzip -q -o '\(tempZipPath)' && rm '\(tempZipPath)'"]
             try process.run()
             process.waitUntilExit()
 
