@@ -18,16 +18,16 @@
         {
           "version": "2.4.1",
           "date": "2026-07-17",
-          "localizedDescription": "• fix: Revert ZIP support due to iOS compilation limitations\n• fix: Remove unused Compression import and improve ZIP extraction reliability\n• fix: Align IPA bundle version with source.json version to fix SideStore installation\n• feat: Add ZIP file support with automatic extraction and game import\n• feat: add interactive 3D perspective effect to game cover art\n• feat: improve SideStore presentation with detailed description and 2.4.1 version\n• feat: proper semantic releases (2.4.1) + fix rolling release workflow\n• feat: new neon AYS2 app icon + fix icon generation path",
-          "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/v2.4.1-build.200/AYS2-v2.4.1-build.200.ipa",
-          "size": 22067401,
+          "localizedDescription": "What's new in v2.4.1-build.202:\n• fix: commit updated source.json back to repository after build\n• fix: Revert ZIP support due to iOS compilation limitations\n• fix: Remove unused Compression import and improve ZIP extraction reliability\n• fix: Align IPA bundle version with source.json version to fix SideStore installation\n• feat: Add ZIP file support with automatic extraction and game import\n• feat: add interactive 3D perspective effect to game cover art\n• feat: improve SideStore presentation with detailed description and 2.4.1 version\n• feat: proper semantic releases (2.4.1) + fix rolling release workflow",
+          "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/v2.4.1-build.202/AYS2-v2.4.1-build.202.ipa",
+          "size": 22677495,
           "minOSVersion": "17.0"
         }
       ],
       "version": "2.4.1",
       "versionDate": "2026-07-17",
-      "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/latest/AYS2-v2.4.1-build.200.ipa",
-      "size": 22067401,
+      "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/v2.4.1-build.202/AYS2-v2.4.1-build.202.ipa",
+      "size": 22677495,
       "appPermissions": {}
     }
   ]
