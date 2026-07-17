@@ -57,8 +57,8 @@ def generate_icons(source_path):
     else:
         repo_root = script_dir
     
-    # iOS app icons go to AYS2-tvOS/Assets.xcassets/AppIcon.appiconset/
-    ios_icon_dir = repo_root / "AYS2-tvOS" / "Assets.xcassets" / "AppIcon.appiconset"
+    # iOS app icons go to src/assets/Assets.xcassets/AppIcon.appiconset/
+    ios_icon_dir = repo_root / "src" / "assets" / "Assets.xcassets" / "AppIcon.appiconset"
     
     # SideStore feed icon goes to source/worker/
     feed_icon_dir = repo_root / "source" / "worker"
