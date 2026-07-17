@@ -18,16 +18,16 @@
         {
           "version": "2.4.1",
           "date": "2026-07-17",
-          "localizedDescription": "feat: proper semantic releases (2.4.1) + new neon icon\nfeat: AYS2 Flight Recorder — diagnostic system Layer 1\nfeat: Cloudflare Worker auto-deploy + CORE ACCESS membership\nfix: AYS2Diagnostics include in iOS build\n\nCore: ARMSX2 2.4.1 (match ARMSX2 nightly)\nReleases: Discrete builds (v2.4.1-build.N) instead of rolling",
-          "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/latest/AYS2-v2.4.1-build.0.ipa",
-          "size": 0,
+          "localizedDescription": "• fix: Revert ZIP support due to iOS compilation limitations\n• fix: Remove unused Compression import and improve ZIP extraction reliability\n• fix: Align IPA bundle version with source.json version to fix SideStore installation\n• feat: Add ZIP file support with automatic extraction and game import\n• feat: add interactive 3D perspective effect to game cover art\n• feat: improve SideStore presentation with detailed description and 2.4.1 version\n• feat: proper semantic releases (2.4.1) + fix rolling release workflow\n• feat: new neon AYS2 app icon + fix icon generation path",
+          "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/v2.4.1-build.200/AYS2-v2.4.1-build.200.ipa",
+          "size": 22067401,
           "minOSVersion": "17.0"
         }
       ],
       "version": "2.4.1",
       "versionDate": "2026-07-17",
-      "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/latest/AYS2-v2.4.1-build.0.ipa",
-      "size": 0,
+      "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/latest/AYS2-v2.4.1-build.200.ipa",
+      "size": 22067401,
       "appPermissions": {}
     }
   ]
