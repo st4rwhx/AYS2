@@ -6,27 +6,28 @@
     {
       "name": "AYS2",
       "bundleIdentifier": "com.ayano.aysx2",
-      "developerName": "AYS2",
+      "developerName": "AYS2 Team",
       "subtitle": "PlayStation 2 emulator for iPhone & iPad",
-      "localizedDescription": "AYS2 is a PlayStation 2 emulator for iPhone and iPad. Load your own PS2 BIOS and disc images (.iso / .chd) and play with full-speed JIT via a JIT enabler such as StikDebug. See each update's \"What's New\" for the latest changes.",
+      "localizedDescription": "AYS2 brings PlayStation 2 emulation to iOS with full JIT compilation, Flight Recorder diagnostics, and comprehensive game database support.\n\n🎮 Features:\n• Full-speed JIT (arm64) with MTVU support\n• Comprehensive PS2 game library (12,800+ games)\n• Per-game graphics optimization profiles\n• Cheats & patches system\n• Save states & memory cards\n• AltStore/SideStore source support\n• Flight Recorder performance monitoring\n\n📋 Requirements:\n• iOS 17.0+\n• 1GB+ available storage per game\n• Your own PS2 BIOS file\n• JIT enabler (e.g., StikDebug)\n\nAYS2 is free, open-source (GPL-3.0), and focused on accuracy and performance. Each update brings core improvements and stability fixes.\n\nSee \"What's New\" for the latest changes and improvements.",
       "iconURL": "https://github.com/st4rwhx/AYS2/releases/download/latest/icon.png",
-      "tintColor": "1B5CFF",
+      "bannerURL": "https://github.com/st4rwhx/AYS2/releases/download/latest/icon.png",
+      "tintColor": "#0099FF",
       "category": "games",
       "screenshotURLs": [],
       "versions": [
         {
-          "version": "0.1.0",
-          "date": "2026-07-09",
-          "localizedDescription": "Latest development build.",
-          "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/latest/AYS2.ipa",
-          "size": 9245734,
+          "version": "2.4.1",
+          "date": "2026-07-17",
+          "localizedDescription": "feat: proper semantic releases (2.4.1) + new neon icon\nfeat: AYS2 Flight Recorder — diagnostic system Layer 1\nfeat: Cloudflare Worker auto-deploy + CORE ACCESS membership\nfix: AYS2Diagnostics include in iOS build\n\nCore: ARMSX2 2.4.1 (match ARMSX2 nightly)\nReleases: Discrete builds (v2.4.1-build.N) instead of rolling",
+          "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/latest/AYS2-v2.4.1-build.0.ipa",
+          "size": 0,
           "minOSVersion": "17.0"
         }
       ],
-      "version": "0.1.0",
-      "versionDate": "2026-07-09",
-      "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/latest/AYS2.ipa",
-      "size": 9245734,
+      "version": "2.4.1",
+      "versionDate": "2026-07-17",
+      "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/latest/AYS2-v2.4.1-build.0.ipa",
+      "size": 0,
       "appPermissions": {}
     }
   ]
