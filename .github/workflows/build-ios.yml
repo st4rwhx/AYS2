@@ -158,10 +158,9 @@ jobs:
           retention-days: 14 # Dispo 2 semaines
 
       # ── 8b. Publier l'IPA en GitHub Release (lien direct pour Sideloadly) ───
-      # Release "roulante" ios-latest : recréée à chaque build réussi, elle
-      # pointe toujours vers le dernier IPA. Sur un repo public, l'asset a une
-      # URL de téléchargement directe (sans login) utilisable dans Sideloadly.
-      - name: Publish IPA to rolling Release
+      # Chaque build réussi crée une release discrète (v2.4.1-build.123) avec
+      # le tag "latest" mis à jour pour pointer au build le plus récent.
+      - name: Publish IPA to GitHub Release
         # Publishes directly to this repo (st4rwhx/AYS2) using the native GITHUB_TOKEN
         # which has write access to the repo triggering the workflow.
         env:
@@ -172,16 +171,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="latest"
-          VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          VERSION="2.4.1"
+          BUILD_TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
+          LATEST_TAG="latest"
           # Public-facing asset is branded AYS2; internal build target
           # stays AYS2 (scheme/paths), so rename the packaged IPA here.
-          # Versioned filename → the download URL is IMMUTABLE per version. A
-          # client whose cached source.json is a build or two behind still
-          # resolves to a matching IPA (no "downloaded version does not match"),
-          # because the rolling release is never deleted and old versioned IPAs
-          # stay reachable. Only the feed files (source.json/icon) are refreshed.
-          IPA_NAME="AYS2-${VERSION}.ipa"
+          # Each release gets its own URL (e.g. AYS2-v2.4.1-build.123.ipa)
+          # so download links are immutable per build.
+          IPA_NAME="AYS2-${BUILD_TAG}.ipa"
           cp AYS2.ipa "$IPA_NAME"
           IPA_SIZE=$(stat -f%z "$IPA_NAME" 2>/dev/null || stat -c%s "$IPA_NAME")
           TODAY=$(date +%F)
@@ -189,14 +186,14 @@ jobs:
           # (md5, anti bait-and-switch) and generally good practice.
           IPA_MD5=$(md5 -q "$IPA_NAME" 2>/dev/null || md5sum "$IPA_NAME" | cut -d' ' -f1)
           IPA_SHA=$(shasum -a 256 "$IPA_NAME" | cut -d' ' -f1)
-          printf '%s\n  version: %s\n  size:    %s bytes\n  md5:     %s\n  sha256:  %s\n' \
-            "$IPA_NAME" "$VERSION" "$IPA_SIZE" "$IPA_MD5" "$IPA_SHA" > checksums.txt
+          printf '%s\n  version: %s (build %s)\n  size:    %s bytes\n  md5:     %s\n  sha256:  %s\n' \
+            "$IPA_NAME" "$VERSION" "$GITHUB_RUN_NUMBER" "$IPA_SIZE" "$IPA_MD5" "$IPA_SHA" > checksums.txt
           {
             echo '## Release checksums'
             echo '```'; cat checksums.txt; echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          IPA_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/${IPA_NAME}"
-          ICON_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/icon.png"
+          IPA_URL="https://github.com/${RELEASE_REPO}/releases/download/${BUILD_TAG}/${IPA_NAME}"
+          ICON_URL="https://github.com/${RELEASE_REPO}/releases/download/${LATEST_TAG}/icon.png"
 
           # Icon for the store listing.
           cp "src/assets/Assets.xcassets/AppIcon.appiconset/icon-1024.png" icon.png || true
@@ -229,11 +226,11 @@ jobs:
           # Regenerate the SideStore/AltStore source with this build's version,
           # size and date so SideStore detects it as an update (same bundle id =
           # no new App ID consumed on update).
-          python3 - "$VERSION" "$IPA_SIZE" "$TODAY" "$IPA_URL" "$ICON_URL" <<'PY'
+          python3 - "$VERSION" "$BUILD_TAG" "$IPA_SIZE" "$TODAY" "$IPA_URL" "$ICON_URL" <<'PY'
           import json, sys, os
-          version, size, date, ipa, icon = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+          version, build_tag, size, date, ipa, icon = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5], sys.argv[6]
           notes = (os.environ.get("CHANGELOG") or "").strip()[:1200] or "• Latest development build."
-          desc = f"What's new in v{version}:\n{notes}"
+          desc = f"What's new in {build_tag}:\n{notes}"
           src = json.load(open("source.json"))
           app = src["apps"][0]
           app["iconURL"] = icon
@@ -247,34 +244,34 @@ jobs:
               "downloadURL": ipa, "size": size, "minOSVersion": "17.0"
           }]
           json.dump(src, open("source.json", "w"), indent=2, ensure_ascii=False)
-          print("source.json version:", version, "\nnotes:\n" + desc)
+          print("source.json version:", version, f"({build_tag})", "\nnotes:\n" + desc)
           PY
 
-          # AYS2: one-time cleanup of the semantic-release ghosts (seam). The
-          # v0.1.0/1/2 releases were bot-created notes with NO assets, yet v0.1.2
-          # displayed as the repo's "Latest release" — pure version confusion.
-          # Idempotent: once deleted these no-op. (User-approved cleanup.)
-          for GHOST in v0.1.0 v0.1.1 v0.1.2; do
-            gh release delete "$GHOST" --repo "$RELEASE_REPO" --yes --cleanup-tag 2>/dev/null || true
-          done
+          # Create a discrete release for this build (v2.4.1-build.123)
+          gh release create "$BUILD_TAG" --repo "$RELEASE_REPO" \
+            --title "AYS2 ${VERSION} (Build #${GITHUB_RUN_NUMBER})" \
+            --notes "Build $GITHUB_RUN_NUMBER — this is a pre-release development build. Use with SideStore/AltStore." \
+            --prerelease \
+            "$IPA_NAME" SOURCE-OFFER.txt checksums.txt
 
-          # Never delete the rolling release — that would wipe older versioned
-          # IPAs and turn a harmless "slightly stale" install into a 404. Create
-          # it once, then clobber-upload: the versioned IPA accumulates, the feed
-          # files (source.json/icon/offer/checksums) are always refreshed.
-          gh release view "$TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1 || \
-            gh release create "$TAG" --repo "$RELEASE_REPO" \
-              --title "AYS2 (rolling)" \
-              --notes "Rolling AYS2 release. Add this source in SideStore/AltStore for 1-tap updates:
-          \`https://github.com/${RELEASE_REPO}/releases/download/${TAG}/source.json\`"
-          gh release upload "$TAG" "$IPA_NAME" source.json icon.png SOURCE-OFFER.txt checksums.txt \
-            --repo "$RELEASE_REPO" --clobber
-          # AYS2: the rolling release IS the product — mark it as the repo's
-          # "Latest release" so the README badge and /releases/latest resolve to
-          # the real build (0.1.<run>), not a stale semantic-release tag (seam)
-          gh release edit "$TAG" --repo "$RELEASE_REPO" --prerelease=false --latest \
-            --title "AYS2 ${VERSION} (rolling)" || true
-          echo "Published $IPA_NAME + source.json → https://github.com/$RELEASE_REPO/releases/tag/$TAG"
+          # Update the "latest" release to point to this build
+          # The latest tag holds only source.json and icon.png (the feed), while
+          # individual releases hold their own IPAs. This way old builds stay
+          # accessible at immutable URLs (v2.4.1-build.123/AYS2-v2.4.1-build.123.ipa)
+          # while the feed always updates to the newest.
+          if gh release view "$LATEST_TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
+            gh release delete "$LATEST_TAG" --repo "$RELEASE_REPO" --yes --cleanup-tag 2>/dev/null || true
+          fi
+
+          gh release create "$LATEST_TAG" --repo "$RELEASE_REPO" \
+            --title "AYS2 ${VERSION} (Latest)" \
+            --notes "Latest AYS2 build. Add this source in SideStore/AltStore for 1-tap updates:
+          \`https://github.com/${RELEASE_REPO}/releases/download/${LATEST_TAG}/source.json\`" \
+            --latest \
+            source.json icon.png
+
+          echo "Published $IPA_NAME → https://github.com/$RELEASE_REPO/releases/tag/$BUILD_TAG"
+          echo "Updated latest feed → https://github.com/$RELEASE_REPO/releases/tag/$LATEST_TAG"
 
       # ── 9. Upload les logs si la build échoue ──────────────────────────────
       - name: Upload build logs (si erreur)
