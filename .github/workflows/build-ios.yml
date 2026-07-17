@@ -260,20 +260,20 @@ jobs:
             "$IPA_NAME" SOURCE-OFFER.txt checksums.txt
 
           # Update the "latest" release to point to this build
-          # The latest tag holds only source.json and icon.png (the feed), while
-          # individual releases hold their own IPAs. This way old builds stay
-          # accessible at immutable URLs (v2.4.1-build.123/AYS2-v2.4.1-build.123.ipa)
-          # while the feed always updates to the newest.
+          # Latest release contains full IPA + feed files for maximum flexibility:
+          # - Users can download IPA directly from GitHub Release page
+          # - Users can use source.json in SideStore/AltStore for 1-tap updates
+          # Individual build releases (v2.4.1-build.123) remain immutable archives.
           if gh release view "$LATEST_TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
             gh release delete "$LATEST_TAG" --repo "$RELEASE_REPO" --yes --cleanup-tag 2>/dev/null || true
           fi
 
           gh release create "$LATEST_TAG" --repo "$RELEASE_REPO" \
             --title "AYS2 ${VERSION} (Latest)" \
-            --notes "Latest AYS2 build. Add this source in SideStore/AltStore for 1-tap updates:
+            --notes "Latest AYS2 build. Download \`${IPA_NAME}\` directly or add this source in SideStore/AltStore:
           \`https://github.com/${RELEASE_REPO}/releases/download/${LATEST_TAG}/source.json\`" \
             --latest \
-            source.json icon.png
+            "$IPA_NAME" source.json icon.png checksums.txt SOURCE-OFFER.txt
 
           echo "Published $IPA_NAME → https://github.com/$RELEASE_REPO/releases/tag/$BUILD_TAG"
           echo "Updated latest feed → https://github.com/$RELEASE_REPO/releases/tag/$LATEST_TAG"
