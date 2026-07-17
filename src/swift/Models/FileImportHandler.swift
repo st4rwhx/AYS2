@@ -27,7 +27,7 @@ final class FileImportHandler {
     var showImportAlert = false
 
     private static let biosExtensionList = ["bin", "rom"]
-    private static let gameExtensionList = ["iso", "chd", "img", "bin", "cue", "mdf", "cso", "zso", "gz", "elf", "zip"]
+    private static let gameExtensionList = ["iso", "chd", "img", "bin", "cue", "mdf", "cso", "zso", "gz", "elf"]
     private static let pnachExtensionList = ["pnach"]
     private static let biosExtensions = Set(biosExtensionList)
     private static let gameExtensions = Set(gameExtensionList)
@@ -181,11 +181,6 @@ final class FileImportHandler {
             return importPNACHFile(url, destinationPath: ARMSX2Bridge.pnachPathForCurrentGame(asCheat: true), asCheat: true)
         }
 
-        // Handle ZIP files: extract and import contained game files
-        if ext == "zip" {
-            return importZIPFile(url, allowReplacingExistingFiles: allowReplacingExistingFiles)
-        }
-
         let docsPath = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first!
 
         // Determine destination
@@ -258,105 +253,8 @@ final class FileImportHandler {
 
     private func importZIPFile(_ url: URL, allowReplacingExistingFiles: Bool) -> ImportResult {
         let fileName = url.lastPathComponent
-        let tempDir = NSTemporaryDirectory().appending("armsx2-zip-\(UUID().uuidString)")
-
-        defer {
-            try? FileManager.default.removeItem(atPath: tempDir)
-        }
-
-        do {
-            try FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
-
-            // Use Foundation's built-in ZIP extraction
-            // Create a source file for extraction
-            let sourcePath = url.path
-            let tempZipPath = tempDir.appending("/extracted.zip")
-
-            // Copy ZIP to temp location for extraction
-            try FileManager.default.copyItem(atPath: sourcePath, toPath: tempZipPath)
-
-            // Use shell command for unzipping (available on all macOS/iOS runners)
-            let process = Foundation.Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = ["-c", "cd '\(tempDir)' && unzip -q -o '\(tempZipPath)' && rm '\(tempZipPath)'"]
-            try process.run()
-            process.waitUntilExit()
-
-            if process.terminationStatus != 0 {
-                NSLog("[ARMSX2 iOS Import] unzip failed: %@ status=%d", fileName, process.terminationStatus)
-                return .failure("\(fileName): Failed to extract ZIP archive.")
-            }
-
-            // Find all game files in extracted contents
-            let contents = try FileManager.default.contentsOfDirectory(atPath: tempDir)
-            var gameFiles: [URL] = []
-            var searchPaths = [tempDir]
-            var visited = Set<String>()
-
-            while !searchPaths.isEmpty {
-                let currentPath = searchPaths.removeFirst()
-                guard !visited.contains(currentPath) else { continue }
-                visited.insert(currentPath)
-
-                let items = try FileManager.default.contentsOfDirectory(atPath: currentPath)
-                for item in items {
-                    let itemPath = (currentPath as NSString).appendingPathComponent(item)
-                    var isDir: ObjCBool = false
-                    if FileManager.default.fileExists(atPath: itemPath, isDirectory: &isDir) {
-                        if isDir.boolValue {
-                            searchPaths.append(itemPath)
-                        } else {
-                            let ext = (item as NSString).pathExtension.lowercased()
-                            if Self.gameExtensions.contains(ext) && ext != "zip" {
-                                gameFiles.append(URL(fileURLWithPath: itemPath))
-                            }
-                        }
-                    }
-                }
-            }
-
-            guard !gameFiles.isEmpty else {
-                NSLog("[ARMSX2 iOS Import] no game files found in ZIP: %@", fileName)
-                return .failure("\(fileName): No supported game files (.iso, .chd, .img, .bin, etc.) found in the archive.")
-            }
-
-            NSLog("[ARMSX2 iOS Import] found %d game file(s) in ZIP: %@", gameFiles.count, fileName)
-
-            // Import extracted files
-            var importedGames: [ImportedGame] = []
-            var errors: [String] = []
-
-            for gameFile in gameFiles {
-                let importResult = importFile(
-                    gameFile,
-                    preferredDestination: .game,
-                    allowReplacingExistingFiles: allowReplacingExistingFiles
-                )
-                switch importResult {
-                case .success(let message, let importedGame):
-                    if let importedGame {
-                        importedGames.append(importedGame)
-                    }
-                case .failure(let message), .unsupported(let message):
-                    errors.append(gameFile.lastPathComponent + ": " + message)
-                }
-            }
-
-            if !importedGames.isEmpty {
-                let firstGame = importedGames[0]
-                var message = "Extracted \(importedGames.count) game(s) from \(fileName)"
-                if !errors.isEmpty {
-                    message += " (\(errors.count) failed to import)"
-                }
-                return .success(message, importedGame: firstGame)
-            } else {
-                return .failure(errors.isEmpty ? "\(fileName): Could not import extracted files." : errors.joined(separator: "\n"))
-            }
-
-        } catch {
-            NSLog("[ARMSX2 iOS Import] ZIP import error: %@ error=%@", fileName, error.localizedDescription)
-            return .failure("\(fileName): \(error.localizedDescription)")
-        }
+        NSLog("[ARMSX2 iOS Import] ZIP support not yet available on iOS: %@", fileName)
+        return .failure("\(fileName): ZIP file support is coming soon. For now, please extract the ZIP file manually and import the game files directly.")
     }
 
     private func importPNACHFile(_ url: URL, destinationPath: String?, asCheat: Bool) -> ImportResult {
