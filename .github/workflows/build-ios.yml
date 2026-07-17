@@ -132,18 +132,16 @@ jobs:
           fi
           mkdir -p "$GITHUB_WORKSPACE/Payload"
           cp -r "$APP" "$GITHUB_WORKSPACE/Payload/ARMSX2iOS.app"
-          # Pin the bundle version to the SideStore/AltStore feed version
-          # (0.1.<run>) so the IPA's CFBundleShortVersionString matches the version
-          # declared in source.json. The ARMSX2 core keeps its internal
-          # ARMSX2_VERSION (2.2.x); only the outward-facing bundle version is
-          # rewritten here. Without this the store refuses to install with
+          # Pin the bundle version to match source.json version (2.4.1)
+          # so CFBundleShortVersionString matches version declared in feed.
+          # The ARMSX2 core keeps its internal ARMSX2_VERSION; only the outward-facing
+          # bundle version is rewritten here. Without this match, SideStore refuses:
           # "The downloaded version does not match the version specified by the source".
-          # AYS2: pin IPA version to SideStore feed version 0.1.<run> (seam)
-          VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          IPA_VERSION="2.4.1"
           APP_PLIST="$GITHUB_WORKSPACE/Payload/ARMSX2iOS.app/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $IPA_VERSION" "$APP_PLIST"
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" "$APP_PLIST"
-          echo "Pinned bundle version → $VERSION (CFBundleVersion ${GITHUB_RUN_NUMBER})"
+          echo "Pinned bundle version → $IPA_VERSION (CFBundleVersion ${GITHUB_RUN_NUMBER})"
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PLIST"
           cd "$GITHUB_WORKSPACE"
           zip -r AYS2.ipa Payload/
