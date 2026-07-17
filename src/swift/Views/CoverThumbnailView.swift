@@ -13,6 +13,9 @@ struct CoverThumbnailView: View {
     let height: CGFloat
 
     @State private var image: UIImage?
+    @State private var angleX: Double = 0
+    @State private var angleY: Double = 0
+    @State private var scale3D: CGFloat = 1.0
 
     private var cacheID: String {
         "\(coverSignature ?? "placeholder")|\(Int(width))x\(Int(height))"
@@ -44,6 +47,38 @@ struct CoverThumbnailView: View {
         }
         .frame(width: width, height: height)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .scaleEffect(scale3D)
+        .rotation3DEffect(
+            .degrees(angleY),
+            axis: (x: 0, y: 1, z: 0),
+            anchor: .center,
+            perspective: 0.7
+        )
+        .rotation3DEffect(
+            .degrees(angleX),
+            axis: (x: 1, y: 0, z: 0),
+            anchor: .center,
+            perspective: 0.7
+        )
+        .shadow(color: .black.opacity(0.3), radius: 8 + angleY.magnitude * 0.05, x: angleY * 0.5, y: angleX * 0.5)
+        .onContinuousHover { phase in
+            switch phase {
+            case .active(let location):
+                let relX = (location.y - (height / 2)) / (height / 2)
+                let relY = (location.x - (width / 2)) / (width / 2)
+                withAnimation(.easeOut(duration: 0.2)) {
+                    angleX = -relX * 15
+                    angleY = relY * 15
+                    scale3D = 1.05
+                }
+            case .ended:
+                withAnimation(.easeOut(duration: 0.4)) {
+                    angleX = 0
+                    angleY = 0
+                    scale3D = 1.0
+                }
+            }
+        }
         .task(id: cacheID) {
             await loadThumbnail()
         }
