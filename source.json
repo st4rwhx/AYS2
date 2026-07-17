@@ -18,16 +18,16 @@
         {
           "version": "2.4.1",
           "date": "2026-07-17",
-          "localizedDescription": "What's new in v2.4.1-build.203:\n• test: disable autoFlush for God of War II to isolate GPU-CPU sync bottleneck on iOS Metal\n• fix: commit updated source.json back to repository after build\n• fix: Revert ZIP support due to iOS compilation limitations\n• fix: Remove unused Compression import and improve ZIP extraction reliability\n• fix: Align IPA bundle version with source.json version to fix SideStore installation\n• feat: Add ZIP file support with automatic extraction and game import\n• feat: add interactive 3D perspective effect to game cover art\n• feat: improve SideStore presentation with detailed description and 2.4.1 version",
-          "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/v2.4.1-build.203/AYS2-v2.4.1-build.203.ipa",
-          "size": 22677639,
+          "localizedDescription": "What's new in v2.4.1-build.204:\n• fix: include IPA in latest release for better user experience\n• test: disable autoFlush for God of War II to isolate GPU-CPU sync bottleneck on iOS Metal\n• fix: commit updated source.json back to repository after build\n• fix: Revert ZIP support due to iOS compilation limitations\n• fix: Remove unused Compression import and improve ZIP extraction reliability\n• fix: Align IPA bundle version with source.json version to fix SideStore installation\n• feat: Add ZIP file support with automatic extraction and game import",
+          "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/v2.4.1-build.204/AYS2-v2.4.1-build.204.ipa",
+          "size": 22677635,
           "minOSVersion": "17.0"
         }
       ],
       "version": "2.4.1",
       "versionDate": "2026-07-17",
-      "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/v2.4.1-build.203/AYS2-v2.4.1-build.203.ipa",
-      "size": 22677639,
+      "downloadURL": "https://github.com/st4rwhx/AYS2/releases/download/v2.4.1-build.204/AYS2-v2.4.1-build.204.ipa",
+      "size": 22677635,
       "appPermissions": {}
     }
   ]
