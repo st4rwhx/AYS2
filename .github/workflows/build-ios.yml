@@ -245,6 +245,13 @@ jobs:
           print("source.json version:", version, f"({build_tag})", "\nnotes:\n" + desc)
           PY
 
+          # Commit updated source.json back to repository so it stays in sync
+          git add source.json
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git commit -m "chore: update source.json version to $VERSION ($BUILD_TAG)" || true
+          git push origin HEAD:$GITHUB_REF || true
+
           # Create a discrete release for this build (v2.4.1-build.123)
           gh release create "$BUILD_TAG" --repo "$RELEASE_REPO" \
             --title "AYS2 ${VERSION} (Build #${GITHUB_RUN_NUMBER})" \
