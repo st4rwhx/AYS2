@@ -41,7 +41,7 @@
 ---
 
 - 🎮 **Full PS2 Emulation** — Play your favorite PlayStation 2 games on iOS
-- ⚡ **JIT Compilation** — High-speed emulation with x86 → ARM64 recompilation
+- ⚡ **JIT Compilation** — High-speed emulation with native MIPS → ARM64 recompilation
 - 📱 **Universal iOS Support** — iPhone and iPad with iOS 17.0 or later
 - 🎯 **High Compatibility** — Supports a wide range of PS2 titles
 - 🔓 **Open Source** — Licensed under GPL-3.0, source code available
@@ -116,7 +116,7 @@ xcodebuild -project build/ARMSX2iOS.xcodeproj \
 ## Documentation
 
 - [Migration Guide](docs/ARMSX2_MIGRATION.md) — ARMSX2 iOS v2.3.0 integration
-- [Overlay Pattern](docs/ELORIS_OVERLAY.md) — Customization seams
+- [Overlay Pattern](docs/AYS2_OVERLAY.md) — Customization seams
 - [Workers Documentation](source/worker/README.md) — SideStore feed setup
 
 ## Community
