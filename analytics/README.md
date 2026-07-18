@@ -10,7 +10,7 @@ log excerpt. Users are told on first launch and can turn it off any time in
 
 ```
 app  ──POST JSON──▶  Cloudflare Worker  ──GitHub API──▶  GitHub issues
-(only knows a URL)   (holds the token)                   (you + Claude read them)
+(only knows a URL)   (holds the token)                   (you read them)
 ```
 
 The app ships **only the Worker URL** — never a GitHub token. The token lives as
