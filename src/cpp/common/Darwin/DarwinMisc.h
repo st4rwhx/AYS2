@@ -107,6 +107,13 @@ struct CPUClass {
     // [P42] JIT availability detection for real iOS devices
     bool IsJITAvailable();
 
+    // AYS2: lightweight periodic re-check that JIT privileges are still
+    // valid after boot (seam) — iOS can revoke them after backgrounding or
+    // inactivity even when IsJITAvailable() passed at launch. Re-checks
+    // CS_DEBUGGED and does a canary read/write on the existing JIT RW alias
+    // instead of probing a fresh mmap, so it's cheap enough to poll.
+    bool ValidateJITAlive();
+
     // [P43] iOS 26 Dual-Mapping JIT
     enum class JitMode {
         Simulator,    // MAP_JIT + pthread_jit_write_protect_np

@@ -1335,6 +1335,43 @@ static std::mutex s_vmMutex;
 static std::condition_variable s_vmCV;
 static bool s_vmThreadCreated = false;               // guarded by s_vmMutex
 
+// AYS2: JIT keepalive (seam) — ported from ARMSX2 upstream's iOS JIT
+// resilience layer. Periodically re-validates JIT while the VM is idle (not
+// mid-game, to stay out of the hot path) so a privilege revocation after
+// backgrounding is caught before the next boot attempt, not during it.
+static dispatch_source_t s_jitKeepaliveTimer = nil;
+
+static void ARMSX2StopJITKeepalive()
+{
+    if (s_jitKeepaliveTimer) {
+        dispatch_source_cancel(s_jitKeepaliveTimer);
+        s_jitKeepaliveTimer = nil;
+    }
+}
+
+static void ARMSX2StartJITKeepalive()
+{
+    if (s_jitKeepaliveTimer)
+        return;
+    dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0);
+    s_jitKeepaliveTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
+    // 1s leeway: this is a low-priority idle check, let the system coalesce
+    // it with other timers instead of waking the device on the dot.
+    dispatch_source_set_timer(s_jitKeepaliveTimer,
+        dispatch_time(DISPATCH_TIME_NOW, 12 * NSEC_PER_SEC), 12 * NSEC_PER_SEC, 1 * NSEC_PER_SEC);
+    dispatch_source_set_event_handler(s_jitKeepaliveTimer, ^{
+        if (s_vmThreadActive.load(std::memory_order_relaxed))
+            return; // a game is running; don't touch anything on the hot path
+        if (!DarwinMisc::ValidateJITAlive()) {
+            DarwinMisc::iPSX2_FORCE_EE_INTERP = 1;
+            std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=0 action=force_interp\n");
+            std::fflush(stderr);
+            ARMSX2StopJITKeepalive();
+        }
+    });
+    dispatch_resume(s_jitKeepaliveTimer);
+}
+
 struct CPUThreadTask
 {
     unsigned long long id = 0;
@@ -3708,6 +3745,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     }
     ARMSX2RepairIOSARM64JITSettings(s_settings_interface, "scene-connect");
     ARMSX2MigrateJITScriptProtocolForIOS(s_settings_interface, "scene-connect");
+    ARMSX2StartJITKeepalive(); // AYS2: seam — start once per app launch
     // One-time migration for existing INI (runs once, then conditions are false)
     if (!s_settings_interface->ContainsValue("SPU2/Output", "Backend")) {
         s_settings_interface->SetStringValue("SPU2/Output", "Backend", "SDL");
@@ -4216,7 +4254,35 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
         std::fflush(stderr);
         ARMSX2ConfigureImGuiFonts("vm-thread");
         Console.WriteLn("[VM] VM Thread: CPUThreadInitialize (once)...");
-        if (!VMManager::Internal::CPUThreadInitialize()) {
+
+        // AYS2: boot watchdog (seam) — ported from ARMSX2 upstream's iOS JIT
+        // resilience layer. CPUThreadInitialize() allocates the JIT code
+        // regions (dual-map/TXM); if that hangs, this reports an error and
+        // returns to the menu instead of a silent black screen forever.
+        // shared_ptr (not a stack local captured by reference): the watchdog
+        // thread must never touch memory that a return below could destroy.
+        auto vmInitComplete = std::make_shared<std::atomic<bool>>(false);
+        std::thread bootWatchdog([vmInitComplete]() {
+            for (int i = 0; i < 150 && !vmInitComplete->load(std::memory_order_relaxed); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            if (!vmInitComplete->load(std::memory_order_relaxed)) {
+                std::fprintf(stderr, "@@BOOT_FAIL@@ reason=vm_init_timeout\n");
+                std::fflush(stderr);
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (s_rootVC)
+                        s_rootVC.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
+                    [[NSNotificationCenter defaultCenter]
+                        postNotificationName:@"ARMSX2iOSReturnToMenu" object:nil];
+                });
+                Host::ReportErrorAsync("JIT Init Timeout",
+                    "JIT memory setup took too long. Try Settings -> Emulator -> JIT Script -> Legacy, then relaunch.");
+            }
+        });
+        bootWatchdog.detach();
+
+        const bool cpuInitOk = VMManager::Internal::CPUThreadInitialize();
+        vmInitComplete->store(true, std::memory_order_relaxed);
+        if (!cpuInitOk) {
             std::fprintf(stderr, "@@BOOT_THREAD_INIT@@ ok=0\n");
             std::fflush(stderr);
             Console.Error("VM Thread: CPUThreadInitialize failed.");

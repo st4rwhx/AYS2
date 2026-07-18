@@ -66,7 +66,8 @@ Copied forward untouched on every rebase.
 | `src/swift/Views/Settings/AppearanceSettingsView.swift` | Theme picker |
 | `src/swift/Views/Settings/GraphicsSettingsView.swift` | `ShadeBoostPreviewView` inserted above the Shade Boost sliders; corrected two hack captions that no longer require reset/relaunch |
 | `src/swift/Views/GameListView.swift` | cover-flow carousel enabled in portrait (drop landscape-only gate) |
-| `src/cpp/ios_main.mm` | JIT protocol default → `legacy` (brk #0x69) + one-time V2 migration |
+| `src/cpp/ios_main.mm` | JIT protocol default → `legacy` (brk #0x69) + one-time V2 migration; JIT keepalive timer (12s, idle-only) + boot watchdog (15s), ported early from ARMSX2's iOS JIT resilience layer (their `platforms/ios` commit "add JIT resilience layer with keepalive, interpreter fallback, and boot watchdog") ahead of a full rebase — see §3 note below |
+| `src/cpp/common/Darwin/DarwinMisc.h` / `.cpp` | `DarwinMisc::ValidateJITAlive()` — same upstream JIT resilience layer, the CS_DEBUGGED + JIT RW alias canary re-check the keepalive timer calls |
 | `src/cpp/pcsx2/PrecompiledHeader.h` | `#include <TargetConditionals.h>` so `TARGET_OS_IPHONE` resolves |
 | `src/cpp/common/PrecompiledHeader.h` | same TargetConditionals include |
 | `src/cpp/pcsx2/ImGui/ImGuiOverlays.cpp` | in-game OSD brand → `AYS2` |
@@ -85,6 +86,25 @@ Copied forward untouched on every rebase.
 ---
 
 ## 3. Rebase playbook — moving to a newer ARMSX2 iOS tag
+
+> **STALE as of 2026-07-18, verify before following.** Upstream did a monorepo
+> refactor (commit "refactor: move iOS frontend to platforms/ios on single
+> shared core", 2026-07-08): the layout below (`app/src/main/{cpp,swift,assets}`)
+> may no longer match `github.com/ARMSX2/ARMSX2` — it's now `platforms/ios/app/...`.
+> Re-verify the actual current layout before running this playbook; it hasn't
+> been re-run/re-tested against the new structure yet.
+>
+> We also ported 3 pieces of upstream's iOS JIT resilience layer (keepalive
+> timer, `ValidateJITAlive`, boot watchdog — see §2b, `ios_main.mm` /
+> `DarwinMisc.cpp`) **out of band, ahead of a full rebase**, based on a
+> commit description we could not verify byte-for-byte (no repo access to
+> diff directly in that session). Deliberately left out: their Universal-JIT-
+> with-8s-timeout-on-a-worker-thread piece — the described pattern crosses a
+> `sigsetjmp`/`siglongjmp` across threads, which is undefined behavior in
+> POSIX, and we couldn't confirm from the description alone whether upstream
+> handles that safely. Don't port that piece without reading the real diff.
+> When the actual rebase happens, diff our 3 ported pieces against upstream's
+> real versions and reconcile — ours may differ from what actually shipped.
 
 Upstream layout is `app/src/main/{cpp,swift,assets}`; ours is `src/{cpp,swift,assets}`.
 Upstream is a partial clone at `scratchpad/armsx2` with `origin =

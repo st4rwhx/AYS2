@@ -708,6 +708,50 @@ bool DarwinMisc::IsJITAvailable()
 #endif
 }
 
+// AYS2: ported from ARMSX2 upstream's iOS JIT resilience layer (seam) —
+// periodic re-validation so a mid-session JIT revocation (e.g. after the
+// app sits backgrounded long enough for iOS to revoke CS_DEBUGGED) is
+// caught instead of silently leaving a broken JIT state for the next boot.
+// Cheaper than IsJITAvailable(): no fresh mmap probe, just re-checks
+// CS_DEBUGGED and does a canary read/write on the JIT RW alias already
+// allocated by MmapCodeDualMap. Only meaningful to call after JIT has
+// already been confirmed available once (g_code_rw_base is set at that
+// point).
+bool DarwinMisc::ValidateJITAlive()
+{
+#if TARGET_OS_SIMULATOR
+	return true;
+#elif TARGET_OS_IPHONE
+	u32 cs_flags = 0;
+	const int rv = csops(getpid(), 0, &cs_flags, sizeof(cs_flags));
+	const bool cs_debugged = (rv == 0) && ((cs_flags & 0x10000000u) != 0);
+	if (!cs_debugged)
+	{
+		std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=0 reason=cs_debugged_revoked\n");
+		std::fflush(stderr);
+		return false;
+	}
+
+	if (g_code_rw_base != 0 && g_code_rw_size > 0)
+	{
+		volatile u8* canary = reinterpret_cast<volatile u8*>(g_code_rw_base);
+		const u8 saved = *canary;
+		*canary = 0x42;
+		const u8 readback = *canary;
+		*canary = saved;
+		if (readback != 0x42)
+		{
+			std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=0 reason=rw_alias_dead\n");
+			std::fflush(stderr);
+			return false;
+		}
+	}
+	return true;
+#else
+	return true;
+#endif
+}
+
 DarwinMisc::JitMode DarwinMisc::DetectJitMode()
 {
 #if TARGET_OS_SIMULATOR
