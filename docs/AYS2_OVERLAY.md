@@ -52,6 +52,9 @@ Copied forward untouched on every rebase.
 | `coreaccess/worker/*` | Stripe checkout redirect + entitlement API (Cloudflare Worker) |
 | `src/swift/Views/TermsOfUseView.swift` | Terms of use / privacy screen |
 | `src/assets/Assets.xcassets/AppIcon.appiconset/*` | Our app icon (13 sizes) |
+| `src/swift/Views/ShadeBoostPreviewView.swift` | Live Shade Boost preview: decodes the bundled clip, drives it through the shader below |
+| `src/swift/Shaders/ShadeBoostPreview.metal` | SwiftUI `.colorEffect` mirror of `ps_shadeboost` (convert.metal) for the preview above |
+| `src/assets/resources/shadeboost_preview.gif` | Bundled gameplay clip for the Shade Boost preview (user-supplied capture) |
 
 ### 2b. Seams — upstream files we edit (keep MINIMAL + MARKED)
 
@@ -59,8 +62,9 @@ Copied forward untouched on every rebase.
 |---|---|
 | `src/swift/Views/RootView.swift` | show `DashboardView()` instead of the tab menu; app color-scheme apply; community welcome sheet; post-game CORE ACCESS upsell |
 | `src/swift/Views/GameScreenView.swift` | pause button icon → `pause.fill` (menu itself is upstream's QuickMenuView; tile-grid redesign deferred) |
-| `src/swift/Models/SettingsStore.swift` | `AppColorScheme` (system/light/dark) setting |
+| `src/swift/Models/SettingsStore.swift` | `AppColorScheme` (system/light/dark) setting; live-apply (`requestGraphicsApply()`) wired to the 7 advanced-upscaling-hack properties, which upstream leaves reset-only |
 | `src/swift/Views/Settings/AppearanceSettingsView.swift` | Theme picker |
+| `src/swift/Views/Settings/GraphicsSettingsView.swift` | `ShadeBoostPreviewView` inserted above the Shade Boost sliders; corrected two hack captions that no longer require reset/relaunch |
 | `src/swift/Views/GameListView.swift` | cover-flow carousel enabled in portrait (drop landscape-only gate) |
 | `src/cpp/ios_main.mm` | JIT protocol default → `legacy` (brk #0x69) + one-time V2 migration |
 | `src/cpp/pcsx2/PrecompiledHeader.h` | `#include <TargetConditionals.h>` so `TARGET_OS_IPHONE` resolves |

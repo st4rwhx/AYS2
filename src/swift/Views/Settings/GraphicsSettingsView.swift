@@ -179,6 +179,17 @@ struct GraphicsSettingsView: View {
             Section {
                 Toggle(settings.localized("Shade Boost"), isOn: $settings.shadeBoost)
                 if settings.shadeBoost {
+                    // AYS2: live preview so the sliders below show their effect
+                    // without a game loaded (seam)
+                    ShadeBoostPreviewView(
+                        brightnessPercent: settings.shadeBoostBrightness,
+                        contrastPercent: settings.shadeBoostContrast,
+                        saturationPercent: settings.shadeBoostSaturation,
+                        gammaPercent: settings.shadeBoostGamma
+                    )
+                    .listRowInsets(EdgeInsets())
+                    .padding(12)
+
                     percentSlider("Brightness", value: $settings.shadeBoostBrightness)
                     percentSlider("Contrast", value: $settings.shadeBoostContrast)
                     percentSlider("Saturation", value: $settings.shadeBoostSaturation)

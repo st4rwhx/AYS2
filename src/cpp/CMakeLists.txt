@@ -148,6 +148,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		${CMAKE_SOURCE_DIR}/../swift/Models/CoreAccessStore.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/CoreAccessView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/BootSplashView.swift
+		${CMAKE_SOURCE_DIR}/../swift/Views/ShadeBoostPreviewView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/GameListView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/PerGameSettingsPanel.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/CoverThumbnailView.swift
@@ -432,7 +433,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		"${CMAKE_SOURCE_DIR}/../assets/resources/RedumpDatabase.yaml"
 		"${CMAKE_SOURCE_DIR}/../assets/resources/patches.zip"
 		"${CMAKE_SOURCE_DIR}/../assets/resources/game_controller_db.txt"
+		# AYS2: bundled clip for the Shade Boost live preview (seam)
+		"${CMAKE_SOURCE_DIR}/../assets/resources/shadeboost_preview.gif"
 	)
+
+	# AYS2: SwiftUI-side shader (default Metal compile, unlike METAL_SHADERS
+	# below which the GS renderer loads by name at runtime) (seam)
+	target_sources(ARMSX2iOS PRIVATE "${CMAKE_SOURCE_DIR}/../swift/Shaders/ShadeBoostPreview.metal")
 
 	target_sources(ARMSX2iOS PRIVATE ${METAL_SHADERS} ${FONTS} ${IOS_SHADER_RESOURCES})
 	set_source_files_properties(${METAL_SHADERS} PROPERTIES
