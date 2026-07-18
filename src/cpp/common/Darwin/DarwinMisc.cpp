@@ -718,6 +718,17 @@ bool DarwinMisc::IsJITAvailable()
 // allocated by MmapCodeDualMap. Only meaningful to call after JIT has
 // already been confirmed available once (g_code_rw_base is set at that
 // point).
+//
+// AYS2: the canary now targets the LAST byte of the region, not the first
+// (seam). Upstream's own attempt at checking during active gameplay
+// (b8e94ea) was reverted (922772f) as "not working correctly" with no
+// further detail available to us. Our best guess: the recompiler fills the
+// code region from the start forward, so a canary write/restore at the
+// head is far more likely to land on live, actively-executing/being-
+// written code than one at the tail. This reduces but does not provably
+// eliminate the collision risk — see ios_main.mm's keepalive block comment
+// for the full reasoning and the other defensive change (2-failure
+// debounce) made alongside this one.
 bool DarwinMisc::ValidateJITAlive()
 {
 #if TARGET_OS_SIMULATOR
@@ -735,11 +746,11 @@ bool DarwinMisc::ValidateJITAlive()
 
 	if (g_code_rw_base != 0 && g_code_rw_size > 0)
 	{
-		volatile u8* canary = reinterpret_cast<volatile u8*>(g_code_rw_base);
+		volatile u8* canary = reinterpret_cast<volatile u8*>(g_code_rw_base + g_code_rw_size - 1);
 		const u8 saved = *canary;
 		*canary = 0x42;
 		const u8 readback = *canary;
-		*canary = saved; // restore so we don't corrupt the first code byte
+		*canary = saved; // restore so we don't corrupt a real code byte
 		if (readback != 0x42)
 		{
 			std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=0 reason=rw_alias_dead readback=0x%02x\n", readback);

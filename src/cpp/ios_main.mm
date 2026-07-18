@@ -1336,10 +1336,27 @@ static std::condition_variable s_vmCV;
 static bool s_vmThreadCreated = false;               // guarded by s_vmMutex
 
 // AYS2: JIT keepalive (seam) — ported from ARMSX2 upstream's iOS JIT
-// resilience layer. Periodically re-validates JIT while the VM is idle (not
-// mid-game, to stay out of the hot path) so a privilege revocation after
-// backgrounding is caught before the next boot attempt, not during it.
+// resilience layer, then reworked after their own attempt at validating
+// during active gameplay (b8e94ea) was reverted (922772f) as "not working
+// correctly" (per upstream, no further detail available). iOS can revoke
+// CS_DEBUGGED mid-frame, not just while idle, which is exactly the case
+// skipping validation during gameplay cannot catch — so this keeps checking
+// during gameplay like their reverted attempt did, but changes two things
+// we believe caused it to misbehave, both defensive rather than confirmed
+// root causes since we could not get the real failure details:
+//  1. ValidateJITAlive's canary write now targets the tail of the JIT
+//     region instead of the head — real compiled code fills the region
+//     from the start forward, so the head is far more likely to be live,
+//     actively-executing code at the moment we write/restore a byte in it.
+//     This reduces, but does not provably eliminate, collision risk — a
+//     fully separate dedicated canary allocation would be provably safe
+//     but requires redoing the TXM/brk registration a second time, which
+//     we are not confident is safe to do without deeper upstream input.
+//  2. Requires 2 consecutive failed checks (24s apart) before forcing
+//     interpreter mode, so one transient/racy false positive doesn't
+//     needlessly degrade a healthy session.
 static dispatch_source_t s_jitKeepaliveTimer = nil;
+static int s_jitKeepaliveConsecutiveFailures = 0;
 
 static void ARMSX2StopJITKeepalive()
 {
@@ -1360,14 +1377,24 @@ static void ARMSX2StartJITKeepalive()
     dispatch_source_set_timer(s_jitKeepaliveTimer,
         dispatch_time(DISPATCH_TIME_NOW, 12 * NSEC_PER_SEC), 12 * NSEC_PER_SEC, 1 * NSEC_PER_SEC);
     dispatch_source_set_event_handler(s_jitKeepaliveTimer, ^{
-        if (s_vmThreadActive.load(std::memory_order_relaxed))
-            return; // a game is running; don't touch anything on the hot path
-        if (!DarwinMisc::ValidateJITAlive()) {
-            DarwinMisc::iPSX2_FORCE_EE_INTERP = 1;
-            std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=0 action=force_interp\n");
-            std::fflush(stderr);
-            ARMSX2StopJITKeepalive();
+        // AYS2: checks during active gameplay too, not just idle — see the
+        // block comment above for why and what changed vs upstream's
+        // reverted attempt.
+        if (DarwinMisc::ValidateJITAlive()) {
+            s_jitKeepaliveConsecutiveFailures = 0;
+            return;
         }
+        if (++s_jitKeepaliveConsecutiveFailures < 2) {
+            std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=0 action=defer consecutive=%d\n",
+                s_jitKeepaliveConsecutiveFailures);
+            std::fflush(stderr);
+            return;
+        }
+        DarwinMisc::iPSX2_FORCE_EE_INTERP = 1;
+        std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=0 action=force_interp consecutive=%d\n",
+            s_jitKeepaliveConsecutiveFailures);
+        std::fflush(stderr);
+        ARMSX2StopJITKeepalive();
     });
     dispatch_resume(s_jitKeepaliveTimer);
 }

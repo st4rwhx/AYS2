@@ -117,6 +117,24 @@ Copied forward untouched on every rebase.
 > `raw.githubusercontent.com` fetches against our own already-trusted code
 > (matching identifiers, matching surrounding logic) — high confidence, not
 > a substitute for a real rebase diff when one becomes possible.
+>
+> **2026-07-18 follow-up, with direct upstream contact:** upstream (J1coding)
+> confirmed on Discord that `b8e94ea` ("fix JIT keepalive timer running
+> during gameplay") was reverted because it "didn't work correctly" — no
+> further detail given — and gave the project owner explicit permission to
+> finish it ("work is 95% done, go ahead"). We reworked our keepalive to
+> validate during gameplay again (matching `b8e94ea`'s intent, not the
+> reverted state) with two unconfirmed defensive changes: the canary byte
+> now targets the tail of the JIT region instead of the head (real code
+> fills from the start forward, so the head is more likely to be live code
+> at the moment of the write — reduces, does not prove, collision safety),
+> and a real revocation must fail 2 consecutive checks (24s apart) before
+> we force interpreter mode. **We do not know upstream's actual root cause
+> for the original failure** — these are our best-guess fixes for the most
+> plausible failure mode (self-modifying-code hazard from writing into live
+> compiled code), not a confirmed fix. Needs real device testing before
+> being treated as solved. If upstream ever shares the real cause, reconcile
+> against it.
 > When the actual rebase happens, diff our 3 ported pieces against upstream's
 > real versions and reconcile — ours may differ from what actually shipped.
 
