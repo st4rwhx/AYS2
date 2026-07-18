@@ -13,6 +13,7 @@
 #include "common/HostSys.h"
 #include "fmt/format.h"
 
+#include <atomic>
 #include <csignal>
 #include <cstdio>
 #include <cstring>
@@ -738,14 +739,17 @@ bool DarwinMisc::ValidateJITAlive()
 		const u8 saved = *canary;
 		*canary = 0x42;
 		const u8 readback = *canary;
-		*canary = saved;
+		*canary = saved; // restore so we don't corrupt the first code byte
 		if (readback != 0x42)
 		{
-			std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=0 reason=rw_alias_dead\n");
+			std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=0 reason=rw_alias_dead readback=0x%02x\n", readback);
 			std::fflush(stderr);
 			return false;
 		}
 	}
+
+	std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=1 cs_debugged=1 canary=ok\n");
+	std::fflush(stderr);
 	return true;
 #else
 	return true;
@@ -931,35 +935,96 @@ void* DarwinMisc::MmapCodeDualMap(size_t size)
 		}
 		else
 		{
+			// AYS2: 8s worker-thread timeout on the Universal TXM path (seam)
+			// — ported from ARMSX2 upstream's iOS JIT resilience layer.
+			// JIT26PrepareRegion (brk #0xf00d) can hang on large code regions
+			// instead of trapping; without a timeout that hangs the boot
+			// thread forever. sigsetjmp is called fresh on this worker
+			// thread, right before the operation that might trap — SIGTRAP
+			// from a trap instruction is delivered to the thread that
+			// executed it, so this does not cross threads.
+			std::atomic<bool> universal_done{false};
+			std::atomic<bool> universal_ok{false};
+
 			std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_universal_begin rx=%p size=0x%zx\n", rx_ptr, size);
 			std::fflush(stderr);
-			if (sigsetjmp(s_alloc_brk_jmp, 1) == 0)
-			{
-				JIT26PrepareRegion(rx_ptr, size);
-				std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_universal_ok\n");
-				std::fflush(stderr);
 
-				std::fprintf(stderr, "@@JIT_ALLOC@@ txm_detach_begin\n");
+			std::thread txm_worker([&]() {
+				if (sigsetjmp(s_alloc_brk_jmp, 1) == 0)
+				{
+					JIT26PrepareRegion(rx_ptr, size);
+					std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_universal_ok\n");
+					std::fflush(stderr);
+
+					std::fprintf(stderr, "@@JIT_ALLOC@@ txm_detach_begin\n");
+					std::fflush(stderr);
+					if (sigsetjmp(s_alloc_brk_jmp, 1) == 0)
+					{
+						JIT26Detach();
+						universal_ok.store(true);
+						std::fprintf(stderr, "@@JIT_ALLOC@@ txm_detach_ok\n");
+						std::fflush(stderr);
+					}
+					else
+					{
+						std::fprintf(stderr, "@@JIT_ALLOC@@ txm_detach_sigtrap\n");
+						std::fflush(stderr);
+					}
+				}
+				else
+				{
+					std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_universal_sigtrap\n");
+					std::fflush(stderr);
+				}
+				universal_done.store(true);
+			});
+			txm_worker.detach();
+
+			// Wait up to 8 seconds.
+			for (int i = 0; i < 80; i++)
+			{
+				if (universal_done.load(std::memory_order_relaxed))
+					break;
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			}
+
+			if (universal_done.load() && universal_ok.load())
+			{
+				brk_ok = true;
+			}
+			else if (!universal_done.load())
+			{
+				// Worker hung — it's detached so it won't block shutdown, but
+				// its SIGTRAP handler is still installed below until we
+				// restore sa_brk_old. Fall back to Legacy on THIS thread.
+				std::fprintf(stderr, "@@JIT_ALLOC@@ txm_universal_timeout\n");
+				std::fflush(stderr);
+				std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_begin rx=%p size=0x%zx\n", rx_ptr, size);
 				std::fflush(stderr);
 				if (sigsetjmp(s_alloc_brk_jmp, 1) == 0)
 				{
-					JIT26Detach();
+					asm volatile("mov x0, %0\n"
+					             "mov x1, %1\n"
+					             "brk #0x69"
+					             :: "r"(rx_ptr), "r"(size) : "x0", "x1");
 					brk_ok = true;
-					std::fprintf(stderr, "@@JIT_ALLOC@@ txm_detach_ok\n");
+					std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_ok\n");
 					std::fflush(stderr);
 				}
 				else
 				{
-					std::fprintf(stderr, "@@JIT_ALLOC@@ txm_detach_sigtrap\n");
+					std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_sigtrap\n");
 					std::fflush(stderr);
 				}
 			}
-			else
-			{
-				std::fprintf(stderr, "@@JIT_ALLOC@@ txm_register_universal_sigtrap\n");
-				std::fflush(stderr);
-			}
+			// else: universal completed but failed (sigtrap) — brk_ok stays false
 		}
+		// AYS2: upstream's own accepted trade-off, carried over verbatim —
+		// if the Universal worker above hung and is still running after we
+		// restore the old handler here, a late trap goes to sa_brk_old
+		// instead of our siglongjmp handler. Bounded to Universal + hang +
+		// late trap; AYS2 defaults to legacy (see ios_main.mm), which never
+		// takes this branch at all unless the user opts into Universal.
 		sigaction(SIGTRAP, &sa_brk_old, nullptr);
 
 		if (!brk_ok)

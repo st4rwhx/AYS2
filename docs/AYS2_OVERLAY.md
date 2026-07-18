@@ -67,7 +67,7 @@ Copied forward untouched on every rebase.
 | `src/swift/Views/Settings/GraphicsSettingsView.swift` | `ShadeBoostPreviewView` inserted above the Shade Boost sliders; corrected two hack captions that no longer require reset/relaunch |
 | `src/swift/Views/GameListView.swift` | cover-flow carousel enabled in portrait (drop landscape-only gate) |
 | `src/cpp/ios_main.mm` | JIT protocol default → `legacy` (brk #0x69) + one-time V2 migration; JIT keepalive timer (12s, idle-only) + boot watchdog (15s), ported early from ARMSX2's iOS JIT resilience layer (their `platforms/ios` commit "add JIT resilience layer with keepalive, interpreter fallback, and boot watchdog") ahead of a full rebase — see §3 note below |
-| `src/cpp/common/Darwin/DarwinMisc.h` / `.cpp` | `DarwinMisc::ValidateJITAlive()` — same upstream JIT resilience layer, the CS_DEBUGGED + JIT RW alias canary re-check the keepalive timer calls |
+| `src/cpp/common/Darwin/DarwinMisc.h` / `.cpp` | `DarwinMisc::ValidateJITAlive()` (CS_DEBUGGED + JIT RW alias canary re-check, called by the keepalive timer); 8s worker-thread timeout on the Universal TXM path in `MmapCodeDualMap`, falling back to Legacy `brk #0x69` on hang — same upstream JIT resilience layer |
 | `src/cpp/pcsx2/PrecompiledHeader.h` | `#include <TargetConditionals.h>` so `TARGET_OS_IPHONE` resolves |
 | `src/cpp/common/PrecompiledHeader.h` | same TargetConditionals include |
 | `src/cpp/pcsx2/ImGui/ImGuiOverlays.cpp` | in-game OSD brand → `AYS2` |
@@ -94,15 +94,29 @@ Copied forward untouched on every rebase.
 > Re-verify the actual current layout before running this playbook; it hasn't
 > been re-run/re-tested against the new structure yet.
 >
-> We also ported 3 pieces of upstream's iOS JIT resilience layer (keepalive
-> timer, `ValidateJITAlive`, boot watchdog — see §2b, `ios_main.mm` /
-> `DarwinMisc.cpp`) **out of band, ahead of a full rebase**, based on a
-> commit description we could not verify byte-for-byte (no repo access to
-> diff directly in that session). Deliberately left out: their Universal-JIT-
-> with-8s-timeout-on-a-worker-thread piece — the described pattern crosses a
-> `sigsetjmp`/`siglongjmp` across threads, which is undefined behavior in
-> POSIX, and we couldn't confirm from the description alone whether upstream
-> handles that safely. Don't port that piece without reading the real diff.
+> We also ported all 5 pieces of upstream's iOS JIT resilience layer
+> (keepalive timer, `ValidateJITAlive`, boot watchdog, and the Universal-JIT
+> 8s-worker-thread-timeout-with-Legacy-fallback — see §2b, `ios_main.mm` /
+> `DarwinMisc.cpp`) **out of band, ahead of a full rebase**. The Universal
+> timeout piece was initially held back over a suspected `sigsetjmp` cross-
+> thread UB risk; verified false via `raw.githubusercontent.com` (readable
+> even though `github.com` diff/API views are blocked in-session) — the
+> `sigsetjmp` is called fresh on the worker thread itself, right before the
+> op that might trap, so the SIGTRAP (synchronous, instruction-triggered) is
+> delivered to that same thread. Carried over one accepted trade-off from
+> upstream verbatim: if that worker thread hangs, `sa_brk_old` is restored
+> unconditionally afterward, so a late trap after the Legacy fallback would
+> hit the old handler instead of ours. Upstream's own comment calls this
+> "bounded... Universal protocol + hang + late trap" — and AYS2 defaults to
+> Legacy always (`ios_main.mm`), so this branch is only reachable at all if
+> a user opts into Universal from Settings.
+>
+> None of this was verified against a real diff via authenticated repo
+> access (that session couldn't add `ARMSX2/ARMSX2` — cross-owner add is
+> blocked; forking it was also blocked). Verified only by cross-referencing
+> `raw.githubusercontent.com` fetches against our own already-trusted code
+> (matching identifiers, matching surrounding logic) — high confidence, not
+> a substitute for a real rebase diff when one becomes possible.
 > When the actual rebase happens, diff our 3 ported pieces against upstream's
 > real versions and reconcile — ours may differ from what actually shipped.
 
