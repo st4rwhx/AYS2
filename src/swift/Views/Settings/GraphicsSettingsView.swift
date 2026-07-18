@@ -195,7 +195,7 @@ struct GraphicsSettingsView: View {
                     get: { manualAdvancedHacks },
                     set: { settings.enableGameDBHardwareFixes = !$0 }
                 ))
-                Text(settings.localized("GameDB Graphics Fixes are safest for most games. Manual Advanced Hacks disable those automatic graphics fixes and allow the sprite, texture-offset, and Skipdraw values below. Reset/relaunch may be needed."))
+                Text(settings.localized("GameDB Graphics Fixes are safest for most games. Manual Advanced Hacks disable those automatic graphics fixes and allow the sprite, texture-offset, and Skipdraw values below. Changes apply to the running game; resume to see them."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -243,7 +243,7 @@ struct GraphicsSettingsView: View {
 
                 ClampedIntField(title: settings.localized("Skipdraw Start"), value: skipDrawStartBinding, range: SettingsStore.skipDrawRange, isEnabled: manualAdvancedHacks)
                 ClampedIntField(title: settings.localized("Skipdraw End"), value: skipDrawEndBinding, range: SettingsStore.skipDrawRange, isEnabled: manualAdvancedHacks)
-                Text(settings.localized("For Skipdraw 1, use Start 1 and End 1. Changes apply after reset/relaunch."))
+                Text(settings.localized("For Skipdraw 1, use Start 1 and End 1. Applies to the running game; resume to see it."))
                     .font(.caption)
                     .foregroundStyle(.orange)
             }

@@ -478,19 +478,34 @@ final class SettingsStore: @unchecked Sendable {
         }
     }
     var halfPixelOffset: Int {
-        didSet { ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_HalfPixelOffset", value: Int32(halfPixelOffset)) }
+        didSet {
+            ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_HalfPixelOffset", value: Int32(halfPixelOffset))
+            requestGraphicsApply()
+        }
     }
     var roundSprite: Int {
-        didSet { ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_round_sprite_offset", value: Int32(roundSprite)) }
+        didSet {
+            ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_round_sprite_offset", value: Int32(roundSprite))
+            requestGraphicsApply()
+        }
     }
     var alignSprite: Bool {
-        didSet { ARMSX2Bridge.setINIBool("EmuCore/GS", key: "UserHacks_align_sprite_X", value: alignSprite) }
+        didSet {
+            ARMSX2Bridge.setINIBool("EmuCore/GS", key: "UserHacks_align_sprite_X", value: alignSprite)
+            requestGraphicsApply()
+        }
     }
     var mergeSprite: Bool {
-        didSet { ARMSX2Bridge.setINIBool("EmuCore/GS", key: "UserHacks_merge_pp_sprite", value: mergeSprite) }
+        didSet {
+            ARMSX2Bridge.setINIBool("EmuCore/GS", key: "UserHacks_merge_pp_sprite", value: mergeSprite)
+            requestGraphicsApply()
+        }
     }
     var wildArmsOffset: Bool {
-        didSet { ARMSX2Bridge.setINIBool("EmuCore/GS", key: "UserHacks_ForceEvenSpritePosition", value: wildArmsOffset) }
+        didSet {
+            ARMSX2Bridge.setINIBool("EmuCore/GS", key: "UserHacks_ForceEvenSpritePosition", value: wildArmsOffset)
+            requestGraphicsApply()
+        }
     }
     var textureOffsetX: Int {
         didSet {
@@ -500,6 +515,7 @@ final class SettingsStore: @unchecked Sendable {
                 return
             }
             ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_TCOffsetX", value: Int32(textureOffsetX))
+            requestGraphicsApply()
         }
     }
     var textureOffsetY: Int {
@@ -510,6 +526,7 @@ final class SettingsStore: @unchecked Sendable {
                 return
             }
             ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_TCOffsetY", value: Int32(textureOffsetY))
+            requestGraphicsApply()
         }
     }
     var skipDrawStart: Int {
@@ -520,6 +537,7 @@ final class SettingsStore: @unchecked Sendable {
                 return
             }
             ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_SkipDraw_Start", value: Int32(skipDrawStart))
+            requestGraphicsApply()
         }
     }
     var skipDrawEnd: Int {
@@ -530,6 +548,7 @@ final class SettingsStore: @unchecked Sendable {
                 return
             }
             ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_SkipDraw_End", value: Int32(skipDrawEnd))
+            requestGraphicsApply()
         }
     }
     var loadTextureReplacements: Bool {
