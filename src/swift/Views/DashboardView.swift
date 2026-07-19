@@ -341,7 +341,10 @@ struct GamesCarouselView: View {
             try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { return }
             if let lastSoundedGameID, lastSoundedGameID != focusedGameID {
-                SoundManager.shared.play(.nav)
+                // AYS2: matches the sound used when picking a CORE ACCESS
+                // subscription tier (CoreAccessView's planRow), not the .nav
+                // sound used for top-nav tab switches (seam/fix).
+                SoundManager.shared.play(.select)
             }
             lastSoundedGameID = focusedGameID
             loadFocusedImage(for: focusedGameID)
