@@ -195,6 +195,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		${CMAKE_SOURCE_DIR}/../swift/Models/ImportDocumentPicker.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/ShareSheet.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/CoverStore.swift
+		${CMAKE_SOURCE_DIR}/../swift/Models/GameSynopsisStore.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/PatchModels.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/PnachParser.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/PatchStore.swift

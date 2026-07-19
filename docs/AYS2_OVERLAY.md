@@ -42,12 +42,13 @@ Copied forward untouched on every rebase.
 
 | File | What |
 |---|---|
-| `src/swift/Views/DashboardView.swift` | NXE dashboard shell, kinetic single-game-hero carousel (native `.scrollTargetBehavior(.viewAligned)` + centered `.scrollPosition` snaps exactly one game per swipe, `.scrollTransition` scale/opacity/blur falloff on neighbors), settings-tile hub, community bar |
+| `src/swift/Views/DashboardView.swift` | NXE dashboard shell, kinetic single-game-hero carousel (native `.scrollTargetBehavior(.viewAligned)` + centered `.scrollPosition` snaps exactly one game per swipe, `.scrollTransition` scale/opacity/blur falloff on neighbors), focused-game synopsis panel, settings-tile hub, community bar |
 | `src/swift/Views/GameHeroBackground.swift` | Full-bleed banner behind the games carousel: the focused game's own cover art, blurred and stretched to fill, cross-fading as focus moves — no per-item network/asset fetch, reuses the cover already loaded for the carousel |
+| `src/swift/Models/GameSynopsisStore.swift` | Per-game synopsis by serial, same fetch-by-serial pattern as CoverStore's cover art: Tom-Bruise/PS2-OPL-CFG-Database (GPL-3.0, ScreenScraper-sourced, EN/FR), disk-cached, works for the whole library automatically |
 | `src/swift/Views/RetroKit.swift` | Light/dark NXE design system (colors, TopNav chrome, PS glyphs, HintBar) |
 | `src/swift/Views/CommunityView.swift` | Discord/GitHub welcome sheet + floating community bar |
 | `src/swift/Views/DiscordLogoShape.swift` | Discord logo drawn natively as a SwiftUI Shape |
-| `src/swift/Models/SoundManager.swift` | UI sounds |
+| `src/swift/Models/SoundManager.swift` | UI sounds (nav/select/back/boot) — the four `.wav` assets it plays (`src/assets/resources/sounds/*.wav`) are ours, synthesized (no Sony/sample assets) |
 | `src/swift/Models/CoreAccessStore.swift` | CORE ACCESS membership: entitlement via our worker, upsell cadence |
 | `src/swift/Views/CoreAccessView.swift` | CORE ACCESS storefront + post-game upsell sheet |
 | `coreaccess/worker/*` | Stripe checkout redirect + entitlement API (Cloudflare Worker) |

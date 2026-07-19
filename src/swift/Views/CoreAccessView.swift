@@ -39,7 +39,7 @@ struct CoreAccessView: View {
             }
             if showsClose {
                 Button {
-                    SoundManager.shared.play(.nav)
+                    SoundManager.shared.play(.back)
                     dismiss()
                 } label: {
                     Image(systemName: "xmark")
@@ -114,7 +114,7 @@ struct CoreAccessView: View {
                 planRow(plan)
             }
             Button {
-                SoundManager.shared.play(.nav)
+                SoundManager.shared.play(.select)
                 if let plan = CoreAccessStore.plans.first(where: { $0.id == selectedPlanID }) {
                     openURL(CoreAccessStore.checkoutURL(plan: plan))
                 }
@@ -137,7 +137,7 @@ struct CoreAccessView: View {
     private func planRow(_ plan: CoreAccessStore.Plan) -> some View {
         let selected = plan.id == selectedPlanID
         return Button {
-            SoundManager.shared.play(.nav)
+            SoundManager.shared.play(.select)
             selectedPlanID = plan.id
         } label: {
             HStack {
@@ -187,7 +187,7 @@ struct CoreAccessView: View {
                     .padding(10)
                     .background(RoundedRectangle(cornerRadius: 10).fill(Retro.panel2))
                 Button {
-                    SoundManager.shared.play(.nav)
+                    SoundManager.shared.play(.select)
                     let email = activationEmail
                     Task {
                         let ok = await CoreAccessStore.shared.activate(email: email)
@@ -265,7 +265,7 @@ struct CoreAccessUpsellSheet: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 22)
                 Button {
-                    SoundManager.shared.play(.nav)
+                    SoundManager.shared.play(.select)
                     showStore = true
                 } label: {
                     Text(settings.localized("Discover CORE ACCESS"))
@@ -288,7 +288,7 @@ struct CoreAccessUpsellSheet: View {
                 .padding(.bottom, 18)
             }
             Button {
-                SoundManager.shared.play(.nav)
+                SoundManager.shared.play(.back)
                 dismiss()
             } label: {
                 Image(systemName: "xmark")

@@ -602,4 +602,26 @@ final class CoverStore: @unchecked Sendable {
         }
         return result
     }
+
+    /// Converts a raw PS2 serial (e.g. "SLUS-20312", the format
+    /// `GameList::Entry.serial` already produces) to the OPL-style
+    /// "SLUS_203.12" form used by other serial-keyed community databases
+    /// (GameSynopsisStore). Shared here since CoverStore already does this
+    /// exact conversion internally for cover-art candidate URLs.
+    static func oplSerial(from rawSerial: String) -> String? {
+        let pattern = "^([A-Za-z]{4})[_-]?([0-9]{3})[._-]?([0-9]{2})"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(rawSerial.startIndex..<rawSerial.endIndex, in: rawSerial)
+        guard let match = regex.firstMatch(in: rawSerial, range: range),
+              match.numberOfRanges >= 4,
+              let prefixRange = Range(match.range(at: 1), in: rawSerial),
+              let firstRange = Range(match.range(at: 2), in: rawSerial),
+              let secondRange = Range(match.range(at: 3), in: rawSerial) else {
+            return nil
+        }
+        let prefix = String(rawSerial[prefixRange]).uppercased()
+        let first = String(rawSerial[firstRange])
+        let second = String(rawSerial[secondRange])
+        return "\(prefix)_\(first).\(second)"
+    }
 }

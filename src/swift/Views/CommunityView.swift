@@ -125,7 +125,7 @@ struct CommunityBar: View {
         VStack(spacing: 12) {
             // Discord — the real Discord logo on a blurple circle.
             Button {
-                SoundManager.shared.play(.nav)
+                SoundManager.shared.play(.select)
                 openURL(CommunityLinks.discord)
             } label: {
                 DiscordGlyph()
@@ -144,7 +144,7 @@ struct CommunityBar: View {
 
     private func iconButton(icon: String, accent: Color, url: URL) -> some View {
         Button {
-            SoundManager.shared.play(.nav)
+            SoundManager.shared.play(.select)
             openURL(url)
         } label: {
             Image(systemName: icon)

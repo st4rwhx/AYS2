@@ -22,6 +22,7 @@ struct DashGame: Identifiable {
     let coverURL: URL?
     let coverSignature: String?
     let isFavorite: Bool
+    let serial: String?
 }
 
 struct DashboardView: View {
@@ -136,6 +137,7 @@ struct GamesCarouselView: View {
     // scroll-transition scale effect and the ambient background tint.
     @State private var focusedGameID: String?
     @State private var focusedImage: UIImage?
+    @State private var focusedSynopsis: String?
 
     private var indexedText: String {
         "\(settings.localized("Indexed")) \(games.count) \(settings.localized(games.count == 1 ? "game" : "games"))"
@@ -151,6 +153,7 @@ struct GamesCarouselView: View {
                 if games.isEmpty {
                     emptyState
                 } else {
+                    focusedInfo
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(alignment: .top, spacing: 30) {
                             ForEach(games) { game in
@@ -196,6 +199,7 @@ struct GamesCarouselView: View {
         .alert(settings.localized("Restart VM?"), isPresented: $showRestartAlert) {
             Button(settings.localized("Cancel"), role: .cancel) {}
             Button(settings.localized("Restart"), role: .destructive) {
+                SoundManager.shared.play(.boot)
                 if let pendingGame { appState.shutdownAndBoot(isoName: pendingGame.bootName) }
             }
         } message: {
@@ -204,6 +208,7 @@ struct GamesCarouselView: View {
         .onAppear { loadGames() }
         .onChange(of: focusedGameID) { _, newID in
             loadFocusedImage(for: newID)
+            loadFocusedSynopsis(for: newID)
         }
     }
 
@@ -225,17 +230,61 @@ struct GamesCarouselView: View {
         }
     }
 
+    /// Best-effort synopsis for the focused game via GameSynopsisStore
+    /// (community database, cached to disk) — works for any game with a
+    /// recognized serial, not a hardcoded list. Silently shows nothing on
+    /// miss (unrecognized title, offline, no description available).
+    private func loadFocusedSynopsis(for gameID: String?) {
+        guard let gameID, let game = games.first(where: { $0.id == gameID }), let serial = game.serial, !serial.isEmpty else {
+            focusedSynopsis = nil
+            return
+        }
+        let preferFrench = settings.appLanguage.resolved == .french
+        Task {
+            let text = await GameSynopsisStore.shared.synopsis(rawSerial: serial, preferFrench: preferFrench)
+            if focusedGameID == gameID { focusedSynopsis = text }
+        }
+    }
+
+    private var focusedInfo: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let synopsis = focusedSynopsis, !synopsis.isEmpty {
+                Text(synopsis)
+                    .font(.footnote)
+                    .foregroundStyle(Retro.mut)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+                    .id(focusedGameID)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: focusedSynopsis)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .frame(minHeight: 20, alignment: .top)
+    }
+
     private var header: some View {
         HStack(alignment: .center) {
             RetroLabel(text: indexedText)
             Spacer()
-            Button { showLibrary = true } label: {
+            Button {
+                SoundManager.shared.play(.nav)
+                showLibrary = true
+            } label: {
                 Image(systemName: "square.grid.2x2").foregroundStyle(Retro.mut)
             }
-            Button { loadGames() } label: {
+            Button {
+                SoundManager.shared.play(.nav)
+                loadGames()
+            } label: {
                 Image(systemName: "arrow.clockwise").foregroundStyle(Retro.mut)
             }
-            Button { showImporter = true } label: {
+            Button {
+                SoundManager.shared.play(.select)
+                showImporter = true
+            } label: {
                 Label(settings.localized("Import"), systemImage: "plus")
             }
             .buttonStyle(RetroButtonStyle())
@@ -259,12 +308,14 @@ struct GamesCarouselView: View {
                     .overlay(alignment: .topTrailing) {
                         Menu {
                             Button {
+                                SoundManager.shared.play(.select)
                                 toggleFavorite(game)
                             } label: {
                                 Label(game.isFavorite ? settings.localized("Remove Favorite") : settings.localized("Add Favorite"),
                                       systemImage: game.isFavorite ? "star.slash" : "star")
                             }
                             Button {
+                                SoundManager.shared.play(.nav)
                                 showLibrary = true
                             } label: {
                                 Label(settings.localized("Manage in Library"), systemImage: "square.grid.2x2")
@@ -330,7 +381,10 @@ struct GamesCarouselView: View {
             Text(settings.localized("Import a PS2 disc image — ISO, BIN, CHD or IMG."))
                 .font(.subheadline).foregroundStyle(Retro.mut)
                 .multilineTextAlignment(.center)
-            Button { showImporter = true } label: {
+            Button {
+                SoundManager.shared.play(.select)
+                showImporter = true
+            } label: {
                 Label(settings.localized("Import a game"), systemImage: "plus")
             }
             .buttonStyle(RetroButtonStyle())
@@ -346,6 +400,7 @@ struct GamesCarouselView: View {
 
     private func selectGame(_ game: DashGame) {
         if game.bootName == appState.runningGameName {
+            SoundManager.shared.play(.boot)
             appState.returnToGame()
             return
         }
@@ -363,6 +418,7 @@ struct GamesCarouselView: View {
             pendingGame = game
             showRestartAlert = true
         } else {
+            SoundManager.shared.play(.boot)
             appState.bootGame(isoName: game.bootName)
         }
     }
@@ -383,7 +439,8 @@ struct GamesCarouselView: View {
                 bootName: bootName,
                 coverURL: coverURL,
                 coverSignature: signature,
-                isFavorite: ARMSX2Bridge.isFavorite(bootName)
+                isFavorite: ARMSX2Bridge.isFavorite(bootName),
+                serial: metadata["serial"]
             )
         }
         .sorted { a, b in
@@ -395,6 +452,7 @@ struct GamesCarouselView: View {
         if focusedGameID == nil || !games.contains(where: { $0.id == focusedGameID }) {
             focusedGameID = games.first?.id
             loadFocusedImage(for: focusedGameID)
+            loadFocusedSynopsis(for: focusedGameID)
         }
     }
 
