@@ -87,28 +87,32 @@ struct TopNav: View {
             Button { step(-1) } label: { BumperPill(text: "L1") }
                 .buttonStyle(.plain)
 
-            // Section tabs with the active PlayStation-blue underline.
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 22) {
-                    ForEach(DashSection.allCases) { s in
-                        Button {
-                            section = s
-                            SoundManager.shared.play(.nav)
-                        } label: {
-                            VStack(spacing: 5) {
-                                Text(s.rawValue)
-                                    .font(.system(size: 17, weight: section == s ? .bold : .regular))
-                                    .foregroundStyle(section == s ? Retro.ink : Retro.mut)
-                                Rectangle()
-                                    .fill(section == s ? Retro.accent : Color.clear)
-                                    .frame(height: 2)
-                            }
+            // Section tabs with the active PlayStation-blue underline. Plain
+            // HStack, not a ScrollView — only 4 short fixed labels, they
+            // always fit without scrolling on any device. AYS2: a
+            // ScrollView here was intercepting taps as scroll gestures on
+            // iPad (trackpad/pointer input in particular), making the tabs
+            // — including Settings — unreachable for some users (seam/fix).
+            HStack(spacing: 22) {
+                ForEach(DashSection.allCases) { s in
+                    Button {
+                        section = s
+                        SoundManager.shared.play(.nav)
+                    } label: {
+                        VStack(spacing: 5) {
+                            Text(s.rawValue)
+                                .font(.system(size: 17, weight: section == s ? .bold : .regular))
+                                .foregroundStyle(section == s ? Retro.ink : Retro.mut)
+                            Rectangle()
+                                .fill(section == s ? Retro.accent : Color.clear)
+                                .frame(height: 2)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 2)
             }
+            .padding(.horizontal, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             // R1 bumper — steps to the next tab (matches a controller's R1).
             Button { step(1) } label: { BumperPill(text: "R1") }
