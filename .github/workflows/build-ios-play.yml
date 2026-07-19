@@ -1,0 +1,73 @@
+name: Build AYS2 (Play! core, iOS)
+
+# AYS2: migration to Play! (jpd002/Play-) core — Phase 4 (see /root/.claude/plans).
+# Builds from our own vendor/play submodule (pinned commit, not a live
+# upstream checkout) rather than checking out jpd002/Play- fresh each time —
+# this is the difference from the Phase 1 spike workflow, which proved the
+# toolchain itself works. This workflow is the actual foundation Phase 4
+# builds on: still Play!'s own unmodified Source/ui_ios for now, one commit
+# at a time will layer our SwiftUI screens on top via UIHostingController.
+#
+# Deliberately separate from build-ios.yml (the ARMSX2iOS/PCSX2-core app),
+# which keeps shipping unaffected until this replacement is feature-ready.
+on:
+  push:
+    branches: ["claude/**"]
+    paths:
+      - "vendor/play/**"
+      - ".github/workflows/build-ios-play.yml"
+  workflow_dispatch:
+
+jobs:
+  build_play_ios:
+    name: Build Play! iOS (from vendor/play submodule)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout AYS2 (with vendor/play submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install dpkg (Play!'s own CI dependency)
+        run: brew install dpkg
+
+      - name: Install Vulkan SDK for iOS (LunarG, MoltenVK-based)
+        run: |
+          set -euo pipefail
+          curl -L --show-error --output vulkansdk.zip \
+            "https://sdk.lunarg.com/sdk/download/${VULKAN_SDK_VERSION}/mac/vulkansdk-macos-${VULKAN_SDK_VERSION}.zip?Human=true"
+          unzip -q vulkansdk.zip
+          sudo "./InstallVulkan-${VULKAN_SDK_VERSION}.app/Contents/MacOS/InstallVulkan-${VULKAN_SDK_VERSION}" \
+            in --al --c com.lunarg.vulkan.ios
+          echo "VULKAN_SDK=${HOME}/VulkanSDK/${VULKAN_SDK_VERSION}/iOS" >> "$GITHUB_ENV"
+        env:
+          VULKAN_SDK_VERSION: '1.4.309.0'
+
+      - name: CMake configure (Play!'s own iOS toolchain, unmodified)
+        run: |
+          set -euo pipefail
+          cd vendor/play
+          mkdir build
+          cd build
+          cmake .. -G"Xcode" \
+            -DCMAKE_TOOLCHAIN_FILE=../deps/Dependencies/cmake-ios/ios.cmake \
+            -DTARGET_IOS=ON \
+            -DCMAKE_PREFIX_PATH="$VULKAN_SDK"
+
+      - name: Build (Xcode, Release) + ad-hoc codesign
+        run: |
+          set -euo pipefail
+          cd vendor/play/build
+          cmake --build . --config Release
+          codesign -s "-" Source/ui_ios/Release-iphoneos/Play.app
+          echo "Play.app built successfully:"
+          find Source/ui_ios -maxdepth 2 -name "Play.app" -exec ls -la {} \;
+
+      - name: Upload Play.app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AYS2-play-core-ios
+          path: vendor/play/build/Source/ui_ios/Release-iphoneos/Play.app
+          retention-days: 14
