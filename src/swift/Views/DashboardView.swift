@@ -132,35 +132,52 @@ struct GamesCarouselView: View {
     @State private var actionTitle = ""
     @State private var actionMessage = ""
     @State private var showActionAlert = false
+    // AYS2: kinetic hub carousel (seam) — center-focus tracking for the
+    // scroll-transition scale effect and the ambient background tint.
+    @State private var focusedGameID: String?
+    @State private var focusedImage: UIImage?
 
     private var indexedText: String {
         "\(settings.localized("Indexed")) \(games.count) \(settings.localized(games.count == 1 ? "game" : "games"))"
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            if games.isEmpty {
-                emptyState
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 18) {
-                        ForEach(games) { game in
-                            coverItem(game)
+        // AYS2: kinetic hub carousel (seam) — ambient backdrop keyed on the
+        // scroll-focused cover, behind the same header/list/hint chrome.
+        ZStack {
+            AmbientHeroBackground(focusedImage: focusedImage, focusKey: focusedGameID)
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                if games.isEmpty {
+                    emptyState
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(alignment: .top, spacing: 18) {
+                            ForEach(games) { game in
+                                coverItem(game)
+                                    .scrollTransition(.interactive, axis: .horizontal) { content, phase in
+                                        content
+                                            .scaleEffect(phase.isIdentity ? 1.0 : 0.84)
+                                            .opacity(phase.isIdentity ? 1.0 : 0.5)
+                                    }
+                            }
                         }
+                        .scrollTargetLayout()
+                        .padding(.horizontal, 20)
+                        .padding(.top, 18)
+                        .padding(.bottom, 16)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 18)
-                    .padding(.bottom, 16)
+                    .scrollTargetBehavior(.viewAligned)
+                    .scrollPosition(id: $focusedGameID)
+                    .frame(maxHeight: .infinity, alignment: .center)
                 }
-                .frame(maxHeight: .infinity, alignment: .center)
+                Spacer(minLength: 0)
+                HintBar(hints: [
+                    .init(button: .triangle, label: settings.localized("add game")),
+                    .init(button: .cross, label: settings.localized("select")),
+                    .init(button: .circle, label: settings.localized("back")),
+                ])
             }
-            Spacer(minLength: 0)
-            HintBar(hints: [
-                .init(button: .triangle, label: settings.localized("add game")),
-                .init(button: .cross, label: settings.localized("select")),
-                .init(button: .circle, label: settings.localized("back")),
-            ])
         }
         .fileImporter(isPresented: $showImporter,
                       allowedContentTypes: [.data, .item],
@@ -184,6 +201,27 @@ struct GamesCarouselView: View {
             Text("\(settings.localized("A game is running. Shut it down and start")) \(pendingGame?.name ?? "")?")
         }
         .onAppear { loadGames() }
+        .onChange(of: focusedGameID) { _, newID in
+            loadFocusedImage(for: newID)
+        }
+    }
+
+    /// Loads the focused game's cover independently of `CleanCover`'s own
+    /// per-item loading — the ambient background needs a decoded `UIImage`
+    /// (for Core Image sampling), not just a URL, and must not depend on
+    /// whichever cover view happens to still be alive on screen.
+    private func loadFocusedImage(for gameID: String?) {
+        guard let gameID, let game = games.first(where: { $0.id == gameID }), let url = game.coverURL else {
+            focusedImage = nil
+            return
+        }
+        Task {
+            let data = await Task.detached { try? Data(contentsOf: url) }.value
+            guard let data, let image = UIImage(data: data) else { return }
+            // Focus may have moved on again while this was loading; only
+            // apply the result if it's still the current focus.
+            if focusedGameID == gameID { focusedImage = image }
+        }
     }
 
     private var header: some View {
@@ -345,6 +383,12 @@ struct GamesCarouselView: View {
         .sorted { a, b in
             if a.isFavorite != b.isFavorite { return a.isFavorite }
             return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        }
+        // AYS2: kinetic hub carousel (seam) — keep focus valid across
+        // reloads (import, favorite toggle) instead of always resetting it.
+        if focusedGameID == nil || !games.contains(where: { $0.id == focusedGameID }) {
+            focusedGameID = games.first?.id
+            loadFocusedImage(for: focusedGameID)
         }
     }
 

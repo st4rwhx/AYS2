@@ -42,7 +42,8 @@ Copied forward untouched on every rebase.
 
 | File | What |
 |---|---|
-| `src/swift/Views/DashboardView.swift` | NXE dashboard shell, cover carousel, settings-tile hub, community bar |
+| `src/swift/Views/DashboardView.swift` | NXE dashboard shell, kinetic cover carousel (native `.scrollTargetBehavior`/`.scrollTransition` center-focus, ambient backdrop), settings-tile hub, community bar |
+| `src/swift/Views/GameHeroBackground.swift` | Ambient radial-gradient wash behind the games carousel, tinted by the focused cover's average color (`AmbientCoverColorCache` actor, Core Image `CIAreaAverage`, off-main-thread) |
 | `src/swift/Views/RetroKit.swift` | Light/dark NXE design system (colors, TopNav chrome, PS glyphs, HintBar) |
 | `src/swift/Views/CommunityView.swift` | Discord/GitHub welcome sheet + floating community bar |
 | `src/swift/Views/DiscordLogoShape.swift` | Discord logo drawn natively as a SwiftUI Shape |
