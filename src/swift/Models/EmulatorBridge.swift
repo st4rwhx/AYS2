@@ -37,6 +37,44 @@ enum StikDebugLauncher {
 #endif
     }
 
+    // AYS2: TrollStore JIT support (seam) — TrollStore 2.0.12+ exposes its
+    // own enable-jit deep link, functionally the same round-trip as
+    // StikDebug's (switch to the JIT-granting app, it flips CS_DEBUGGED for
+    // us, switch back). Deliberately NOT folded into open()'s candidate
+    // chain or autoOpenIfNeeded(): TrollStore reuses the system
+    // "apple-magnifier" URL scheme to avoid jailbreak-detection heuristics,
+    // which is also the real Magnifier accessibility feature's scheme — on
+    // a device without TrollStore installed, iOS may still resolve that
+    // scheme to the real Magnifier app and report success, so this can't be
+    // trusted to "fail silently" the way stikdebug:// does for someone who
+    // doesn't have it. Kept as an explicit, user-initiated action only
+    // (Settings button), never auto-triggered.
+    //
+    // Only meaningfully useful on TrollStore installs still on an
+    // unpatched build (iOS 14.0–16.6.1, the 16.7 RC/20H18, or exactly
+    // 17.0) — Apple closed the underlying CoreTrust bug in the final
+    // 16.7 and in 17.0.1, so TrollStore can't be freshly installed past
+    // that regardless of this button.
+    static func openTrollStore(reason: String = "manual", completion: ((Bool) -> Void)? = nil) {
+#if canImport(UIKit)
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.armsx2.ios"
+        let encodedBundleID = bundleID.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? bundleID
+        guard let url = URL(string: "apple-magnifier://enable-jit?bundle-id=\(encodedBundleID)") else {
+            log("openTrollStore failed: invalid launch URL")
+            completion?(false)
+            return
+        }
+
+        UIApplication.shared.open(url, options: [:]) { success in
+            log("openTrollStore \(success ? "succeeded" : "failed") reason=\(reason) url=\(url.absoluteString)")
+            completion?(success)
+        }
+#else
+        log("openTrollStore skipped: UIKit unavailable reason=\(reason)")
+        completion?(false)
+#endif
+    }
+
 #if canImport(UIKit)
     private static func openFirstAvailableURL(_ urls: [URL], reason: String, completion: ((Bool) -> Void)?) {
         guard let url = urls.first else {

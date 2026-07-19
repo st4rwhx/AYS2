@@ -102,6 +102,7 @@ struct SettingsRootView: View {
     @State private var noJITFallbackActive = ARMSX2Bridge.isNoJITFallbackActive()
     @State private var stikDebugOpenFailed = false
     @State private var stikDebugOpenInProgress = false
+    @State private var trollStoreOpenInProgress = false
 #if targetEnvironment(macCatalyst)
     @State private var selectedPane: SettingsPane? = .emulator
 #endif
@@ -137,6 +138,21 @@ struct SettingsRootView: View {
                     Label(settings.localized("Open StikDebug"), systemImage: "bolt.horizontal.circle")
                 }
                 .disabled(stikDebugOpenInProgress)
+
+                // AYS2: TrollStore is a separate sideloading method from
+                // StikDebug/AltStore (seam) — kept as its own explicit
+                // button rather than folded into the status row/badge
+                // above, which stays focused on StikDebug's own state.
+                Button {
+                    trollStoreOpenInProgress = true
+                    StikDebugLauncher.openTrollStore(reason: "settings-root") { _ in
+                        trollStoreOpenInProgress = false
+                        refreshJITStatus()
+                    }
+                } label: {
+                    Label(settings.localized("Enable JIT via TrollStore"), systemImage: "bolt.horizontal.circle")
+                }
+                .disabled(trollStoreOpenInProgress)
 
                 Text(settings.localized("JIT Access means iOS currently allows executable memory. Confirm the real runtime state in-game: the OSD should show EE:JIT, IOP:JIT, and VU:JIT. Match the StikDebug script to the JIT Script setting in Emulator settings."))
                     .font(.caption)

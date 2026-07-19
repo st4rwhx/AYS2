@@ -7,6 +7,8 @@ struct EmulatorSettingsView: View {
     @State private var settings = SettingsStore.shared
     @State private var stikDebugOpenFailed = false
     @State private var stikDebugOpenInProgress = false
+    @State private var trollStoreOpenFailed = false
+    @State private var trollStoreOpenInProgress = false
 
     var body: some View {
         Form {
@@ -69,7 +71,7 @@ struct EmulatorSettingsView: View {
                 Text(settings.localized("Rounding and clamping can improve compatibility for specific games, but may break others. Changes take effect on the next game boot."))
             }
 
-            Section(settings.localized("StikDebug")) {
+            Section(settings.localized("JIT")) {
                 Toggle(settings.localized("Auto-open StikDebug"), isOn: $settings.autoOpenStikDebug)
 
                 Picker(settings.localized("JIT Script"), selection: $settings.jitScriptProtocol) {
@@ -101,6 +103,28 @@ struct EmulatorSettingsView: View {
 
                 if stikDebugOpenFailed {
                     Text(settings.localized("Open StikDebug manually, then run the selected script and relaunch ARMSX2."))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                Button {
+                    trollStoreOpenInProgress = true
+                    trollStoreOpenFailed = false
+                    StikDebugLauncher.openTrollStore(reason: "emulator-settings") { success in
+                        trollStoreOpenInProgress = false
+                        trollStoreOpenFailed = !success
+                    }
+                } label: {
+                    Label(settings.localized("Enable JIT via TrollStore"), systemImage: "bolt.horizontal.circle")
+                }
+                .disabled(trollStoreOpenInProgress)
+
+                Text(settings.localized("Only for TrollStore installs — a separate sideloading method from StikDebug/AltStore. If ARMSX2 isn't installed through TrollStore, this button won't do anything."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if trollStoreOpenFailed {
+                    Text(settings.localized("TrollStore didn't respond. If you don't use TrollStore, use StikDebug above instead."))
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
