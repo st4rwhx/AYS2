@@ -8,6 +8,7 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 
 enum DashSection: String, CaseIterable, Identifiable {
     case games = "Games", bios = "BIOS", settings = "Settings", help = "Help"
@@ -670,7 +671,12 @@ struct GamesCarouselView: View {
     }
 
     private func presentMenuPanel(_ action: @escaping () -> Void) {
+        // AYS2: guard against a scene backgrounding during this delay
+        // (seam/fix) — see RootView.swift's showCommunityWelcome timer for
+        // the full rationale (stuck sheet dimming overlay swallowing touches
+        // on foreground return, worse on iPad's non-fullscreen sheets).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            guard UIApplication.shared.applicationState == .active else { return }
             action()
         }
     }

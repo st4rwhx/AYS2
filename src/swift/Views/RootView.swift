@@ -43,7 +43,15 @@ struct RootView: View {
                         showBootSplash = false
                     }
                     // Warm Discord / GitHub-star invite, once the splash clears.
+                    // AYS2: guard against the scene having backgrounded during
+                    // this delay (seam/fix) — presenting a sheet while the app
+                    // resigns active can leave its dimming overlay attached
+                    // without the card, swallowing every touch underneath once
+                    // the user returns foreground (worse on iPad, where
+                    // .sheet is a non-fullscreen form card and the stuck
+                    // overlay is invisible instead of an obvious blank screen).
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        guard UIApplication.shared.applicationState == .active else { return }
                         if appState.currentScreen == .menu {
                             showCommunityWelcome = true
                         }
