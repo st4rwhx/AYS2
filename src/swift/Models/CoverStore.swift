@@ -5,6 +5,7 @@ import Foundation
 import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 
 struct CoverGameInfo: Sendable {
     let name: String
@@ -104,7 +105,19 @@ final class CoverStore: @unchecked Sendable {
         }
 
         isDownloadingCovers = true
-        defer { isDownloadingCovers = false }
+        // AYS2: a bulk download (adding a whole library at once) can run
+        // long enough to cross the device's auto-lock timeout with the user
+        // not touching the screen while it waits — that backgrounds the
+        // scene mid-operation, which is exactly the condition that leaves a
+        // delayed sheet/alert presentation stuck (see the RootView.swift/
+        // GameListView.swift presentMenuPanel fix). Disabling the idle timer
+        // for the duration removes the most likely trigger for that outright
+        // (seam/fix), rather than only guarding individual presentations.
+        UIApplication.shared.isIdleTimerDisabled = true
+        defer {
+            isDownloadingCovers = false
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
 
         var downloaded = 0
         var skipped = 0

@@ -250,7 +250,7 @@ struct GamesCarouselView: View {
                       allowsMultipleSelection: true) { result in
             handleImport(result)
         }
-        .sheet(isPresented: $showLibrary) {
+        .sheet(isPresented: $showLibrary, onDismiss: { loadGames() }) {
             NavigationStack { GameListView() }
         }
         .sheet(item: $gameInfoTarget) { game in
@@ -761,7 +761,13 @@ struct GamesCarouselView: View {
     private func handleImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            for url in urls { _ = FileImportHandler.shared.handleURL(url) }
+            // AYS2: batched into a single handleURLs call instead of one
+            // handleURL per file (seam/fix) — the per-file version ran a
+            // full import+alert cycle per file, so adding many games at once
+            // fired loadGames() N times back-to-back (only this final call
+            // does that now) and repeatedly stomped showImportAlert's
+            // message before SwiftUI could even present it once.
+            _ = FileImportHandler.shared.handleURLs(urls, preferredDestination: .automatic)
             loadGames()
         case .failure(let error):
             actionTitle = settings.localized("Import")

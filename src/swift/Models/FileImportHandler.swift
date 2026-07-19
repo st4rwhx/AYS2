@@ -76,6 +76,14 @@ final class FileImportHandler {
         var rejected: [String] = []
         var failed: [String] = []
 
+        // AYS2: copying a whole library (many large disc images) at once can
+        // run long enough to cross the device's auto-lock timeout — see the
+        // matching fix in CoverStore.downloadMissingCovers for why that
+        // matters here (backgrounding mid-operation is what leaves a
+        // delayed alert/sheet presentation stuck).
+        UIApplication.shared.isIdleTimerDisabled = true
+        defer { UIApplication.shared.isIdleTimerDisabled = false }
+
         for url in urls {
             switch importFile(
                 url,
