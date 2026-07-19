@@ -1517,7 +1517,9 @@ private extension View {
     }
 }
 
-private struct GameInfoPanel: View {
+// AYS2: no longer file-private — the Dashboard carousel's long-press
+// context menu (DashboardView.swift) reuses this same panel (seam).
+struct GameInfoPanel: View {
     @Environment(\.dismiss) private var dismiss
     @State private var settings = SettingsStore.shared
 

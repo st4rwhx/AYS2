@@ -23,6 +23,31 @@ struct DashGame: Identifiable {
     let coverSignature: String?
     let isFavorite: Bool
     let serial: String?
+    // AYS2: carries what's needed to build a full ISOEntry on demand for the
+    // carousel's long-press context menu (GameInfoPanel/PerGameSettingsPanel
+    // need one) without duplicating GameListView's whole richer model here.
+    let fileURL: URL?
+    let metadata: [String: String]
+    let isExternal: Bool
+
+    /// Built lazily (not stored) since it stats the file for its size — only
+    /// needed when the user actually opens the context menu, not on every
+    /// carousel reload.
+    var asISOEntry: ISOEntry {
+        let attrs = fileURL.flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path) }
+        let size = (attrs?[.size] as? NSNumber)?.uint64Value ?? 0
+        return ISOEntry(
+            name: name,
+            fileURL: fileURL,
+            bootPath: isExternal ? bootName : nil,
+            coverURL: coverURL,
+            coverSignature: coverSignature,
+            metadata: metadata,
+            size: size,
+            isFavorite: isFavorite,
+            isExternal: isExternal
+        )
+    }
 }
 
 struct DashboardView: View {
@@ -137,6 +162,7 @@ struct TopNav: View {
 struct GamesCarouselView: View {
     @State private var appState = AppState.shared
     @State private var settings = SettingsStore.shared
+    @State private var coverStore = CoverStore.shared
     @State private var games: [DashGame] = []
     @State private var showImporter = false
     @State private var showLibrary = false
@@ -150,6 +176,15 @@ struct GamesCarouselView: View {
     @State private var focusedGameID: String?
     @State private var focusedImage: UIImage?
     @State private var focusedSynopsis: String?
+    // AYS2: long-press context menu targets (seam) — mirrors GameListView's
+    // gameContextMenu, reusing the same panels/sheets so a game long-pressed
+    // from the carousel gets the same Game Info/Per-Game Settings/Cheats &
+    // Patches/Covers/Game Data menu as from the full library list.
+    @State private var gameInfoTarget: ISOEntry?
+    @State private var gameSettingsTarget: ISOEntry?
+    @State private var cheatsManagerTarget: DashGame?
+    @State private var pendingDeleteDataGame: DashGame?
+    @State private var pendingDeleteGame: DashGame?
 
     private var indexedText: String {
         "\(settings.localized("Indexed")) \(games.count) \(settings.localized(games.count == 1 ? "game" : "games"))"
@@ -208,6 +243,22 @@ struct GamesCarouselView: View {
         .sheet(isPresented: $showLibrary) {
             NavigationStack { GameListView() }
         }
+        .sheet(item: $gameInfoTarget) { game in
+            GameInfoPanel(game: game, coverStore: coverStore)
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $gameSettingsTarget) { game in
+            PerGameSettingsPanel(game: game)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.regularMaterial)
+                .presentationCornerRadius(34)
+        }
+        .sheet(item: $cheatsManagerTarget) { game in
+            CheatsPatchesManagerView(isoName: game.bootName, gameTitle: game.name)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
         .alert(actionTitle, isPresented: $showActionAlert) {
             Button(settings.localized("OK")) {}
         } message: {
@@ -221,6 +272,50 @@ struct GamesCarouselView: View {
             }
         } message: {
             Text("\(settings.localized("A game is running. Shut it down and start")) \(pendingGame?.name ?? "")?")
+        }
+        .alert(
+            settings.localized("Delete Game Data?"),
+            isPresented: Binding(
+                get: { pendingDeleteDataGame != nil },
+                set: { if !$0 { pendingDeleteDataGame = nil } }
+            )
+        ) {
+            Button(settings.localized("Cancel"), role: .cancel) {
+                pendingDeleteDataGame = nil
+            }
+            Button(settings.localized("Delete Game Data"), role: .destructive) {
+                if let game = pendingDeleteDataGame {
+                    deleteGameData(game)
+                }
+                pendingDeleteDataGame = nil
+            }
+        } message: {
+            Text(settings.localized("This clears save states, PNACH files, per-game settings, compatibility overrides, and generated cache for this game. Memory card contents are not deleted."))
+        }
+        .alert(
+            settings.localized("Delete Game?"),
+            isPresented: Binding(
+                get: { pendingDeleteGame != nil },
+                set: { if !$0 { pendingDeleteGame = nil } }
+            )
+        ) {
+            Button(settings.localized("Cancel"), role: .cancel) {
+                pendingDeleteGame = nil
+            }
+            Button(settings.localized("Delete ROM"), role: .destructive) {
+                if let game = pendingDeleteGame {
+                    deleteGame(game, deleteData: false)
+                }
+                pendingDeleteGame = nil
+            }
+            Button(settings.localized("Delete ROM + Game Data"), role: .destructive) {
+                if let game = pendingDeleteGame {
+                    deleteGame(game, deleteData: true)
+                }
+                pendingDeleteGame = nil
+            }
+        } message: {
+            Text(settings.localized("Delete the selected game file? You can also remove its generated game data at the same time."))
         }
         .onAppear { loadGames() }
         // AYS2: debounced via .task(id:)'s automatic cancel-and-restart
@@ -391,6 +486,12 @@ struct GamesCarouselView: View {
         }
         .buttonStyle(.plain)
         .frame(width: Self.heroCoverWidth)
+        // AYS2: long-press context menu (seam) — same Game Info/Per-Game
+        // Settings/Cheats & Patches/Covers/Game Data menu as GameListView's
+        // library rows, so a hero cover behaves like the rest of the library.
+        .contextMenu {
+            gameContextMenu(for: game)
+        }
     }
 
     /// Drops the disc-image extension for a cleaner title under the cover.
@@ -472,7 +573,10 @@ struct GamesCarouselView: View {
                 coverURL: coverURL,
                 coverSignature: signature,
                 isFavorite: ARMSX2Bridge.isFavorite(bootName),
-                serial: metadata["serial"]
+                serial: metadata["serial"],
+                fileURL: fileURL,
+                metadata: metadata,
+                isExternal: external
             )
         }
         .sorted { a, b in
@@ -491,6 +595,121 @@ struct GamesCarouselView: View {
     private func toggleFavorite(_ game: DashGame) {
         ARMSX2Bridge.setFavorite(game.bootName, favorite: !game.isFavorite)
         loadGames()
+    }
+
+    // AYS2: long-press context menu (seam) — ported from GameListView's
+    // gameContextMenu(for: ISOEntry), operating on DashGame directly and
+    // reusing the same panels/sheets (Game Info, Per-Game Settings, Cheats &
+    // Patches) so the carousel's hero cover offers the same menu as the
+    // full library list.
+    @ViewBuilder
+    private func gameContextMenu(for game: DashGame) -> some View {
+        Button {
+            presentMenuPanel { gameInfoTarget = game.asISOEntry }
+        } label: {
+            Label(settings.localized("Game Info"), systemImage: "info.circle")
+        }
+
+        Button {
+            presentMenuPanel { gameSettingsTarget = game.asISOEntry }
+        } label: {
+            Label(settings.localized("Per-Game Settings"), systemImage: "slider.horizontal.3")
+        }
+
+        Button {
+            presentMenuPanel { cheatsManagerTarget = game }
+        } label: {
+            Label(settings.localized("Cheats & Patches"), systemImage: "rectangle.stack.badge.plus")
+        }
+
+        Menu {
+            Button {
+                downloadCover(for: game)
+            } label: {
+                Label(settings.localized("Download Cover"), systemImage: "icloud.and.arrow.down")
+            }
+            .disabled(coverStore.isDownloadingCovers)
+
+            if game.coverURL != nil {
+                Button(role: .destructive) {
+                    coverStore.removeManagedCovers(forGameNamed: game.name)
+                    loadGames()
+                } label: {
+                    Label(settings.localized("Remove Cover"), systemImage: "trash")
+                }
+            }
+        } label: {
+            Label(settings.localized("Covers"), systemImage: "photo.stack")
+        }
+
+        Divider()
+
+        Menu {
+            Button {
+                clearGameCache(game)
+            } label: {
+                Label(settings.localized("Clear Game Cache"), systemImage: "trash.slash")
+            }
+
+            Button(role: .destructive) {
+                presentMenuPanel { pendingDeleteDataGame = game }
+            } label: {
+                Label(settings.localized("Delete Game Data"), systemImage: "externaldrive.badge.xmark")
+            }
+
+            if !game.isExternal {
+                Button(role: .destructive) {
+                    presentMenuPanel { pendingDeleteGame = game }
+                } label: {
+                    Label(settings.localized("Delete Game"), systemImage: "trash")
+                }
+            }
+        } label: {
+            Label(settings.localized("Game Data"), systemImage: "externaldrive")
+        }
+    }
+
+    private func presentMenuPanel(_ action: @escaping () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            action()
+        }
+    }
+
+    private func downloadCover(for game: DashGame) {
+        Task {
+            _ = await coverStore.downloadMissingCovers(for: [game.asISOEntry.coverInfo])
+            loadGames()
+        }
+    }
+
+    private func clearGameCache(_ game: DashGame) {
+        actionTitle = settings.localized("Clear Game Cache")
+        actionMessage = ARMSX2Bridge.clearCache(forISO: game.bootName)
+        showActionAlert = true
+    }
+
+    private func deleteGameData(_ game: DashGame) {
+        actionTitle = settings.localized("Delete Game Data")
+        actionMessage = ARMSX2Bridge.deleteGameData(forISO: game.bootName)
+        showActionAlert = true
+    }
+
+    private func deleteGame(_ game: DashGame, deleteData: Bool) {
+        if game.bootName == appState.runningGameName {
+            actionTitle = settings.localized("Delete Game")
+            actionMessage = settings.localized("Stop this game before deleting it.")
+            showActionAlert = true
+            return
+        }
+
+        let success = ARMSX2Bridge.deleteISO(game.bootName, deleteGameData: deleteData)
+        if success {
+            coverStore.removeManagedCovers(forGameNamed: game.name)
+            loadGames()
+        }
+        actionTitle = settings.localized("Delete Game")
+        actionMessage = success ? settings.localized("Game deleted.") : settings.localized("Could not delete this game file.")
+        showActionAlert = true
     }
 
     private func handleImport(_ result: Result<[URL], Error>) {
