@@ -109,9 +109,11 @@ set(OSX_SOURCES
 	VirtualPadItem.mm
 	VirtualPadStick.mm
 	VirtualPadView.mm
-	# AYS2 overlay (seam): SwiftUI shell + design system.
+	# AYS2 overlay (seam): SwiftUI shell + design system + the bridge that
+	# surfaces Play!'s game list/boot to it.
 	AYS2RootView.swift
 	RetroKit.swift
+	PlayBridge.mm
 )
 
 set(OSX_HEADERS
@@ -131,6 +133,8 @@ set(OSX_HEADERS
 	VirtualPadItem.h
 	VirtualPadStick.h
 	VirtualPadView.h
+	# AYS2 overlay (seam).
+	PlayBridge.h
 )
 
 set(OSX_RES
@@ -198,6 +202,16 @@ set_target_properties(
 	Play
 	PROPERTIES
 		XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0"
+)
+
+# AYS2 overlay (seam): Play!'s target had no Swift code (and so no bridging
+# header) before this overlay. AYS2RootView.swift now calls into PlayBridge
+# (Objective-C, PlayBridge.h/.mm) to reach Play!'s game list and boot path —
+# without this, Swift can't see any Objective-C in the target at all.
+set_target_properties(
+	Play
+	PROPERTIES
+		XCODE_ATTRIBUTE_SWIFT_OBJC_BRIDGING_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/AYS2-Bridging-Header.h"
 )
 
 if(USE_GSH_VULKAN)
