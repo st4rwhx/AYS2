@@ -64,7 +64,7 @@ Copied forward untouched on every rebase.
 |---|---|
 | `src/swift/Views/RootView.swift` | show `DashboardView()` instead of the tab menu; app color-scheme apply; community welcome sheet; post-game CORE ACCESS upsell |
 | `src/swift/Views/GameScreenView.swift` | pause button icon → `pause.fill` (menu itself is upstream's QuickMenuView; tile-grid redesign deferred) |
-| `src/swift/Models/SettingsStore.swift` | `AppColorScheme` (system/light/dark) setting; live-apply (`requestGraphicsApply()`) wired to the 7 advanced-upscaling-hack properties, which upstream leaves reset-only |
+| `src/swift/Models/SettingsStore.swift` | `AppColorScheme` (system/light/dark) setting; live-apply (`requestGraphicsApply()`) wired to the 7 advanced-upscaling-hack properties, which upstream leaves reset-only; 8 analog-stick/trigger tuning properties (deadzone, sensitivity, invert, vibration, pressure modifier) writing straight to the `Pad1` section PadDualshock2 already reads — core support existed, iOS never exposed it |
 | `src/swift/Views/Settings/AppearanceSettingsView.swift` | Theme picker |
 | `src/swift/Views/Settings/GraphicsSettingsView.swift` | `ShadeBoostPreviewView` inserted above the Shade Boost sliders; corrected two hack captions that no longer require reset/relaunch |
 | `src/swift/Views/GameListView.swift` | cover-flow carousel enabled in portrait (drop landscape-only gate) |

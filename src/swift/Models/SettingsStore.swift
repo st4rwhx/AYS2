@@ -856,6 +856,61 @@ final class SettingsStore: @unchecked Sendable {
     var controllerMultitapMode: Int {
         didSet { ARMSX2Bridge.setINIInt("ARMSX2iOS/Gamepad", key: "MultitapMode", value: Int32(controllerMultitapMode)) }
     }
+
+    // AYS2: analog stick / trigger tuning (seam) — these write directly to the
+    // "Pad1" section PadDualshock2 already reads (Pad.cpp LoadConfig): no new
+    // core plumbing needed, just exposing settings the emulator already
+    // supports but iOS never surfaced. requestGraphicsApply() (really "apply
+    // settings now", not GS-specific) reaches Pad::LoadConfig via
+    // VMManager::ApplySettings(), so these hot-apply mid-game.
+    var padAnalogDeadzone: Float {
+        didSet {
+            ARMSX2Bridge.setINIFloat("Pad1", key: "Deadzone", value: padAnalogDeadzone)
+            requestGraphicsApply()
+        }
+    }
+    var padAnalogSensitivity: Float {
+        didSet {
+            ARMSX2Bridge.setINIFloat("Pad1", key: "AxisScale", value: padAnalogSensitivity)
+            requestGraphicsApply()
+        }
+    }
+    var padButtonDeadzone: Float {
+        didSet {
+            ARMSX2Bridge.setINIFloat("Pad1", key: "ButtonDeadzone", value: padButtonDeadzone)
+            requestGraphicsApply()
+        }
+    }
+    var padInvertLeftStick: Int {
+        didSet {
+            ARMSX2Bridge.setINIInt("Pad1", key: "InvertL", value: Int32(padInvertLeftStick))
+            requestGraphicsApply()
+        }
+    }
+    var padInvertRightStick: Int {
+        didSet {
+            ARMSX2Bridge.setINIInt("Pad1", key: "InvertR", value: Int32(padInvertRightStick))
+            requestGraphicsApply()
+        }
+    }
+    var padLargeMotorScale: Float {
+        didSet {
+            ARMSX2Bridge.setINIFloat("Pad1", key: "LargeMotorScale", value: padLargeMotorScale)
+            requestGraphicsApply()
+        }
+    }
+    var padSmallMotorScale: Float {
+        didSet {
+            ARMSX2Bridge.setINIFloat("Pad1", key: "SmallMotorScale", value: padSmallMotorScale)
+            requestGraphicsApply()
+        }
+    }
+    var padPressureModifier: Float {
+        didSet {
+            ARMSX2Bridge.setINIFloat("Pad1", key: "PressureModifier", value: padPressureModifier)
+            requestGraphicsApply()
+        }
+    }
     var autoOpenStikDebug: Bool {
         didSet {
             guard !suppressINIWrites else { return }
@@ -1186,6 +1241,14 @@ final class SettingsStore: @unchecked Sendable {
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))
         appLanguage = AppLanguage(rawValue: ARMSX2Bridge.getINIString("ARMSX2iOS/UI", key: "AppLanguage", defaultValue: AppLanguage.system.rawValue)) ?? .system
         controllerMultitapMode = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Gamepad", key: "MultitapMode", defaultValue: 0))
+        padAnalogDeadzone = ARMSX2Bridge.getINIFloat("Pad1", key: "Deadzone", defaultValue: 0.0)
+        padAnalogSensitivity = ARMSX2Bridge.getINIFloat("Pad1", key: "AxisScale", defaultValue: 1.33)
+        padButtonDeadzone = ARMSX2Bridge.getINIFloat("Pad1", key: "ButtonDeadzone", defaultValue: 0.0)
+        padInvertLeftStick = Int(ARMSX2Bridge.getINIInt("Pad1", key: "InvertL", defaultValue: 0))
+        padInvertRightStick = Int(ARMSX2Bridge.getINIInt("Pad1", key: "InvertR", defaultValue: 0))
+        padLargeMotorScale = ARMSX2Bridge.getINIFloat("Pad1", key: "LargeMotorScale", defaultValue: 1.0)
+        padSmallMotorScale = ARMSX2Bridge.getINIFloat("Pad1", key: "SmallMotorScale", defaultValue: 1.0)
+        padPressureModifier = ARMSX2Bridge.getINIFloat("Pad1", key: "PressureModifier", defaultValue: 1.0)
         autoOpenStikDebug = ARMSX2Bridge.getINIBool("ARMSX2iOS/JIT", key: "AutoOpenStikDebug", defaultValue: false)
         jitScriptProtocol = Self.loadedJITScriptProtocol()
         dev9HddEnabled = ARMSX2Bridge.getINIBool("DEV9/Hdd", key: "HddEnable", defaultValue: false)
@@ -1369,6 +1432,14 @@ final class SettingsStore: @unchecked Sendable {
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))
         appLanguage = AppLanguage(rawValue: ARMSX2Bridge.getINIString("ARMSX2iOS/UI", key: "AppLanguage", defaultValue: AppLanguage.system.rawValue)) ?? .system
         controllerMultitapMode = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Gamepad", key: "MultitapMode", defaultValue: 0))
+        padAnalogDeadzone = ARMSX2Bridge.getINIFloat("Pad1", key: "Deadzone", defaultValue: 0.0)
+        padAnalogSensitivity = ARMSX2Bridge.getINIFloat("Pad1", key: "AxisScale", defaultValue: 1.33)
+        padButtonDeadzone = ARMSX2Bridge.getINIFloat("Pad1", key: "ButtonDeadzone", defaultValue: 0.0)
+        padInvertLeftStick = Int(ARMSX2Bridge.getINIInt("Pad1", key: "InvertL", defaultValue: 0))
+        padInvertRightStick = Int(ARMSX2Bridge.getINIInt("Pad1", key: "InvertR", defaultValue: 0))
+        padLargeMotorScale = ARMSX2Bridge.getINIFloat("Pad1", key: "LargeMotorScale", defaultValue: 1.0)
+        padSmallMotorScale = ARMSX2Bridge.getINIFloat("Pad1", key: "SmallMotorScale", defaultValue: 1.0)
+        padPressureModifier = ARMSX2Bridge.getINIFloat("Pad1", key: "PressureModifier", defaultValue: 1.0)
         autoOpenStikDebug = ARMSX2Bridge.getINIBool("ARMSX2iOS/JIT", key: "AutoOpenStikDebug", defaultValue: false)
         jitScriptProtocol = Self.loadedJITScriptProtocol()
         dev9HddEnabled = ARMSX2Bridge.getINIBool("DEV9/Hdd", key: "HddEnable", defaultValue: false)
