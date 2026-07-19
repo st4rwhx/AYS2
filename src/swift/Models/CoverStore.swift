@@ -607,8 +607,10 @@ final class CoverStore: @unchecked Sendable {
     /// `GameList::Entry.serial` already produces) to the OPL-style
     /// "SLUS_203.12" form used by other serial-keyed community databases
     /// (GameSynopsisStore). Shared here since CoverStore already does this
-    /// exact conversion internally for cover-art candidate URLs.
-    static func oplSerial(from rawSerial: String) -> String? {
+    /// exact conversion internally for cover-art candidate URLs. `nonisolated`
+    /// because it's a pure string computation — GameSynopsisStore (its own
+    /// actor, not MainActor) calls it directly without an actor hop.
+    nonisolated static func oplSerial(from rawSerial: String) -> String? {
         let pattern = "^([A-Za-z]{4})[_-]?([0-9]{3})[._-]?([0-9]{2})"
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(rawSerial.startIndex..<rawSerial.endIndex, in: rawSerial)
