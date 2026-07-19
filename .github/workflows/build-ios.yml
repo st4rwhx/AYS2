@@ -196,10 +196,17 @@ jobs:
             echo '```'; cat checksums.txt; echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           IPA_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/${IPA_NAME}"
-          ICON_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/icon.png"
+          # Versioned filename, same reasoning as IPA_NAME above: a stable
+          # "icon.png" URL never changes across builds, so both GitHub's CDN
+          # and SideStore's own on-device image cache keep serving the bytes
+          # from whichever build first fetched that URL — the store listing
+          # icon gets stuck on old branding forever even though the asset is
+          # clobber-replaced every release. Versioning the URL forces a fetch.
+          ICON_NAME="icon-${VERSION}.png"
+          ICON_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/${ICON_NAME}"
 
           # Icon for the store listing.
-          cp "src/assets/Assets.xcassets/AppIcon.appiconset/icon-1024.png" icon.png || true
+          cp "src/assets/Assets.xcassets/AppIcon.appiconset/icon-1024.png" "$ICON_NAME" || true
 
           # GPL-3.0 §6 written offer. Ships in every release next to the IPA so
           # any recipient can obtain the corresponding source on request. This
@@ -267,7 +274,7 @@ jobs:
               --title "AYS2 (rolling)" \
               --notes "Rolling AYS2 release. Add this source in SideStore/AltStore for 1-tap updates:
           \`https://github.com/${RELEASE_REPO}/releases/download/${TAG}/source.json\`"
-          gh release upload "$TAG" "$IPA_NAME" source.json icon.png SOURCE-OFFER.txt checksums.txt \
+          gh release upload "$TAG" "$IPA_NAME" source.json "$ICON_NAME" SOURCE-OFFER.txt checksums.txt \
             --repo "$RELEASE_REPO" --clobber
           # AYS2: the rolling release IS the product — mark it as the repo's
           # "Latest release" so the README badge and /releases/latest resolve to
