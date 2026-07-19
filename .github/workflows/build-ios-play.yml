@@ -1,12 +1,12 @@
 name: Build AYS2 (Play! core, iOS)
 
 # AYS2: migration to Play! (jpd002/Play-) core — Phase 4 (see /root/.claude/plans).
-# Builds from our own vendor/play submodule (pinned commit, not a live
-# upstream checkout) rather than checking out jpd002/Play- fresh each time —
-# this is the difference from the Phase 1 spike workflow, which proved the
-# toolchain itself works. This workflow is the actual foundation Phase 4
-# builds on: still Play!'s own unmodified Source/ui_ios for now, one commit
-# at a time will layer our SwiftUI screens on top via UIHostingController.
+# We don't have push access to jpd002/Play- (can't fork/submodule it with our
+# own commits), so this follows the same overlay pattern already documented
+# in docs/AYS2_OVERLAY.md for the PCSX2 core: check out their repo fresh and
+# unmodified, then copy our small set of added/changed files
+# (vendor/play-overlay/) on top before building. Nothing in Play!'s own
+# history is touched; our changes live entirely in this repo.
 #
 # Deliberately separate from build-ios.yml (the ARMSX2iOS/PCSX2-core app),
 # which keeps shipping unaffected until this replacement is feature-ready.
@@ -14,21 +14,37 @@ on:
   push:
     branches: ["claude/**"]
     paths:
-      - "vendor/play/**"
+      - "vendor/play-overlay/**"
       - ".github/workflows/build-ios-play.yml"
   workflow_dispatch:
 
 jobs:
   build_play_ios:
-    name: Build Play! iOS (from vendor/play submodule)
+    name: Build Play! iOS (upstream + AYS2 overlay)
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
-      - name: Checkout AYS2 (with vendor/play submodule)
+      - name: Checkout AYS2 (for the overlay files)
         uses: actions/checkout@v4
         with:
+          path: ays2
+          fetch-depth: 1
+
+      - name: Checkout Play! (jpd002/Play-, pinned commit)
+        uses: actions/checkout@v4
+        with:
+          repository: jpd002/Play-
+          ref: 50aedca2639521bc498ace0b2be1ea012801a86a
           submodules: recursive
           fetch-depth: 1
+          path: play
+
+      - name: Apply AYS2 overlay on top of Play!
+        run: |
+          set -euo pipefail
+          cp -v ays2/vendor/play-overlay/Source/ui_ios/AYS2RootView.swift play/Source/ui_ios/
+          cp -v ays2/vendor/play-overlay/Source/ui_ios/AppDelegate.mm play/Source/ui_ios/
+          cp -v ays2/vendor/play-overlay/Source/ui_ios/CMakeLists.txt play/Source/ui_ios/
 
       - name: Install dpkg (Play!'s own CI dependency)
         run: brew install dpkg
@@ -45,10 +61,10 @@ jobs:
         env:
           VULKAN_SDK_VERSION: '1.4.309.0'
 
-      - name: CMake configure (Play!'s own iOS toolchain, unmodified)
+      - name: CMake configure
         run: |
           set -euo pipefail
-          cd vendor/play
+          cd play
           mkdir build
           cd build
           cmake .. -G"Xcode" \
@@ -59,7 +75,7 @@ jobs:
       - name: Build (Xcode, Release) + ad-hoc codesign
         run: |
           set -euo pipefail
-          cd vendor/play/build
+          cd play/build
           cmake --build . --config Release
           codesign -s "-" Source/ui_ios/Release-iphoneos/Play.app
           echo "Play.app built successfully:"
@@ -69,5 +85,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: AYS2-play-core-ios
-          path: vendor/play/build/Source/ui_ios/Release-iphoneos/Play.app
+          path: play/build/Source/ui_ios/Release-iphoneos/Play.app
           retention-days: 14
