@@ -1,0 +1,66 @@
+name: Spike - Build Play! for iOS (toolchain de-risk only)
+
+# AYS2: migration-evaluation spike (see /root/.claude/plans — Phase 1).
+# This job does NOT touch src/cpp or the shipping ARMSX2iOS app at all. It
+# checks out jpd002/Play- fresh (their own repo, not vendored into our
+# history) and runs their own iOS build recipe, unmodified, to answer one
+# question: does Play!'s iOS toolchain (custom cmake-ios.cmake, LunarG
+# Vulkan SDK) work on our GitHub Actions macOS runner? Manual trigger only
+# — this is not meant to run on every push. Delete this file to fully
+# remove the spike; nothing else in the repo depends on it.
+on:
+  workflow_dispatch:
+
+jobs:
+  spike_build_play_ios:
+    name: Spike - Play! iOS build (unmodified upstream recipe)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout Play! (jpd002/Play-, not this repo)
+        uses: actions/checkout@v4
+        with:
+          repository: jpd002/Play-
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install dpkg (Play!'s own CI dependency)
+        run: brew install dpkg
+
+      - name: Install Vulkan SDK for iOS (LunarG, MoltenVK-based)
+        run: |
+          set -euo pipefail
+          curl -L --show-error --output vulkansdk.zip \
+            "https://sdk.lunarg.com/sdk/download/${VULKAN_SDK_VERSION}/mac/vulkansdk-macos-${VULKAN_SDK_VERSION}.zip?Human=true"
+          unzip -q vulkansdk.zip
+          sudo "./InstallVulkan-${VULKAN_SDK_VERSION}.app/Contents/MacOS/InstallVulkan-${VULKAN_SDK_VERSION}" \
+            in --al --c com.lunarg.vulkan.ios
+          echo "VULKAN_SDK=${HOME}/VulkanSDK/${VULKAN_SDK_VERSION}/iOS" >> "$GITHUB_ENV"
+        env:
+          VULKAN_SDK_VERSION: '1.4.309.0'
+
+      - name: CMake configure (Play!'s own iOS toolchain, unmodified)
+        run: |
+          set -euo pipefail
+          mkdir build
+          cd build
+          cmake .. -G"Xcode" \
+            -DCMAKE_TOOLCHAIN_FILE=../deps/Dependencies/cmake-ios/ios.cmake \
+            -DTARGET_IOS=ON \
+            -DCMAKE_PREFIX_PATH="$VULKAN_SDK"
+
+      - name: Build (Xcode, Release) + ad-hoc codesign
+        run: |
+          set -euo pipefail
+          cd build
+          cmake --build . --config Release
+          codesign -s "-" Source/ui_ios/Release-iphoneos/Play.app
+          echo "Play.app built successfully:"
+          find Source/ui_ios -maxdepth 2 -name "Play.app" -exec ls -la {} \;
+
+      - name: Upload Play.app artifact (for inspection only, not for distribution)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Play-ios-spike-app
+          path: build/Source/ui_ios/Release-iphoneos/Play.app
+          retention-days: 3
