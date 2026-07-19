@@ -152,23 +152,24 @@ struct GamesCarouselView: View {
                     emptyState
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(alignment: .top, spacing: 18) {
+                        HStack(alignment: .top, spacing: 30) {
                             ForEach(games) { game in
                                 coverItem(game)
                                     .scrollTransition(.interactive, axis: .horizontal) { content, phase in
                                         content
-                                            .scaleEffect(phase.isIdentity ? 1.0 : 0.84)
-                                            .opacity(phase.isIdentity ? 1.0 : 0.5)
+                                            .scaleEffect(phase.isIdentity ? 1.0 : 0.72)
+                                            .opacity(phase.isIdentity ? 1.0 : 0.35)
+                                            .blur(radius: phase.isIdentity ? 0 : 2)
                                     }
                             }
                         }
                         .scrollTargetLayout()
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, (UIScreen.main.bounds.width - Self.heroCoverWidth) / 2)
                         .padding(.top, 18)
                         .padding(.bottom, 16)
                     }
-                    .scrollTargetBehavior(.viewAligned)
-                    .scrollPosition(id: $focusedGameID)
+                    .scrollTargetBehavior(.viewAligned(limitBehavior: .always))
+                    .scrollPosition(id: $focusedGameID, anchor: .center)
                     .frame(maxHeight: .infinity, alignment: .center)
                 }
                 Spacer(minLength: 0)
@@ -243,13 +244,18 @@ struct GamesCarouselView: View {
         .padding(.top, 12)
     }
 
+    /// Hero cover width — sized so roughly one game reads as fully in focus
+    /// per screen, with the next one peeking at the edge (console-hub style),
+    /// rather than two equal covers side by side.
+    private static let heroCoverWidth: CGFloat = 190
+
     private func coverItem(_ game: DashGame) -> some View {
         let isRunning = game.bootName == appState.runningGameName
         return Button {
             selectGame(game)
         } label: {
             VStack(spacing: 8) {
-                CleanCover(game: game, width: 168)
+                CleanCover(game: game, width: Self.heroCoverWidth)
                     .overlay(alignment: .topTrailing) {
                         Menu {
                             Button {
@@ -297,11 +303,11 @@ struct GamesCarouselView: View {
                     .foregroundStyle(Retro.ink)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
-                    .frame(width: 168)
+                    .frame(width: Self.heroCoverWidth)
             }
         }
         .buttonStyle(.plain)
-        .frame(width: 168)
+        .frame(width: Self.heroCoverWidth)
     }
 
     /// Drops the disc-image extension for a cleaner title under the cover.
