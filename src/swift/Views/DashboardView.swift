@@ -103,6 +103,14 @@ struct TopNav: View {
                             Text(s.rawValue)
                                 .font(.system(size: 17, weight: section == s ? .bold : .regular))
                                 .foregroundStyle(section == s ? Retro.ink : Retro.mut)
+                                // AYS2: force single-line — dropping the
+                                // ScrollView (iPad tap fix) meant these now
+                                // sit in a width-constrained HStack, and
+                                // without this they wrapped to two lines
+                                // ("Gam/es", "Setti/ngs") instead of staying
+                                // on one, growing the nav bar taller (fix).
+                                .lineLimit(1)
+                                .fixedSize()
                             Rectangle()
                                 .fill(section == s ? Retro.accent : Color.clear)
                                 .frame(height: 2)
@@ -215,9 +223,20 @@ struct GamesCarouselView: View {
             Text("\(settings.localized("A game is running. Shut it down and start")) \(pendingGame?.name ?? "")?")
         }
         .onAppear { loadGames() }
-        .onChange(of: focusedGameID) { _, newID in
-            loadFocusedImage(for: newID)
-            loadFocusedSynopsis(for: newID)
+        // AYS2: debounced via .task(id:)'s automatic cancel-and-restart
+        // (seam/fix). .scrollPosition(id:) updates focusedGameID
+        // continuously while the user is actively dragging — not just once
+        // scrolling settles — so a plain .onChange fired a disk read +
+        // network/disk synopsis lookup + an expensive full-bleed 60pt
+        // ambient blur re-render on every intermediate focus mid-swipe.
+        // That main-thread contention during the live gesture is what made
+        // swiping feel like it needed real force. Only the id that survives
+        // ~120ms un-superseded (scrolling actually stopped) does the work.
+        .task(id: focusedGameID) {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
+            loadFocusedImage(for: focusedGameID)
+            loadFocusedSynopsis(for: focusedGameID)
         }
     }
 
