@@ -5,11 +5,19 @@ name: Spike - Build Play! for iOS (toolchain de-risk only)
 # checks out jpd002/Play- fresh (their own repo, not vendored into our
 # history) and runs their own iOS build recipe, unmodified, to answer one
 # question: does Play!'s iOS toolchain (custom cmake-ios.cmake, LunarG
-# Vulkan SDK) work on our GitHub Actions macOS runner? Manual trigger only
-# — this is not meant to run on every push. Delete this file to fully
-# remove the spike; nothing else in the repo depends on it.
+# Vulkan SDK) work on our GitHub Actions macOS runner?
+#
+# workflow_dispatch alone can't be fired via API/UI until this file exists
+# on the default branch, which we don't want to touch for a throwaway
+# spike — so this also runs on push to this feature branch, same pattern
+# as build-ios.yml. Delete this file to fully remove the spike; nothing
+# else in the repo depends on it.
 on:
   workflow_dispatch:
+  push:
+    branches: ["claude/**"]
+    paths:
+      - ".github/workflows/build-ios-play-spike.yml"
 
 jobs:
   spike_build_play_ios:
