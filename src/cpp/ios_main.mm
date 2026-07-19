@@ -3820,7 +3820,6 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     ARMSX2SanitizeFrameLimiterConfig("scene-connect");
     ARMSX2ApplyIOSMultitapConfig("scene-connect");
     s_settings_interface->Save();
-    [self checkAndConfigureBIOS];
 
     // GS Renderer: Metal fixed on iOS. Only override if not already Metal.
 #if DEBUG
@@ -3835,6 +3834,15 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     s_settings_interface->Save();
 
     VMManager::Internal::LoadStartupSettings();
+    // AYS2: moved after LoadStartupSettings (seam/fix) — checkAndConfigureBIOS's
+    // fast path short-circuits on `!EmuConfig.BaseFilenames.Bios.empty()`, but
+    // EmuConfig isn't populated from settings until LoadStartupSettings runs.
+    // Called before it (as originally ordered), that check always saw an empty
+    // string and fell through to a full Documents-root directory scan on every
+    // single launch, even for a user with a BIOS already configured — multi-
+    // second startup delay scanning past potentially several GB-sized game
+    // files sitting in the same folder.
+    [self checkAndConfigureBIOS];
     if (!ARMSX2IOSRetroAchievementsHardcoreAvailable) {
         EmuConfig.Achievements.HardcoreMode = false;
     }
