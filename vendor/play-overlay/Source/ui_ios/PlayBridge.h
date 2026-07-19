@@ -33,7 +33,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// Presents Play!'s own EmulatorViewController (instantiated from
 /// Main.storyboard, unmodified) modally over `presenter`, booting the game
 /// at `path`.
-+ (void)bootGameAtPath:(NSString *)path presentingFrom:(UIViewController *)presenter;
+// Explicit NS_SWIFT_NAME (seam/fix): without it, Swift's Clang importer
+// treats "AtPath" as a preposition describing the first parameter and
+// renames this to bootGame(atPath:presentingFrom:) — a real build failure
+// caught by CI, not a hypothetical. Pinning the name keeps the Swift call
+// site matching what's written here.
++ (void)bootGameAtPath:(NSString *)path presentingFrom:(UIViewController *)presenter NS_SWIFT_NAME(bootGameAtPath(_:presentingFrom:));
 
 @end
 
