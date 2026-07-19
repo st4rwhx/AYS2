@@ -30,7 +30,9 @@ struct AmbientHeroBackground: View {
                         .clipped()
                 }
                 .ignoresSafeArea()
-                .blur(radius: 60, opaque: true)
+                // AYS2: was 60 — read as an unrecognizable smear rather than
+                // a soft ambient echo of the cover art (seam/fix).
+                .blur(radius: 32, opaque: true)
                 .overlay(
                     LinearGradient(
                         colors: [Retro.bg.opacity(0.55), Retro.bg.opacity(0.82), Retro.bg.opacity(0.95)],

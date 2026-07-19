@@ -177,6 +177,10 @@ struct GamesCarouselView: View {
     @State private var focusedGameID: String?
     @State private var focusedImage: UIImage?
     @State private var focusedSynopsis: String?
+    // AYS2: tracks the last game a swipe UI sound played for (seam) — nil
+    // until the carousel's first settle, so the sound doesn't fire on
+    // initial load, only on an actual swipe between two games.
+    @State private var lastSoundedGameID: String?
     // AYS2: long-press context menu targets (seam) — mirrors GameListView's
     // gameContextMenu, reusing the same panels/sheets so a game long-pressed
     // from the carousel gets the same Game Info/Per-Game Settings/Cheats &
@@ -203,12 +207,17 @@ struct GamesCarouselView: View {
                 } else {
                     focusedInfo
                     // AYS2: the snap step is cover-width + this spacing —
-                    // 30pt made the swipe distance needed to cross into the
-                    // next game roughly half the screen width (too far for
-                    // a normal thumb swipe, needed a hard deliberate flick).
-                    // Tightened so a light, natural swipe is enough (seam/fix).
+                    // 30pt/190pt made the swipe distance needed to cross into
+                    // the next game roughly half the screen width (too far
+                    // for a normal thumb swipe). That got overcorrected to
+                    // 14pt/160pt, which fixed the swipe but left covers
+                    // cramped and small — the real swipe-feel fix turned out
+                    // to be the .task(id:) debounce below (main-thread
+                    // contention during the drag, not physical distance), so
+                    // there's headroom to size back up without the step
+                    // getting anywhere near the original 220pt (seam/fix).
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(alignment: .top, spacing: 14) {
+                        HStack(alignment: .top, spacing: 20) {
                             ForEach(games) { game in
                                 coverItem(game)
                                     .scrollTransition(.interactive, axis: .horizontal) { content, phase in
@@ -331,6 +340,10 @@ struct GamesCarouselView: View {
         .task(id: focusedGameID) {
             try? await Task.sleep(nanoseconds: 120_000_000)
             guard !Task.isCancelled else { return }
+            if let lastSoundedGameID, lastSoundedGameID != focusedGameID {
+                SoundManager.shared.play(.nav)
+            }
+            lastSoundedGameID = focusedGameID
             loadFocusedImage(for: focusedGameID)
             loadFocusedSynopsis(for: focusedGameID)
         }
@@ -419,12 +432,14 @@ struct GamesCarouselView: View {
 
     /// Hero cover width — sized so roughly one game reads as fully in focus
     /// per screen, with the next one peeking at the edge (console-hub style),
-    /// rather than two equal covers side by side. Kept smaller than a first
-    /// pass at this (190pt) — the "hero" feel comes from the scale/opacity/
-    /// blur falloff on neighbors during scroll, not from raw size, and a
-    /// smaller step (width + spacing) keeps the swipe distance needed to
-    /// advance one game short enough for a normal, light thumb swipe.
-    private static let heroCoverWidth: CGFloat = 160
+    /// rather than two equal covers side by side. 190pt (the original size)
+    /// combined with 30pt spacing made the swipe distance too long for a
+    /// light thumb swipe; that got overcorrected down to 160pt/14pt, which
+    /// read as cramped and small. Restored partway — the swipe-feel fix
+    /// turned out to be the .task(id:) debounce in `body`, not the size, so
+    /// this (with the 20pt spacing above) still keeps the step well under
+    /// the original 220pt while giving covers real presence again.
+    private static let heroCoverWidth: CGFloat = 178
 
     private func coverItem(_ game: DashGame) -> some View {
         let isRunning = game.bootName == appState.runningGameName

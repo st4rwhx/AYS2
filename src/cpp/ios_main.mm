@@ -3704,9 +3704,22 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
 
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)connectionOptions {
     if (![scene isKindOfClass:[UIWindowScene class]]) return;
-    
+
+    // AYS2: launch timing (seam) — the window doesn't become key/visible
+    // (and SwiftUI's boot splash can't render a frame) until this whole
+    // method returns, since everything here runs synchronously on the main
+    // thread. These checkpoints log wall-clock deltas so a slow launch can
+    // be pinpointed to a specific phase from the device log, instead of
+    // guessing blind — see @@LAUNCH_TIMING@@ lines in pcsx2_log.txt.
+    const CFAbsoluteTime armsx2LaunchT0 = CFAbsoluteTimeGetCurrent();
+#define ARMSX2_LAUNCH_MARK(phase) \
+    std::fprintf(stderr, "@@LAUNCH_TIMING@@ phase=%s t=%.3fs\n", (phase), CFAbsoluteTimeGetCurrent() - armsx2LaunchT0); \
+    std::fflush(stderr)
+
     UIWindowScene *windowScene = (UIWindowScene *)scene;
     
+    ARMSX2_LAUNCH_MARK("scene_connect_start");
+
     // --- SDL Initialization ---
     static bool s_initialized = false;
     if (!s_initialized) {
@@ -3718,7 +3731,8 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
         s_initialized = true;
     }
     ARMSX2InstallNativeGamepadDpadObserversOnMain();
-    
+    ARMSX2_LAUNCH_MARK("sdl_init_done");
+
     // --- Setup PCSX2 Environment ---
     // (Moved to AppDelegate)
     // We still need local variables if used below, but EmuFolders are global.
@@ -3820,6 +3834,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     ARMSX2SanitizeFrameLimiterConfig("scene-connect");
     ARMSX2ApplyIOSMultitapConfig("scene-connect");
     s_settings_interface->Save();
+    ARMSX2_LAUNCH_MARK("settings_interface_ready");
 
     // GS Renderer: Metal fixed on iOS. Only override if not already Metal.
 #if DEBUG
@@ -3842,7 +3857,9 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     // single launch, even for a user with a BIOS already configured — multi-
     // second startup delay scanning past potentially several GB-sized game
     // files sitting in the same folder.
+    ARMSX2_LAUNCH_MARK("load_startup_settings_done");
     [self checkAndConfigureBIOS];
+    ARMSX2_LAUNCH_MARK("check_and_configure_bios_done");
     if (!ARMSX2IOSRetroAchievementsHardcoreAvailable) {
         EmuConfig.Achievements.HardcoreMode = false;
     }
@@ -3851,16 +3868,18 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     ARMSX2IOSApplyRetroAchievementsOverlayDefaults(s_settings_interface, "after-startup-settings");
     s_settings_interface->Save();
     VMManager::ApplySettings();
+    ARMSX2_LAUNCH_MARK("apply_settings_done");
     ARMSX2IOSLogMemoryCardConfig("scene-connect-after-apply-settings");
     ARMSX2_PostRetroAchievementsStateChanged();
-    
+
     // --- Create SDL Window ---
     Host::g_sdl_window = SDL_CreateWindow("PCSX2 iOS", 1280, 720, SDL_WINDOW_METAL | SDL_WINDOW_RESIZABLE);
     if (!Host::g_sdl_window) {
         Console.Error("Failed to create SDL window: %s", SDL_GetError());
         return;
     }
-    
+    ARMSX2_LAUNCH_MARK("sdl_window_created");
+
     // --- Attach UIWindow ---
     UIWindow *uiWindow = (__bridge UIWindow*)SDL_GetPointerProperty(SDL_GetWindowProperties(Host::g_sdl_window), SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER, NULL);
     if (uiWindow) {
@@ -3921,6 +3940,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
             }
             Console.WriteLn("[UI] SwiftUI menu attached (screen: %.0fx%.0f)",
                 rootVC.view.bounds.size.width, rootVC.view.bounds.size.height);
+            ARMSX2_LAUNCH_MARK("swiftui_menu_attached");
 
 }
     }
@@ -4026,6 +4046,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
         }
     }
 #endif
+#undef ARMSX2_LAUNCH_MARK
 }
 
 - (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)URLContexts {

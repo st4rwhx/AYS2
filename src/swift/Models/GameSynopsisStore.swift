@@ -42,7 +42,10 @@ actor GameSynopsisStore {
 
         let key = "\(french ? "fr" : "en")|\(serial)"
         if let cached = cache[key] {
-            return cached.isEmpty ? nil : cached
+            // Repair on read too — the disk cache can already hold entries
+            // saved before the mojibake fix, and this round trip is a no-op
+            // for already-clean text.
+            return cached.isEmpty ? nil : Self.repairMojibake(cached)
         }
 
         let folder = french ? "CFG_fr" : "CFG_en"
@@ -79,8 +82,24 @@ actor GameSynopsisStore {
             guard let eq = line.firstIndex(of: "=") else { continue }
             guard line[line.startIndex..<eq] == "Description" else { continue }
             let value = line[line.index(after: eq)...].trimmingCharacters(in: .whitespacesAndNewlines)
-            return value.isEmpty ? nil : value
+            return value.isEmpty ? nil : repairMojibake(value)
         }
         return nil
+    }
+
+    /// Some entries in the upstream community database are double-encoded —
+    /// UTF-8 bytes (e.g. a curly apostrophe) were once mis-read as
+    /// Windows-1252 and re-saved as UTF-8, so "you'll" shows up as literal
+    /// "youâ€™ll" (seam/fix, not a missing-language issue). Re-encoding the
+    /// decoded string as Windows-1252 recovers the original UTF-8 bytes,
+    /// which then decode cleanly. Only succeeds (and is only applied) when
+    /// that round trip actually produces valid UTF-8 — correctly-encoded
+    /// text fails the round trip and passes through untouched.
+    private static func repairMojibake(_ text: String) -> String {
+        guard let reinterpretedBytes = text.data(using: .windowsCP1252),
+              let repaired = String(data: reinterpretedBytes, encoding: .utf8) else {
+            return text
+        }
+        return repaired
     }
 }
