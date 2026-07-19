@@ -580,6 +580,25 @@ static void ARMSX2EnsureIOSSpeedhackDefaults(SettingsInterface* si, const char* 
         si->Save();
 }
 
+// AYS2: PINE enabled by default on iOS (seam) — lets an external tool (MCP
+// debugger bridge, PINE-speaking memory/register inspector) attach to a
+// running instance without the user having to find a setting. PINE binds
+// PINE_DEFAULT_SLOT (28011) on INADDR_LOOPBACK only (pcsx2/PINE.cpp) — not
+// reachable from the network, and iOS app sandboxing means no other app on
+// the device can reach it either. Only sets the default the first time
+// (ContainsValue guard), so it never overrides an explicit user choice.
+static void ARMSX2EnsureIOSPINEDefault(SettingsInterface* si, const char* reason)
+{
+    if (!si)
+        return;
+    if (!si->ContainsValue("EmuCore", "EnablePINE")) {
+        si->SetBoolValue("EmuCore", "EnablePINE", true);
+        si->Save();
+        std::fprintf(stderr, "@@PINE_DEFAULT@@ reason=%s value=1\n", reason ? reason : "unknown");
+        std::fflush(stderr);
+    }
+}
+
 static bool ARMSX2RepairIOSARM64JITSettings(SettingsInterface* si, const char* reason)
 {
     if (!si)
@@ -3797,6 +3816,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     }
     ARMSX2IOSSanitizeFolderSettings(s_settings_interface, dataRoot, "scene-connect");
     ARMSX2EnsureIOSSpeedhackDefaults(s_settings_interface, "scene-connect");
+    ARMSX2EnsureIOSPINEDefault(s_settings_interface, "scene-connect");
     ARMSX2SanitizeFrameLimiterConfig("scene-connect");
     ARMSX2ApplyIOSMultitapConfig("scene-connect");
     s_settings_interface->Save();
@@ -4445,6 +4465,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
 
             ARMSX2SanitizeFrameLimiterConfig("pre-vm-initialize");
             ARMSX2EnsureIOSSpeedhackDefaults(s_settings_interface, "pre-vm-initialize");
+            ARMSX2EnsureIOSPINEDefault(s_settings_interface, "pre-vm-initialize");
             ARMSX2RepairIOSARM64JITSettings(s_settings_interface, "pre-vm-initialize");
             ARMSX2MigrateJITScriptProtocolForIOS(s_settings_interface, "pre-vm-initialize");
             ARMSX2IOSSanitizeFolderSettings(s_settings_interface, EmuFolders::DataRoot, "pre-vm-initialize");
