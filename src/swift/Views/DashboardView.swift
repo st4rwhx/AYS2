@@ -574,16 +574,37 @@ struct GamesCarouselView: View {
 
     private func loadGames() {
         let coverStore = CoverStore.shared
+        let fm = FileManager.default
+        // AYS2: metadata cache (seam/fix) — this used to call
+        // ARMSX2Bridge.gameMetadata(forISO:) unconditionally for every game
+        // on every reload (including the reload that follows every cover
+        // download, favorite toggle, import, and delete), which parses each
+        // ISO's header from scratch. For a library of any real size that's
+        // several seconds of synchronous main-thread work — the app renders
+        // the carousel, then goes unresponsive to every tap/swipe until it
+        // finishes, easily read as a freeze or a dead button. Reusing
+        // GameLibrarySnapshot (already built for this exact cost in
+        // GameListView) skips the reparse whenever the file is unchanged.
         games = ARMSX2Bridge.availableISOEntries().compactMap { raw -> DashGame? in
             guard let name = raw["name"] as? String, let path = raw["path"] as? String else { return nil }
             let external = (raw["external"] as? NSNumber)?.boolValue ?? (raw["external"] as? Bool ?? false)
             let bootName = external ? path : name
             let fileURL = URL(fileURLWithPath: path)
-            let metadata = ARMSX2Bridge.gameMetadata(forISO: bootName)
+            let entryID = external ? path : fileURL.path
+            let attrs = try? fm.attributesOfItem(atPath: path)
+            let size = (attrs?[.size] as? NSNumber)?.uint64Value ?? 0
+            let modificationDate = attrs?[.modificationDate] as? Date
+            let metadata: [String: String]
+            if let cached = GameLibrarySnapshot.shared.cachedMetadata(for: entryID, modificationDate: modificationDate, size: size) {
+                metadata = cached
+            } else {
+                metadata = ARMSX2Bridge.gameMetadata(forISO: bootName)
+                GameLibrarySnapshot.shared.storeMetadata(metadata, modificationDate: modificationDate, size: size, for: entryID)
+            }
             let coverURL = coverStore.coverURL(forGameName: name, gamePath: fileURL, metadata: metadata)
             let signature = CoverThumbnailCache.signature(for: coverURL)
             return DashGame(
-                id: external ? path : fileURL.path,
+                id: entryID,
                 name: name,
                 bootName: bootName,
                 coverURL: coverURL,
@@ -599,6 +620,7 @@ struct GamesCarouselView: View {
             if a.isFavorite != b.isFavorite { return a.isFavorite }
             return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
         }
+        GameLibrarySnapshot.shared.persistMetadataCache()
         // AYS2: kinetic hub carousel (seam) — keep focus valid across
         // reloads (import, favorite toggle) instead of always resetting it.
         if focusedGameID == nil || !games.contains(where: { $0.id == focusedGameID }) {

@@ -65,7 +65,11 @@ struct ISOEntry: Identifiable {
 }
 
 @MainActor
-private final class GameLibrarySnapshot {
+// AYS2: no longer file-private — the Dashboard carousel's loadGames()
+// (DashboardView.swift) reuses this same metadata cache so relisting the
+// library there doesn't re-parse every ISO's metadata from scratch on
+// every reload (seam).
+final class GameLibrarySnapshot {
 	struct CachedGameMetadata: Codable {
 		let metadata: [String: String]
 		let modificationDate: Date?
