@@ -10,6 +10,11 @@
 // into — UIHostingController is a Swift generic and can't be constructed
 // directly from Objective-C++, so the hosting controller has to be built on
 // the Swift side and handed back up-cast to plain UIViewController.
+//
+// Now styled with RetroKit.swift (ported verbatim, self-contained, no
+// ARMSX2Bridge dependency) instead of a plain placeholder — first proof
+// that AYS2's actual design system, not just SwiftUI itself, survives the
+// move to Play!'s app shell.
 
 import SwiftUI
 
@@ -23,17 +28,23 @@ public class AYS2RootViewFactory: NSObject {
 struct AYS2RootView: View {
 	var body: some View {
 		ZStack {
-			Color.black.ignoresSafeArea()
+			RetroBackground()
 			VStack(spacing: 14) {
-				Image(systemName: "gamecontroller.fill")
-					.font(.system(size: 48, weight: .semibold))
-					.foregroundStyle(.blue)
+				RoundedRectangle(cornerRadius: 16, style: .continuous)
+					.fill(LinearGradient(colors: [Retro.accent, Retro.accentDeep],
+					                     startPoint: .top, endPoint: .bottom))
+					.frame(width: 72, height: 72)
+					.overlay(
+						Image(systemName: "gamecontroller.fill")
+							.font(.system(size: 30, weight: .semibold))
+							.foregroundStyle(.white)
+					)
 				Text("AYS2 × Play!")
 					.font(.system(size: 28, weight: .heavy, design: .rounded))
-					.foregroundStyle(.white)
-				Text("SwiftUI shell hosted inside Play!'s app — Phase 4 checkpoint.")
+					.foregroundStyle(Retro.ink)
+				Text("SwiftUI + RetroKit hosted inside Play!'s app — Phase 4 checkpoint.")
 					.font(.footnote)
-					.foregroundStyle(.white.opacity(0.6))
+					.foregroundStyle(Retro.mut)
 					.multilineTextAlignment(.center)
 					.padding(.horizontal, 32)
 			}

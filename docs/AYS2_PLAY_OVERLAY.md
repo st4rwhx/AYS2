@@ -23,9 +23,10 @@ file-copy-at-CI-time rather than an already-merged local copy.
 
 | File | What |
 |---|---|
-| `AYS2RootView.swift` | New. SwiftUI shell (`AYS2RootView`) + `AYS2RootViewFactory`, the `@objc`-visible entry point `AppDelegate.mm` calls into. `UIHostingController` is a Swift generic, so the hosting controller has to be constructed on the Swift side and handed back as a plain `UIViewController`. |
+| `AYS2RootView.swift` | New. SwiftUI shell (`AYS2RootView`) + `AYS2RootViewFactory`, the `@objc`-visible entry point `AppDelegate.mm` calls into. `UIHostingController` is a Swift generic, so the hosting controller has to be constructed on the Swift side and handed back as a plain `UIViewController`. Styled with RetroKit below (no more placeholder colors). |
+| `RetroKit.swift` | New. Ported verbatim from `src/swift/Views/RetroKit.swift` — confirmed self-contained (no `ARMSX2Bridge` dependency) back in the Phase 1/3 research, so no adaptation needed, straight copy. |
 | `AppDelegate.mm` | Seam (full-file overlay of Play!'s original). Swaps the storyboard-provided root view controller for our SwiftUI shell inside `didFinishLaunchingWithOptions`, after `UIApplicationMain` has already populated `self.window` from `Main.storyboard` (no Scene support in this app). |
-| `CMakeLists.txt` | Seam (full-file overlay of `Source/ui_ios/CMakeLists.txt`). Adds `AYS2RootView.swift` to `OSX_SOURCES` (the target already declares `LANGUAGES C Swift`, so no new interop plumbing needed). Also overrides `XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET` to 15.0 at the target level — the shared `ios.cmake` toolchain sets 12.2, below SwiftUI's iOS 13 minimum; overridden per-target rather than editing the shared toolchain file every other build preset uses. |
+| `CMakeLists.txt` | Seam (full-file overlay of `Source/ui_ios/CMakeLists.txt`). Adds `AYS2RootView.swift` and `RetroKit.swift` to `OSX_SOURCES` (the target already declares `LANGUAGES C Swift`, so no new interop plumbing needed). Also overrides `XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET` to 15.0 at the target level — the shared `ios.cmake` toolchain sets 12.2, below SwiftUI's iOS 13 minimum; overridden per-target rather than editing the shared toolchain file every other build preset uses. |
 
 ## Feature parity gaps (Phase 3 triage, accepted — see plan)
 

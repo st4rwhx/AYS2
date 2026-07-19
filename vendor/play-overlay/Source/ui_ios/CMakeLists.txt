@@ -109,8 +109,9 @@ set(OSX_SOURCES
 	VirtualPadItem.mm
 	VirtualPadStick.mm
 	VirtualPadView.mm
-	# AYS2 overlay (seam): SwiftUI shell, see AYS2RootView.swift.
+	# AYS2 overlay (seam): SwiftUI shell + design system.
 	AYS2RootView.swift
+	RetroKit.swift
 )
 
 set(OSX_HEADERS
