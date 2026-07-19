@@ -158,8 +158,13 @@ struct GamesCarouselView: View {
                     emptyState
                 } else {
                     focusedInfo
+                    // AYS2: the snap step is cover-width + this spacing —
+                    // 30pt made the swipe distance needed to cross into the
+                    // next game roughly half the screen width (too far for
+                    // a normal thumb swipe, needed a hard deliberate flick).
+                    // Tightened so a light, natural swipe is enough (seam/fix).
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(alignment: .top, spacing: 30) {
+                        HStack(alignment: .top, spacing: 14) {
                             ForEach(games) { game in
                                 coverItem(game)
                                     .scrollTransition(.interactive, axis: .horizontal) { content, phase in
@@ -299,8 +304,12 @@ struct GamesCarouselView: View {
 
     /// Hero cover width — sized so roughly one game reads as fully in focus
     /// per screen, with the next one peeking at the edge (console-hub style),
-    /// rather than two equal covers side by side.
-    private static let heroCoverWidth: CGFloat = 190
+    /// rather than two equal covers side by side. Kept smaller than a first
+    /// pass at this (190pt) — the "hero" feel comes from the scale/opacity/
+    /// blur falloff on neighbors during scroll, not from raw size, and a
+    /// smaller step (width + spacing) keeps the swipe distance needed to
+    /// advance one game short enough for a normal, light thumb swipe.
+    private static let heroCoverWidth: CGFloat = 160
 
     private func coverItem(_ game: DashGame) -> some View {
         let isRunning = game.bootName == appState.runningGameName
