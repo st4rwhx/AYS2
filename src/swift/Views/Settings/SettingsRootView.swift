@@ -313,7 +313,7 @@ struct SettingsRootView: View {
 
     private var jitStatusSubtitle: String {
         if stikDebugOpenFailed {
-            return "Open StikDebug manually, then run the selected script and relaunch ARMSX2."
+            return "Open StikDebug manually, then run the selected script and relaunch AYS2."
         }
         if jitAvailable {
             return "Access is available. Confirm EE:JIT / IOP:JIT / VU:JIT in the in-game OSD. Current script: \(settings.jitScriptProtocol.label)."
@@ -395,7 +395,7 @@ private struct LanguageSettingsView: View {
                         Text(settings.localized(language.label)).tag(language)
                     }
                 }
-                Text(settings.localized("ARMSX2 iOS menus will use this language where available. Some emulator terms and debug messages may still appear in English."))
+                Text(settings.localized("AYS2 iOS menus will use this language where available. Some emulator terms and debug messages may still appear in English."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

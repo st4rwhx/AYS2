@@ -320,7 +320,7 @@ struct StorageSettingsView: View {
                     ContentUnavailableView(
                         settings.localized("No External Games"),
                         systemImage: "externaldrive",
-                        description: Text(settings.localized("Add a folder or game file from Files to play without copying it into ARMSX2."))
+                        description: Text(settings.localized("Add a folder or game file from Files to play without copying it into AYS2."))
                     )
                     .frame(maxWidth: .infinity)
                 } else {
@@ -355,7 +355,7 @@ struct StorageSettingsView: View {
             } header: {
                 Text(settings.localized("External Games"))
             } footer: {
-                Text(settings.localized("USB/SSD folders can be scanned and played directly. Removing an entry only removes ARMSX2's bookmark and does not delete the game."))
+                Text(settings.localized("USB/SSD folders can be scanned and played directly. Removing an entry only removes AYS2's bookmark and does not delete the game."))
             }
 
             Section(settings.localized("Cleanup")) {

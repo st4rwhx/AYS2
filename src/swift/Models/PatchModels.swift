@@ -24,11 +24,11 @@ enum PatchIdentityState: Equatable {
         case .known:
             return nil
         case .libraryAwaitingFirstLaunch:
-            return "Boot this game once so ARMSX2 can identify it, then return to manage patches."
+            return "Boot this game once so AYS2 can identify it, then return to manage patches."
         case .inGameLoading:
             return "Game information is still loading. Try again in a moment."
         case .inGameUnavailable:
-            return "ARMSX2 couldn’t identify this game’s patch version. Database matching is unavailable for now."
+            return "AYS2 couldn’t identify this game’s patch version. Database matching is unavailable for now."
         }
     }
 }

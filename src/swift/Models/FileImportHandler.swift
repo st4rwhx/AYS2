@@ -335,7 +335,7 @@ final class FileImportHandler {
     }
 
     private static func unsupportedAutomaticImportMessage(for fileName: String) -> String {
-        "ARMSX2 could not import \(fileName). Try importing it from the matching Games, BIOS, or PNACH patch option."
+        "AYS2 could not import \(fileName). Try importing it from the matching Games, BIOS, or PNACH patch option."
     }
 
     private static func unreadablePNACHImportMessage(for fileName: String) -> String {

@@ -97,12 +97,12 @@ struct EmulatorSettingsView: View {
                 }
                 .disabled(stikDebugOpenInProgress)
 
-                Text(settings.localized("Select the same script here that you run in StikDebug. This only changes the debugger breakpoint protocol used to prepare JIT memory. Fully close and relaunch ARMSX2 after switching scripts."))
+                Text(settings.localized("Select the same script here that you run in StikDebug. This only changes the debugger breakpoint protocol used to prepare JIT memory. Fully close and relaunch AYS2 after switching scripts."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 if stikDebugOpenFailed {
-                    Text(settings.localized("Open StikDebug manually, then run the selected script and relaunch ARMSX2."))
+                    Text(settings.localized("Open StikDebug manually, then run the selected script and relaunch AYS2."))
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -119,7 +119,7 @@ struct EmulatorSettingsView: View {
                 }
                 .disabled(trollStoreOpenInProgress)
 
-                Text(settings.localized("Only for TrollStore installs — a separate sideloading method from StikDebug/AltStore. If ARMSX2 isn't installed through TrollStore, this button won't do anything."))
+                Text(settings.localized("Only for TrollStore installs — a separate sideloading method from StikDebug/AltStore. If AYS2 isn't installed through TrollStore, this button won't do anything."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

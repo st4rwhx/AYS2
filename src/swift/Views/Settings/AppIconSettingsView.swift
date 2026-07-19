@@ -35,8 +35,8 @@ extension AppIconOption {
         AppIconOption(id: "appicon-light", displayName: "Light", previewName: "appicon-light"),
         AppIconOption(id: "appicon-mystic", displayName: "Mystic Purple", previewName: "appicon-mystic"),
         AppIconOption(id: "appicon-purple", displayName: "Purple", previewName: "appicon-purple"),
-        AppIconOption(id: "appicon-pridedark", displayName: "ARMSX2 Pride Dark", previewName: "appicon-pridedark"),
-        AppIconOption(id: "appicon-pridelight", displayName: "ARMSX2 Pride Light", previewName: "appicon-pridelight")
+        AppIconOption(id: "appicon-pridedark", displayName: "AYS2 Pride Dark", previewName: "appicon-pridedark"),
+        AppIconOption(id: "appicon-pridelight", displayName: "AYS2 Pride Light", previewName: "appicon-pridelight")
     ]
 }
 
@@ -96,7 +96,7 @@ struct AppIconSettingsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(settings.localized("External container install detected"))
                             .font(.subheadline.weight(.semibold))
-                        Text(settings.localized("Apps running inside a host container such as LiveContainer can’t change their Home Screen icon directly — the icon belongs to the host, not ARMSX2. Export an icon and set it as your LiveContainer Home Screen shortcut icon."))
+                        Text(settings.localized("Apps running inside a host container such as LiveContainer can’t change their Home Screen icon directly — the icon belongs to the host, not AYS2. Export an icon and set it as your LiveContainer Home Screen shortcut icon."))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -140,7 +140,7 @@ struct AppIconSettingsView: View {
         } message: {
             Text(settings.localized(inExportMode
                 ? "This install method can’t change the Home Screen icon directly. Export an icon and use it for a LiveContainer Home Screen shortcut instead."
-                : "iOS rejected the icon change. This can happen when ARMSX2 runs inside another app’s container. The icons are bundled — you can export one instead."))
+                : "iOS rejected the icon change. This can happen when AYS2 runs inside another app’s container. The icons are bundled — you can export one instead."))
         }
         .alert(settings.localized("Couldn’t export the icon."), isPresented: $showExportError) {
             Button(settings.localized("OK"), role: .cancel) {}
@@ -251,7 +251,7 @@ struct AppIconSettingsView: View {
             return nil
         }
         let destination = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ARMSX2 Icon - \(option.displayName).png")
+            .appendingPathComponent("AYS2 Icon - \(option.displayName).png")
         do {
             if FileManager.default.fileExists(atPath: destination.path) {
                 try FileManager.default.removeItem(at: destination)
