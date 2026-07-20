@@ -171,6 +171,11 @@ namespace Achievements
 	/// Returns the logged-in user name.
 	const char* GetLoggedInUserName();
 
+	/// AYS2: returns the logged-in user's points (seam) — user suggestion to see
+	/// Casual (softcore) points alongside Hardcore points, as the pre-overhaul UI
+	/// did. Returns false when not logged in. Should be called with the lock held.
+	bool GetLoggedInUserScore(u32* hardcore_points, u32* softcore_points);
+
 	/// Returns the path to the user's profile avatar.
 	/// Should be called with the lock held.
 	std::string GetLoggedInUserBadgePath();

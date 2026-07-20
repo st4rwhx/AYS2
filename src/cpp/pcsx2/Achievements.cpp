@@ -2183,6 +2183,22 @@ const char* Achievements::GetLoggedInUserName()
 	return user->username;
 }
 
+// AYS2: expose the user's points so the fullscreen heading can show Casual
+// (softcore) points next to Hardcore points (user suggestion). rc_client
+// already tracks both — score is hardcore, score_softcore is casual.
+bool Achievements::GetLoggedInUserScore(u32* hardcore_points, u32* softcore_points)
+{
+	const rc_client_user_t* user = rc_client_get_user_info(s_client);
+	if (!user) [[unlikely]]
+		return false;
+
+	if (hardcore_points)
+		*hardcore_points = user->score;
+	if (softcore_points)
+		*softcore_points = user->score_softcore;
+	return true;
+}
+
 std::string Achievements::GetLoggedInUserBadgePath()
 {
 	std::string badge_path;
