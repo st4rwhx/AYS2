@@ -849,6 +849,15 @@ final class SettingsStore: @unchecked Sendable {
             ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", value: showQuickStateButtons)
         }
     }
+    // AYS2: user suggestion — when a game was launched from an external
+    // front-end (deep link), quit the app on game exit so the launcher regains
+    // focus instead of dropping into the library. Off by default.
+    var quitToLauncherOnExit: Bool {
+        didSet {
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", value: quitToLauncherOnExit)
+        }
+    }
     var analogStickScale: Float {
         didSet {
             let clamped = Self.clampedAnalogStickScale(analogStickScale)
@@ -1249,6 +1258,7 @@ final class SettingsStore: @unchecked Sendable {
         autoFullscreen = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoFullscreen", defaultValue: true)
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
         showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
+        quitToLauncherOnExit = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", defaultValue: false)
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))
         appLanguage = AppLanguage(rawValue: ARMSX2Bridge.getINIString("ARMSX2iOS/UI", key: "AppLanguage", defaultValue: AppLanguage.system.rawValue)) ?? .system
         controllerMultitapMode = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Gamepad", key: "MultitapMode", defaultValue: 0))
@@ -1441,6 +1451,7 @@ final class SettingsStore: @unchecked Sendable {
         autoFullscreen = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoFullscreen", defaultValue: true)
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
         showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
+        quitToLauncherOnExit = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", defaultValue: false)
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))
         appLanguage = AppLanguage(rawValue: ARMSX2Bridge.getINIString("ARMSX2iOS/UI", key: "AppLanguage", defaultValue: AppLanguage.system.rawValue)) ?? .system
         controllerMultitapMode = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Gamepad", key: "MultitapMode", defaultValue: 0))

@@ -181,7 +181,13 @@ struct GameScreenView: View {
                     },
                     onBackToMenu: {
                         overlayRoute = .hidden
-                        appState.returnToMenu()
+                        // AYS2: quit to the external front-end instead of the
+                        // library when launched externally and opted in (seam).
+                        if appState.launchedExternally && settings.quitToLauncherOnExit {
+                            appState.quitToLauncher()
+                        } else {
+                            appState.returnToMenu()
+                        }
                     },
                     onResume: {
                         if settings.hapticFeedback { HapticManager.light.impactOccurred() }

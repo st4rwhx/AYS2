@@ -174,7 +174,9 @@ enum ARMSX2DeepLinkHandler {
         }
 
         NSLog("[ARMSX2 iOS DeepLink] launching game=%@", game)
-        AppState.shared.bootGame(isoName: game)
+        // Mark as externally launched so "Quit to Launcher on game exit" can
+        // close the app back to the front-end instead of the library.
+        AppState.shared.bootGame(isoName: game, external: true)
     }
 
     private static func callbackURL(base: String, payload: String) -> URL? {

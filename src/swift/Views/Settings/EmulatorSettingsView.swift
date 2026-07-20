@@ -148,6 +148,14 @@ struct EmulatorSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            // AYS2: external front-end integration (seam).
+            Section(settings.localized("External Launcher")) {
+                Toggle(settings.localized("Quit to Launcher on Game Exit"), isOn: $settings.quitToLauncherOnExit)
+                Text(settings.localized("When a game is opened from an external front-end (e.g. Cocoon, Daijishō), exiting it closes AYS2 so the launcher regains focus instead of showing the library. Only affects games launched externally."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section(settings.localized("Host Filesystem")) {
                 Toggle(settings.localized("Enable Host Filesystem"), isOn: $settings.hostFilesystem)
                 Text(settings.localized("Allows PS2 homebrew and ELF tools to access files through the host: device. This is separate from USB/SSD game storage, is off by default, and takes effect on next VM boot."))

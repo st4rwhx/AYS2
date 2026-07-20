@@ -32,6 +32,12 @@ final class AppState: @unchecked Sendable {
         }
     }
 
+    // AYS2: external-launch tracking (seam) — user suggestion. True when the
+    // current game was booted from an external front-end via deep link
+    // (armsx2://launch). Lets "Quit to Launcher on game exit" close the app so
+    // the front-end regains focus instead of dropping into the library.
+    @ObservationIgnored var launchedExternally = false
+
     @ObservationIgnored private var pendingBootAction: (() -> Void)?
     @ObservationIgnored private var shutdownObserver: NSObjectProtocol?
 
@@ -81,7 +87,8 @@ final class AppState: @unchecked Sendable {
         }
     }
 
-    func bootGame(isoName: String) {
+    func bootGame(isoName: String, external: Bool = false) {
+        launchedExternally = external
         Task { @MainActor in
             StikDebugLauncher.autoOpenIfNeeded(reason: "game boot")
         }
@@ -127,10 +134,29 @@ final class AppState: @unchecked Sendable {
     }
 
     func shutdownAndBoot(isoName: String) {
+        // Preserve external-launch state across reset/disc-swap reboots.
+        let external = launchedExternally
         pendingBootAction = { [weak self] in
-            self?.bootGame(isoName: isoName)
+            self?.bootGame(isoName: isoName, external: external)
         }
         ARMSX2Bridge.requestVMShutdown()
+    }
+
+    /// Cleanly shut the VM down and quit the app so an external front-end
+    /// (Cocoon, Daijishō, etc.) regains focus, instead of returning to the
+    /// library. Only called when the game was launched externally and the
+    /// user opted in (see SettingsStore.quitToLauncherOnExit).
+    func quitToLauncher() {
+        endPlaySession()
+        if ARMSX2Bridge.isVMRunning() {
+            ARMSX2Bridge.requestVMShutdown()
+        }
+        // Give the shutdown a brief moment to flush (memory cards etc.) before
+        // terminating. exit(0) is intentional here — it's exactly the
+        // "close the app" behaviour front-end launcher users ask for.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            exit(0)
+        }
     }
 
     func shutdownAndBootBIOS() {
