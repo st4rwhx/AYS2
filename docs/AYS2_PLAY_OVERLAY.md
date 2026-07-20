@@ -44,6 +44,8 @@ the main AYS2 source — do not add it to the same source as the real app.
 | `RetroKit.swift` | Ported verbatim from `src/swift/Views/RetroKit.swift` — confirmed self-contained (no `ARMSX2Bridge` dependency) back in the Phase 1/3 research, so no adaptation needed, straight copy. |
 | `PlayBridge.h` / `PlayBridge.mm` | New. Thin Objective-C bridge exposing Play!'s existing `BootablesDb` (game list, SQLite-backed), `EmulatorViewController` (boot), and `SettingsViewController` (settings) to Swift — the same role `ARMSX2Bridge` plays for the current PCSX2-core app. None of Play!'s own VM/game-list/boot/settings C++ is touched, only surfaced. `+refreshLibrary` mirrors `CoverViewController`'s own default-scan path (active bootable directories + app storage) so results match what Play!'s stock UI would show. `+bootGameAtPath:presentingFrom:` instantiates Play!'s unmodified `EmulatorViewController` from `Main.storyboard` and presents it modally, since our SwiftUI root isn't inside Play!'s own storyboard-driven navigation flow. `+presentSettingsFrom:` does the same for `SettingsViewController` (inside its nav controller), replicating `CoverViewController`'s exact `prepareForSegue:` handling for `showSettings` — full-device-scan/GS-handler selection allowed, JIT service restarted and library re-scanned on dismiss, scan dispatched off the main thread. `+isJITAvailable` is a real `csops()`/`CS_DEBUGGED` check (same syscall as AYS2's own `DarwinMisc::IsJITAvailable`). All three boot/settings/JIT methods `NS_SWIFT_NAME`-pinned: Swift's importer reads the trailing `AtPath`/`From` as a preposition and silently renames these to something else, which is a real build failure CI caught once already, not a hypothetical. |
 | `AYS2-Bridging-Header.h` | New. Play!'s target had no Swift code (and so no bridging header) before this overlay — without one, `AYS2RootView.swift` can't see `PlayBridge` or any other Objective-C in the target. Just `#import "PlayBridge.h"`. |
+| `Source/BasicBlock.cpp` | Seam (full-file overlay of Play!'s own `Source/BasicBlock.cpp`, not the `ui_ios`-only overlay tree — its target path is `Source/BasicBlock.cpp`, mirrored by the overlay tree's own path). Two call sites (`LinkBlock`, `UnlinkBlock`) reordered: `GetWritableCode()` is now captured *after* `BeginModify()`, and used only for the write; the jump-target `patchValue` still reads `GetCode()`. On every platform except dual-mapped iOS 26 these are the same pointer, so this is a no-op there — see "JIT: why we override Play!'s own check" below. |
+| `deps/CodeGen/include/MemoryFunction.h` / `deps/CodeGen/src/MemoryFunction.cpp` | Seam (full-file overlay of the `Play--CodeGen` submodule's own files — a separate git repo from `jpd002/Play-` itself, populated by the same `submodules: recursive` checkout, overwritten the same way as any other overlay file). Adds iOS 26 TXM dual-mapping to `CMemoryFunction`'s `MEMFUNC_MACHVM_STRICT_PROTECTION` (real-device iOS) path only — every other platform branch (Win32, macOS `MAP_JIT`, generic mmap, Wasm) is untouched. See below. |
 | `Base.lproj/Main.storyboard` | Seam (full-file overlay). Two additive attributes: `storyboardIdentifier="EmulatorViewController"` on the `EmulatorViewController` scene and `storyboardIdentifier="PlaySettingsNav"` on the settings navigation-controller scene, so `PlayBridge` can instantiate either directly (`instantiateViewControllerWithIdentifier:`) instead of only via `CoverViewController`'s segues. Nothing else in the storyboard changes — the original segue-based flow (unused now that our SwiftUI shell replaces the root VC, but left intact) still works identically. |
 | `AppDelegate.mm` | Seam (full-file overlay of Play!'s original). Swaps the storyboard-provided root view controller for our SwiftUI shell inside `didFinishLaunchingWithOptions`, after `UIApplicationMain` has already populated `self.window` from `Main.storyboard` (no Scene support in this app). |
 | `CMakeLists.txt` | Seam (full-file overlay of `Source/ui_ios/CMakeLists.txt`). Adds `AYS2RootView.swift`, `RetroKit.swift`, and `PlayBridge.mm`/`PlayBridge.h` to the target (the target already declares `LANGUAGES C Swift`, so no new interop plumbing needed beyond the bridging header below). Sets `XCODE_ATTRIBUTE_SWIFT_OBJC_BRIDGING_HEADER` to `AYS2-Bridging-Header.h`. Also overrides `XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET` to 15.0 at the target level — the shared `ios.cmake` toolchain sets 12.2, below SwiftUI's iOS 13 minimum; overridden per-target rather than editing the shared toolchain file every other build preset uses. |
@@ -80,15 +82,34 @@ aware the same way the main app's `StikDebugLauncher`/
 `AppInstallEnvironment` are) close that gap — without touching
 `CoverViewController.mm`, `AltServerJitService`, or any of Play!'s own C++.
 
-**Known remaining gap, unverified either way:** Play!'s executable-memory
-allocator (`deps/CodeGen`'s `CMemoryFunction`, `MEMFUNC_USE_MACHVM` on iOS)
-toggles a single page between RW and RX via `vm_protect` — the same
-"Legacy" strategy AYS2's own `DarwinMisc.cpp` used before iOS 26. iOS 26's
-Trusted Execution Monitor (TXM) blocks that toggle even with `CS_DEBUGGED`
-set, which is exactly what AYS2's own `LuckTXM` dual-mapping + `brk
-#0xf00d` handshake (`MmapCodeDualMap`) was built to work around. If a test
-device is on iOS 26+, getting real JIT (not just passing our new
-availability check) may additionally require overlaying a patched
-`CMemoryFunction.cpp` using that same dual-mapping approach — a
-substantially bigger change than this increment, not yet started, pending
-confirmation this is actually needed.
+**iOS 26 TXM dual-mapping, added:** Play!'s executable-memory allocator
+(`deps/CodeGen`'s `CMemoryFunction`, `MEMFUNC_USE_MACHVM` on iOS) toggled a
+single page between RW and RX via `vm_protect` — the same "Legacy"
+strategy AYS2's own `DarwinMisc.cpp` used before iOS 26, and exactly what
+iOS 26's Trusted Execution Monitor (TXM) blocks even with `CS_DEBUGGED`
+set. The overlaid `MemoryFunction.cpp` detects TXM (`kern.osproductversion`
++ the same firmware-image probe AYS2's own `DarwinMisc::HasTXM` uses) and,
+when present, allocates RX via `mmap`, registers the region with an
+attached debugger via the `brk #0xf00d` handshake (ported from AYS2's own
+`MmapCodeDualMap`, same worker-thread-with-8s-timeout safety net), then
+`vm_remap`s a separate RW alias — writes go through the alias
+(`GetWritableCode()`), execution/jump-targets stay on the original RX
+pointer (`GetCode()`, unchanged everywhere else in Play!'s own code). Falls
+back to the original per-page toggle if TXM registration fails for a given
+allocation, or if TXM isn't detected at all (pre-iOS-26 devices take the
+exact original code path, byte-for-byte).
+
+`Source/BasicBlock.cpp`'s two block-linking call sites (`LinkBlock`,
+`UnlinkBlock`) needed a matching one-line reorder each: `GetWritableCode()`
+must be captured *after* `BeginModify()`, not before, since `BeginModify()`
+is what makes the dual-mapped RW alias exist to capture (see the file's
+own comments). This is the entire footprint in Play!'s own `Source/` tree
+for this change — `MipsJitter.cpp` and everything else that ends up
+running through `CMemoryFunction` needed no changes at all, since they
+never touch the raw pointer directly.
+
+**Still unverified on real hardware** — this compiles under CI but has
+never actually run a JIT'd block on a device. The dual-mapping strategy
+itself is proven (it's what AYS2's own main app has been running for real
+this whole session), but this is a first port into an unfamiliar
+codebase's exact allocation pattern, with no way to test it from here.

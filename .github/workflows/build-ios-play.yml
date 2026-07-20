@@ -45,10 +45,16 @@ jobs:
       - name: Apply AYS2 overlay on top of Play!
         # Copies every file in the overlay tree (not an explicit per-file
         # list) so a new overlay file only needs adding to
-        # docs/AYS2_PLAY_OVERLAY.md's manifest, not also to this step.
+        # docs/AYS2_PLAY_OVERLAY.md's manifest, not also to this step. The
+        # overlay tree's relative paths mirror Play!'s own checkout layout
+        # (Source/ui_ios/..., Source/BasicBlock.cpp, deps/CodeGen/...) so a
+        # single recursive copy places everything correctly, including
+        # files under deps/ (a separate git submodule Play!'s own checkout
+        # step already populated — this only overwrites specific files
+        # inside it, same seam discipline as everywhere else).
         run: |
           set -euo pipefail
-          cp -Rv ays2/vendor/play-overlay/Source/ui_ios/. play/Source/ui_ios/
+          cp -Rv ays2/vendor/play-overlay/. play/
 
       - name: Install dpkg (Play!'s own CI dependency)
         run: brew install dpkg
