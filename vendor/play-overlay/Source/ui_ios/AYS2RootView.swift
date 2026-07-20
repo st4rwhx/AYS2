@@ -64,6 +64,13 @@ struct AYS2RootView: View {
 			Text("\(games.count) \(games.count == 1 ? "game" : "games")")
 				.font(.footnote)
 				.foregroundStyle(Retro.mut)
+			Button {
+				presentSettings()
+			} label: {
+				Image(systemName: "gearshape")
+					.foregroundStyle(Retro.mut)
+			}
+			.padding(.leading, 4)
 		}
 		.padding(.horizontal, 20)
 		.padding(.top, 16)
@@ -157,10 +164,17 @@ struct AYS2RootView: View {
 	/// Play! has no UIScene support (pre-scene, window-based app lifecycle,
 	/// same as its own AppDelegate/window setup) — .windows is the correct
 	/// way to reach the key window here, not a legacy fallback.
+	private var rootPresenter: UIViewController? {
+		UIApplication.shared.windows.first(where: { $0.isKeyWindow })?.rootViewController
+	}
+
 	private func boot(_ game: PlayGame) {
-		guard let presenter = UIApplication.shared.windows.first(where: { $0.isKeyWindow })?.rootViewController else {
-			return
-		}
+		guard let presenter = rootPresenter else { return }
 		PlayBridge.bootGameAtPath(game.path, presentingFrom: presenter)
+	}
+
+	private func presentSettings() {
+		guard let presenter = rootPresenter else { return }
+		PlayBridge.presentSettings(from: presenter)
 	}
 }

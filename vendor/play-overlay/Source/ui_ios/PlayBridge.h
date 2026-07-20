@@ -40,6 +40,17 @@ NS_ASSUME_NONNULL_BEGIN
 // site matching what's written here.
 + (void)bootGameAtPath:(NSString *)path presentingFrom:(UIViewController *)presenter NS_SWIFT_NAME(bootGameAtPath(_:presentingFrom:));
 
+/// Presents Play!'s own SettingsViewController (instantiated from
+/// Main.storyboard inside its navigation controller, unmodified) modally
+/// over `presenter`. Mirrors CoverViewController's own "showSettings" segue
+/// handling: allows full-device-scan and GS-handler selection, restarts the
+/// AltServer JIT service and refreshes the library on dismiss exactly like
+/// the stock flow does.
+// Explicit NS_SWIFT_NAME for the same reason as bootGameAtPath: above —
+// pin the exact Swift signature instead of trusting the importer's
+// preposition-splitting heuristic to guess the same way we call it.
++ (void)presentSettingsFrom:(UIViewController *)presenter NS_SWIFT_NAME(presentSettings(from:));
+
 @end
 
 NS_ASSUME_NONNULL_END

@@ -4,6 +4,8 @@
 
 #import "PlayBridge.h"
 #import "EmulatorViewController.h"
+#import "SettingsViewController.h"
+#import "AltServerJitService.h"
 #import "../ui_shared/BootablesProcesses.h"
 #import "../ui_shared/BootablesDbClient.h"
 #import "PathUtils.h"
@@ -53,6 +55,35 @@
 	emulatorVC.bootablePath = path;
 	emulatorVC.modalPresentationStyle = UIModalPresentationFullScreen;
 	[presenter presentViewController:emulatorVC animated:YES completion:nil];
+}
+
++ (void)presentSettingsFrom:(UIViewController*)presenter
+{
+	UIStoryboard* storyboard = [UIStoryboard storyboardWithName:@"Main" bundle:nil];
+	UINavigationController* navVC = [storyboard instantiateViewControllerWithIdentifier:@"PlaySettingsNav"];
+	SettingsViewController* settingsVC = (SettingsViewController*)navVC.visibleViewController;
+	settingsVC.allowFullDeviceScan = true;
+	settingsVC.allowGsHandlerSelection = true;
+	// Mirrors CoverViewController's prepareForSegue:sender: handling for
+	// "showSettings" exactly — restart AltServer's JIT process (settings may
+	// have changed the script/state) and re-scan the library if the user hit
+	// Full Device Scan. The scan itself runs off the main thread, same as
+	// CoverViewController's own buildCollectionWithForcedFullScan: — a full
+	// /private/var/mobile walk is real disk I/O, and this completion handler
+	// fires on the main thread.
+	settingsVC.completionHandler = ^(bool fullScanRequested) {
+		[[AltServerJitService sharedAltServerJitService] startProcess];
+		if (fullScanRequested)
+		{
+			dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+				ScanBootables("/private/var/mobile");
+				ScanBootables(Framework::PathUtils::GetPersonalDataPath());
+				PurgeInexistingFiles();
+				FetchGameTitles();
+			});
+		}
+	};
+	[presenter presentViewController:navVC animated:YES completion:nil];
 }
 
 @end
