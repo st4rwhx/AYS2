@@ -51,6 +51,15 @@ NS_ASSUME_NONNULL_BEGIN
 // preposition-splitting heuristic to guess the same way we call it.
 + (void)presentSettingsFrom:(UIViewController *)presenter NS_SWIFT_NAME(presentSettings(from:));
 
+/// Real CS_DEBUGGED check (csops), independent of Play!'s own
+/// CoverViewController::IsJitAvailable() heuristic (parent-pid / AltServer-
+/// only / jailbreak-directory probes — none of which recognize a StikDebug-
+/// or SideStore-granted JIT). +bootGameAtPath:presentingFrom: bypasses
+/// CoverViewController's segue-gated flow entirely (it goes straight from
+/// our SwiftUI shell to EmulatorViewController), so this is the only JIT
+/// check that actually runs before boot in this app.
++ (BOOL)isJITAvailable;
+
 @end
 
 NS_ASSUME_NONNULL_END

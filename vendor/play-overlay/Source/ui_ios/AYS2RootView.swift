@@ -32,9 +32,23 @@ private struct PlayGame: Identifiable {
 	let coverURL: URL?
 }
 
+// AYS2: ported from the main app's AppInstallEnvironment (seam) — same
+// blind spot applies here. Under a host container (LiveContainer),
+// Bundle.main.bundleIdentifier still reports Play!'s own declared id, not
+// the actually-running container process StikDebug would need to target,
+// so the stikdebug:// deep link below can't work from in here in that case.
+private enum PlayInstallEnvironment {
+	static var isLikelyExternalContainer: Bool {
+		Bundle.main.bundlePath
+			.range(of: "/Documents/Applications/", options: .caseInsensitive) != nil
+	}
+}
+
 struct AYS2RootView: View {
 	@State private var games: [PlayGame] = []
 	@State private var isLoading = true
+	@State private var jitAlertGame: PlayGame?
+	@State private var jitOpenInProgress = false
 
 	var body: some View {
 		ZStack {
@@ -54,6 +68,33 @@ struct AYS2RootView: View {
 		}
 		.task {
 			await loadLibrary()
+		}
+		.alert(
+			"JIT unavailable",
+			isPresented: Binding(get: { jitAlertGame != nil }, set: { if !$0 { jitAlertGame = nil } }),
+			presenting: jitAlertGame
+		) { game in
+			if !PlayInstallEnvironment.isLikelyExternalContainer {
+				Button("Open StikDebug") {
+					openStikDebugForJIT()
+				}
+			}
+			Button("Continue Anyway", role: .destructive) {
+				if let presenter = rootPresenter {
+					PlayBridge.bootGameAtPath(game.path, presentingFrom: presenter)
+				}
+			}
+			Button("Cancel", role: .cancel) {}
+		} message: { _ in
+			// Play!'s own JIT-available check (CoverViewController's
+			// IsJitAvailable()) never runs in this app — we boot straight into
+			// EmulatorViewController from this SwiftUI shell, bypassing that
+			// segue gate entirely. This is our own real CS_DEBUGGED check
+			// (PlayBridge.isJITAvailable), not Play!'s AltServer-only one, so
+			// it correctly recognizes JIT granted via StikDebug or SideStore.
+			Text(PlayInstallEnvironment.isLikelyExternalContainer
+				? "Play! will crash on boot without JIT. Running inside a host container (e.g. LiveContainer): this can't target the right process from in here. Enable JIT from the container itself — hold this app in LiveContainer's list, open its settings, and turn on \"Launch with JIT\" (or run the matching script against the container, not Play!, directly in StikDebug)."
+				: "Play! will crash on boot without JIT. If you're using StikDebug or SideStore's own JIT enabler, grant JIT for this app there first, then try again.")
 		}
 	}
 
@@ -170,11 +211,49 @@ struct AYS2RootView: View {
 
 	private func boot(_ game: PlayGame) {
 		guard let presenter = rootPresenter else { return }
+		guard PlayBridge.isJITAvailable() else {
+			jitAlertGame = game
+			return
+		}
 		PlayBridge.bootGameAtPath(game.path, presentingFrom: presenter)
 	}
 
 	private func presentSettings() {
 		guard let presenter = rootPresenter else { return }
 		PlayBridge.presentSettings(from: presenter)
+	}
+
+	// AYS2: StikDebug bounce for Play! (seam) — Play!'s own JIT path
+	// (AltServerJitService) only talks to a classic AltServer on a Mac/PC on
+	// the same LAN; it has no StikDebug/SideStore-style deep link of its own.
+	// Same URL-scheme + fallback-chain approach as the main AYS2 app's
+	// StikDebugLauncher.open(), using Play!'s own real bundle id (this file
+	// runs inside Play.app, so Bundle.main correctly reports Play!'s id, not
+	// AYS2's) — deliberately not ported wholesale, this app only needs the
+	// "open it" half, not auto-open/cooldown/host-container detection.
+	private func openStikDebugForJIT() {
+		guard !jitOpenInProgress else { return }
+		let bundleID = Bundle.main.bundleIdentifier ?? ""
+		let encoded = bundleID.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? bundleID
+		let candidates = [
+			"stikdebug://enable-jit?bundle-id=\(encoded)",
+			"stikjit://enable-jit?bundle-id=\(encoded)"
+		].compactMap(URL.init(string:))
+		jitOpenInProgress = true
+		openFirstAvailable(candidates)
+	}
+
+	private func openFirstAvailable(_ urls: [URL]) {
+		guard let url = urls.first else {
+			jitOpenInProgress = false
+			return
+		}
+		UIApplication.shared.open(url, options: [:]) { success in
+			if success {
+				jitOpenInProgress = false
+			} else {
+				openFirstAvailable(Array(urls.dropFirst()))
+			}
+		}
 	}
 }

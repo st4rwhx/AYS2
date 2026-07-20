@@ -11,6 +11,11 @@
 #import "PathUtils.h"
 #include <ctime>
 
+// AYS2: not a public header declaration (seam) — same undocumented syscall
+// AYS2's own DarwinMisc.cpp uses for its IsJITAvailable(). CS_OPS_STATUS is
+// 0; bit 0x10000000 in the returned flags is CS_DEBUGGED.
+extern "C" int csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize);
+
 @implementation PlayBridge
 
 + (void)refreshLibrary
@@ -84,6 +89,13 @@
 		}
 	};
 	[presenter presentViewController:navVC animated:YES completion:nil];
+}
+
++ (BOOL)isJITAvailable
+{
+	uint32_t csFlags = 0;
+	int rv = csops(getpid(), 0 /* CS_OPS_STATUS */, &csFlags, sizeof(csFlags));
+	return (rv == 0) && ((csFlags & 0x10000000u) != 0); // CS_DEBUGGED
 }
 
 @end
