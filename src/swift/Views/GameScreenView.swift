@@ -213,6 +213,13 @@ struct GameScreenView: View {
                             .id(padRebuildToken)
                         }
                         menuButtonOverlay(isLandscape: true)
+                        VStack {
+                            HStack {
+                                quickStateButtonsOverlay(isLandscape: true)
+                                Spacer()
+                            }
+                            Spacer()
+                        }
                     }
                     .ignoresSafeArea()
                 } else {
@@ -245,6 +252,9 @@ struct GameScreenView: View {
                                 .padding(.top, 4)
                                 .padding(.trailing, 4)
                         }
+                    }
+                    .overlay(alignment: .topLeading) {
+                        quickStateButtonsOverlay(isLandscape: false)
                     }
                     .ignoresSafeArea(.container, edges: .bottom)
                 }
@@ -428,6 +438,65 @@ struct GameScreenView: View {
         }
         .accessibilityLabel(settings.localized("Pause Menu"))
         .accessibilityHint(settings.localized("Opens the pause menu"))
+    }
+
+    // AYS2: on-screen quick save/load-state buttons (seam) — user suggestion,
+    // like Aether/Nether. Float at top-leading (opposite the pause button),
+    // shown only during actual gameplay and only when the user opted in.
+    // Operates on a fixed "quick" slot; the full slot picker stays in the
+    // pause menu's Save States panel.
+    private static let quickStateSlot: Int = 1
+
+    @ViewBuilder
+    private func quickStateButtonsOverlay(isLandscape: Bool) -> some View {
+        if settings.showQuickStateButtons && !menuButtonHidden && overlayRoute == .hidden {
+            HStack(spacing: 10) {
+                quickStateButton(systemImage: "arrow.down.circle.fill", label: "Quick Save") { quickSaveState() }
+                quickStateButton(systemImage: "arrow.up.circle.fill", label: "Quick Load") { quickLoadState() }
+            }
+            .padding(.top, isLandscape ? 8 : 4)
+            .padding(.leading, isLandscape ? 8 : 4)
+        }
+    }
+
+    private func quickStateButton(systemImage: String, label: String, action: @escaping () -> Void) -> some View {
+        Button {
+            if settings.hapticFeedback { HapticManager.light.impactOccurred() }
+            action()
+        } label: {
+            Image(systemName: systemImage)
+                .font(.system(size: 16, weight: .heavy))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.white)
+                .frame(width: 28, height: 28)
+                .padding(6)
+                .background(.black.opacity(0.28), in: Circle())
+        }
+        .accessibilityLabel(settings.localized(label))
+    }
+
+    private func quickSaveState() {
+        ARMSX2Bridge.saveState(toSlot: Self.quickStateSlot) { success in
+            Task { @MainActor in
+                presentStatusMessage(success
+                    ? "\(settings.localized("Quick saved")) (\(settings.localized("slot")) \(Self.quickStateSlot))"
+                    : settings.localized("Quick save failed. Try again after gameplay has fully loaded."))
+            }
+        }
+    }
+
+    private func quickLoadState() {
+        if ARMSX2Bridge.isRetroAchievementsHardcoreActive() {
+            presentStatusMessage(settings.localized("Hardcore mode blocks loading save states."))
+            return
+        }
+        ARMSX2Bridge.loadState(fromSlot: Self.quickStateSlot) { success in
+            Task { @MainActor in
+                presentStatusMessage(success
+                    ? "\(settings.localized("Quick loaded")) (\(settings.localized("slot")) \(Self.quickStateSlot))"
+                    : settings.localized("No quick save in this slot yet."))
+            }
+        }
     }
 
     @ViewBuilder

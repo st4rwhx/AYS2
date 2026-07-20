@@ -839,6 +839,16 @@ final class SettingsStore: @unchecked Sendable {
             ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "HideMenuButton", value: hideMenuButton)
         }
     }
+    // AYS2: user suggestion — on-screen quick save/load-state buttons (seam),
+    // like Aether/Nether. When on, a small save + load pair floats on the game
+    // screen and operates on a fixed "quick" slot (slot 1); the full slot
+    // picker stays in the pause menu's Save States panel.
+    var showQuickStateButtons: Bool {
+        didSet {
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", value: showQuickStateButtons)
+        }
+    }
     var analogStickScale: Float {
         didSet {
             let clamped = Self.clampedAnalogStickScale(analogStickScale)
@@ -1238,6 +1248,7 @@ final class SettingsStore: @unchecked Sendable {
         autoHideVirtualPadWhenControllerConnected = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoHideVirtualPadWhenControllerConnected", defaultValue: true)
         autoFullscreen = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoFullscreen", defaultValue: true)
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
+        showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))
         appLanguage = AppLanguage(rawValue: ARMSX2Bridge.getINIString("ARMSX2iOS/UI", key: "AppLanguage", defaultValue: AppLanguage.system.rawValue)) ?? .system
         controllerMultitapMode = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Gamepad", key: "MultitapMode", defaultValue: 0))
@@ -1429,6 +1440,7 @@ final class SettingsStore: @unchecked Sendable {
         autoHideVirtualPadWhenControllerConnected = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoHideVirtualPadWhenControllerConnected", defaultValue: true)
         autoFullscreen = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoFullscreen", defaultValue: true)
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
+        showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))
         appLanguage = AppLanguage(rawValue: ARMSX2Bridge.getINIString("ARMSX2iOS/UI", key: "AppLanguage", defaultValue: AppLanguage.system.rawValue)) ?? .system
         controllerMultitapMode = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Gamepad", key: "MultitapMode", defaultValue: 0))

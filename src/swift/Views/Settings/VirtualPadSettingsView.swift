@@ -53,6 +53,12 @@ struct VirtualPadSettingsView: View {
                 Toggle(settings.localized("Auto Full Screen"), isOn: $settings.autoFullscreen)
                 Toggle(settings.localized("Hide Menu Button"), isOn: $settings.hideMenuButton)
 
+                // AYS2: on-screen quick save/load-state buttons (seam).
+                Toggle(settings.localized("On-Screen Quick Save/Load Buttons"), isOn: $settings.showQuickStateButtons)
+                Text(settings.localized("Adds floating Quick Save and Quick Load buttons to the game screen (they use a dedicated quick slot)."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Toggle(settings.localized("D-pad Diagonals"), isOn: $settings.dpadDiagonalsEnabled)
                 Text(settings.localized("Allows one-finger diagonal and quarter-circle motions on the virtual D-pad."))
                     .font(.caption)
