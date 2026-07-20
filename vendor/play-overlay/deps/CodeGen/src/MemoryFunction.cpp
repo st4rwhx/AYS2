@@ -260,12 +260,20 @@ namespace
 
 	// AYS2: shared TXM pool (seam/fix) — see the file-level comment above
 	// for why this exists instead of one brk-handshake per CMemoryFunction.
-	// Sized to comfortably outlast a real play session's worth of compiled
-	// basic blocks; if it's ever exhausted, TXMPoolAlloc starts returning
-	// false and callers fall back to the Legacy per-instance path (which
-	// will likely itself fail under real TXM enforcement — this is a
-	// last-resort degradation, not a real fix for running out of pool).
-	constexpr size_t TXM_POOL_SIZE = 96 * 1024 * 1024; // 96MB
+	// 8MB, not the first attempt's 96MB: per-block registrations (small,
+	// a few hundred bytes to a few KB each) got through the debugger's
+	// prepare_memory_region native call fine before; a single 96MB
+	// registration in one shot is untested and is a plausible reason a
+	// second real-device attempt still failed — StikDebug's native
+	// memory-preparation call may not be designed for one huge upfront
+	// request the way small, incremental JIT allocations are. 8MB should
+	// still comfortably hold thousands of compiled basic blocks (each
+	// typically well under a few KB) for a real test session. If it's
+	// ever exhausted, TXMPoolAlloc starts returning false and callers
+	// fall back to the Legacy per-instance path (which will likely itself
+	// fail under real TXM enforcement — a last-resort degradation, not a
+	// real fix for running out of pool).
+	constexpr size_t TXM_POOL_SIZE = 8 * 1024 * 1024; // 8MB
 
 	struct TXMPool
 	{
