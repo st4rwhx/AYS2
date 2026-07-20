@@ -18,6 +18,9 @@ on:
       - ".github/workflows/build-ios-play.yml"
   workflow_dispatch:
 
+permissions:
+  contents: write # needed to publish the Play! preview IPA to its own GitHub Release
+
 jobs:
   build_play_ios:
     name: Build Play! iOS (upstream + AYS2 overlay)
@@ -28,7 +31,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: ays2
-          fetch-depth: 1
+          fetch-depth: 30 # recent history for the preview release's changelog
 
       - name: Checkout Play! (jpd002/Play-, pinned commit)
         uses: actions/checkout@v4
@@ -82,9 +85,114 @@ jobs:
           echo "Play.app built successfully:"
           find Source/ui_ios -maxdepth 2 -name "Play.app" -exec ls -la {} \;
 
-      - name: Upload Play.app artifact
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          APP="play/build/Source/ui_ios/Release-iphoneos/Play.app"
+          if [[ ! -d "$APP" ]]; then
+            echo "::error::Play.app not found at $APP"
+            exit 1
+          fi
+          mkdir -p Payload
+          cp -r "$APP" Payload/Play.app
+          # Pin the outward-facing version to the same 0.1.<run> scheme the
+          # main app uses, so this preview build's version is unambiguous in
+          # the release/source feed. Play!'s own internal code never reads
+          # this string, so it's safe to override — same reasoning as
+          # build-ios.yml's identical override of ARMSX2iOS.app.
+          VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          PLIST="Payload/Play.app/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" "$PLIST"
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$PLIST")"
+          echo "BUNDLE_ID=$BUNDLE_ID" >> "$GITHUB_ENV"
+          zip -r AYS2-Play.ipa Payload/
+          ls -lh AYS2-Play.ipa
+
+      - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: AYS2-play-core-ios
-          path: play/build/Source/ui_ios/Release-iphoneos/Play.app
+          path: AYS2-Play.ipa
           retention-days: 14
+
+      # Separate rolling Release from the main app's ("latest") — its own tag,
+      # its own source.json, never marked as the repo's "Latest release".
+      # This is a preview/test build of an entirely different emulator core
+      # (Play!, not PCSX2), so it must never be reachable from or confused
+      # with the real AYS2 update feed the main app's build-ios.yml publishes.
+      - name: Publish IPA to Play! preview Release
+        env:
+          RELEASE_REPO: st4rwhx/AYS2
+          SOURCE_CONTACT: "ayanoxkiyotakaxpsycoworld@gmail.com"
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="play-latest"
+          VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          IPA_NAME="AYS2-Play-${VERSION}.ipa"
+          cp AYS2-Play.ipa "$IPA_NAME"
+          IPA_SIZE=$(stat -f%z "$IPA_NAME" 2>/dev/null || stat -c%s "$IPA_NAME")
+          TODAY=$(date +%F)
+          IPA_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/${IPA_NAME}"
+          ICON_NAME="icon-play-${VERSION}.png"
+          ICON_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}/${ICON_NAME}"
+          cp "ays2/src/assets/Assets.xcassets/AppIcon.appiconset/icon-1024.png" "$ICON_NAME" || true
+
+          cat > SOURCE-OFFER.txt <<OFFER
+          This build includes AYS2's Play! overlay (GPL-3.0) on top of
+          Play! (jpd002/Play-, BSD-2-Clause). In accordance with GPL-3.0
+          section 6, the complete corresponding source for the GPL-licensed
+          portions is available to any person who possesses this software,
+          at no charge, on request for a period of at least three years.
+
+          To request the corresponding source, contact: ${SOURCE_CONTACT}
+          OFFER
+
+          CHANGELOG="$(cd ays2 && git log -10 --no-merges --pretty=format:'• %s' -- vendor/play-overlay 2>/dev/null | head -8)"
+          [ -z "$CHANGELOG" ] && CHANGELOG="• Latest Play! preview build."
+          export CHANGELOG
+
+          python3 - "$VERSION" "$IPA_SIZE" "$TODAY" "$IPA_URL" "$ICON_URL" "$BUNDLE_ID" <<'PY'
+          import json, os, sys
+          version, size, date, ipa, icon, bundle_id = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6]
+          notes = (os.environ.get("CHANGELOG") or "").strip()[:1200] or "• Latest Play! preview build."
+          desc = f"AYS2 x Play! core preview — unverified on real hardware. What's new in v{version}:\n{notes}"
+          src = {
+              "name": "AYS2 (Play! preview)",
+              "identifier": "com.ayano.aysx2.play-preview.source",
+              "subtitle": "AYS2 - Play! core preview builds",
+              "apps": [{
+                  "name": "AYS2 (Play! preview)",
+                  "bundleIdentifier": bundle_id,
+                  "developerName": "AYS2",
+                  "subtitle": "Experimental Play! core build - not for daily use",
+                  "localizedDescription": desc,
+                  "iconURL": icon,
+                  "tintColor": "1B5CFF",
+                  "category": "games",
+                  "screenshotURLs": [],
+                  "versions": [{
+                      "version": version, "date": date,
+                      "localizedDescription": desc,
+                      "downloadURL": ipa, "size": size, "minOSVersion": "15.0"
+                  }],
+                  "version": version, "versionDate": date,
+                  "downloadURL": ipa, "size": size, "appPermissions": {}
+              }]
+          }
+          json.dump(src, open("play-source.json", "w"), indent=2, ensure_ascii=False)
+          print("play-source.json version:", version, "\nnotes:\n" + desc)
+          PY
+
+          gh release view "$TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$RELEASE_REPO" \
+              --title "AYS2 x Play! (preview, rolling)" \
+              --prerelease \
+              --notes "Rolling preview build of AYS2 running on the Play! core instead of PCSX2. Unverified on real hardware — separate from the main AYS2 release, do not confuse the two. Add this source in SideStore/AltStore to track it:
+          \`https://github.com/${RELEASE_REPO}/releases/download/${TAG}/play-source.json\`"
+          gh release upload "$TAG" "$IPA_NAME" play-source.json "$ICON_NAME" SOURCE-OFFER.txt \
+            --repo "$RELEASE_REPO" --clobber
+          gh release edit "$TAG" --repo "$RELEASE_REPO" --prerelease \
+            --title "AYS2 x Play! ${VERSION} (preview, rolling)" || true
+          echo "Published $IPA_NAME + play-source.json → https://github.com/$RELEASE_REPO/releases/tag/$TAG"

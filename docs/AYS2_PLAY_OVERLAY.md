@@ -17,6 +17,23 @@ can commit to, so a modifiable git submodule isn't possible. Instead,
 "minimal marked seam" discipline as `AYS2_OVERLAY.md`, just applied via
 file-copy-at-CI-time rather than an already-merged local copy.
 
+## Distribution: its own rolling Release, separate from the main app
+
+`build-ios-play.yml` packages a real `.ipa` (not just a raw `.app` artifact —
+early versions of this workflow uploaded the unpacked `Play.app` bundle,
+which isn't directly sideloadable) and publishes it to its own rolling
+GitHub Release, tag `play-latest`, with its own `play-source.json`
+SideStore/AltStore feed. This is entirely separate machinery from the main
+app's `latest` release that `build-ios.yml` publishes: different tag,
+different source file, and `gh release edit` is deliberately never called
+with `--latest` on `play-latest` — that flag sets the *repo's* single
+"Latest release" badge, which must always stay pointed at the real,
+user-facing AYS2 app. The Play! preview release is also marked
+`--prerelease` for the same reason (keeps it out of `/releases/latest`).
+Add `https://github.com/st4rwhx/AYS2/releases/download/play-latest/play-source.json`
+as a source in SideStore/AltStore to track preview builds independently of
+the main AYS2 source — do not add it to the same source as the real app.
+
 **Pinned upstream commit:** `50aedca2639521bc498ace0b2be1ea012801a86a`
 
 ## Overlay files (`vendor/play-overlay/Source/ui_ios/`)
