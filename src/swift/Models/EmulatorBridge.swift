@@ -97,6 +97,14 @@ enum StikDebugLauncher {
     static func autoOpenIfNeeded(reason: String) {
         guard SettingsStore.shared.autoOpenStikDebug else { return }
         guard !ARMSX2Bridge.isJITAvailable() else { return }
+        // AYS2: skip under a host container (seam) — see AppInstallEnvironment's
+        // doc comment. Our deep link would target AYS2's own bundle id, not the
+        // container process StikDebug actually needs to attach to, so firing it
+        // automatically just bounces the user to StikDebug for nothing.
+        guard !AppInstallEnvironment.isLikelyExternalContainer else {
+            log("auto-open skipped reason=\(reason): running inside a host container")
+            return
+        }
 
         let now = Date().timeIntervalSince1970
         let last = UserDefaults.standard.double(forKey: lastAutoOpenKey)

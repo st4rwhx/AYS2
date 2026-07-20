@@ -85,26 +85,37 @@ struct EmulatorSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Button {
-                    stikDebugOpenInProgress = true
-                    stikDebugOpenFailed = false
-                    StikDebugLauncher.open(reason: "emulator-settings") { success in
-                        stikDebugOpenInProgress = false
-                        stikDebugOpenFailed = !success
-                    }
-                } label: {
-                    Label(settings.localized("Open StikDebug"), systemImage: "bolt.horizontal.circle")
-                }
-                .disabled(stikDebugOpenInProgress)
-
-                Text(settings.localized("Select the same script here that you run in StikDebug. This only changes the debugger breakpoint protocol used to prepare JIT memory. Fully close and relaunch AYS2 after switching scripts."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if stikDebugOpenFailed {
-                    Text(settings.localized("Open StikDebug manually, then run the selected script and relaunch AYS2."))
+                // AYS2: LiveContainer/host-container installs (seam) — our own
+                // deep link targets AYS2's own bundle id, but the process
+                // StikDebug actually needs to attach to is the container's, so
+                // the button can't work here. Swap it for accurate guidance
+                // instead of a tap that silently does nothing useful.
+                if AppInstallEnvironment.isLikelyExternalContainer {
+                    Text(settings.localized("Running inside a host container (e.g. LiveContainer): this button can't target the right process from in here. Set JIT Script to Universal above, then enable JIT from the container itself — hold AYS2 in its app list, open Settings, and turn on \"Launch with JIT\" (or run the matching script against the container, not AYS2, in StikDebug directly)."))
                         .font(.caption)
                         .foregroundStyle(.orange)
+                } else {
+                    Button {
+                        stikDebugOpenInProgress = true
+                        stikDebugOpenFailed = false
+                        StikDebugLauncher.open(reason: "emulator-settings") { success in
+                            stikDebugOpenInProgress = false
+                            stikDebugOpenFailed = !success
+                        }
+                    } label: {
+                        Label(settings.localized("Open StikDebug"), systemImage: "bolt.horizontal.circle")
+                    }
+                    .disabled(stikDebugOpenInProgress)
+
+                    Text(settings.localized("Select the same script here that you run in StikDebug. This only changes the debugger breakpoint protocol used to prepare JIT memory. Fully close and relaunch AYS2 after switching scripts."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if stikDebugOpenFailed {
+                        Text(settings.localized("Open StikDebug manually, then run the selected script and relaunch AYS2."))
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
                 }
 
                 Button {

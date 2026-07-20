@@ -126,18 +126,27 @@ struct SettingsRootView: View {
             Section {
                 jitStatusRow
 
-                Button {
-                    stikDebugOpenInProgress = true
-                    stikDebugOpenFailed = false
-                    StikDebugLauncher.open(reason: "settings-root") { success in
-                        stikDebugOpenInProgress = false
-                        stikDebugOpenFailed = !success
-                        refreshJITStatus()
+                // AYS2: LiveContainer/host-container installs (seam) — see the
+                // matching guard in EmulatorSettingsView.swift for why this
+                // button can't work from inside a container.
+                if AppInstallEnvironment.isLikelyExternalContainer {
+                    Text(settings.localized("Running inside a host container (e.g. LiveContainer): this button can't target the right process from in here. Set JIT Script to Universal in Emulator settings, then enable JIT from the container itself — hold AYS2 in its app list, open Settings, and turn on \"Launch with JIT\" (or run the matching script against the container, not AYS2, in StikDebug directly)."))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else {
+                    Button {
+                        stikDebugOpenInProgress = true
+                        stikDebugOpenFailed = false
+                        StikDebugLauncher.open(reason: "settings-root") { success in
+                            stikDebugOpenInProgress = false
+                            stikDebugOpenFailed = !success
+                            refreshJITStatus()
+                        }
+                    } label: {
+                        Label(settings.localized("Open StikDebug"), systemImage: "bolt.horizontal.circle")
                     }
-                } label: {
-                    Label(settings.localized("Open StikDebug"), systemImage: "bolt.horizontal.circle")
+                    .disabled(stikDebugOpenInProgress)
                 }
-                .disabled(stikDebugOpenInProgress)
 
                 // AYS2: TrollStore is a separate sideloading method from
                 // StikDebug/AltStore (seam) — kept as its own explicit

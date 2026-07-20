@@ -68,11 +68,22 @@ enum AppIconManager {
 
 // Best-effort detection of a host-container / LiveContainer-style install.
 // Such installs relocate the app bundle under the host’s Documents/Applications
-// folder; there the Home Screen icon belongs to the host, not ARMSX2, so native
+// folder; there the Home Screen icon belongs to the host, not AYS2, so native
 // alternate-icon switching does not apply. This is advisory only — normal
 // installs are never flagged, and a missed detection still falls back to the
 // clearer failure alert below.
-private enum AppInstallEnvironment {
+//
+// AYS2: no longer file-private (seam) — StikDebugLauncher (EmulatorBridge.swift)
+// also needs this. A host container like LiveContainer loads the guest app's
+// own Info.plist, so Bundle.main.bundleIdentifier inside AYS2 still reports
+// AYS2's own bundle id even though the actual running OS process (the one
+// StikDebug would need to attach a debugger to) is the host container's.
+// Firing our own stikdebug://enable-jit?bundle-id=<AYS2's id> deep link in
+// that case switches to StikDebug and reports success, but doesn't grant JIT
+// to the right process — JIT has to be requested for the container itself,
+// which is exactly why this is normally a manual, container-side setup step
+// and not something we can silently automate.
+enum AppInstallEnvironment {
     static var isLikelyExternalContainer: Bool {
         Bundle.main.bundlePath
             .range(of: "/Documents/Applications/", options: .caseInsensitive) != nil
