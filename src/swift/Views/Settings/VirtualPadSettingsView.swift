@@ -23,6 +23,8 @@ struct VirtualPadSettingsView: View {
     @State private var skinRenameDraft = ""
     // AYS2: per-button autofire (seam) — see TurboStore.
     @State private var turbo = TurboStore.shared
+    // AYS2: gyro aim (seam) — see GyroAimStore.
+    @State private var gyro = GyroAimStore.shared
 
     // Buttons offered for turbo, with their ARMSX2PadButton raw values.
     private static let turboButtons: [(raw: Int, label: String)] = [
@@ -69,6 +71,34 @@ struct VirtualPadSettingsView: View {
                 Text(settings.localized("Turbo (Autofire)"))
             } footer: {
                 Text(settings.localized("Marked buttons auto-repeat while held, at the frequency above. Handy for rapid-fire inputs."))
+            }
+
+            // AYS2: gyro aim (seam) — see GyroAimStore.
+            Section {
+                Toggle(settings.localized("Enable Gyro Aim"), isOn: $gyro.enabled)
+                if gyro.enabled {
+                    if !gyro.isAvailable {
+                        Text(settings.localized("Motion sensors are not available on this device."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading) {
+                        Text("\(settings.localized("Sensitivity")): \(sensitivityLabel)")
+                        Slider(value: $gyro.sensitivity,
+                               in: GyroAimStore.minSensitivity...GyroAimStore.maxSensitivity,
+                               step: 0.25)
+                    }
+                    Picker(settings.localized("Controlled Stick"), selection: $gyro.usesLeftStick) {
+                        Text(settings.localized("Right Stick (Aim)")).tag(false)
+                        Text(settings.localized("Left Stick (Move)")).tag(true)
+                    }
+                    Toggle(settings.localized("Invert Horizontal"), isOn: $gyro.invertX)
+                    Toggle(settings.localized("Invert Vertical"), isOn: $gyro.invertY)
+                }
+            } header: {
+                Text(settings.localized("Gyro Aim"))
+            } footer: {
+                Text(settings.localized("Tilt the device to nudge an analog stick — great for fine-tuning aim. Tuned for landscape; if a direction feels backwards, flip its Invert switch. The stick self-centers when the device is still."))
             }
 
             Section(settings.localized("Gameplay")) {
@@ -336,6 +366,10 @@ struct VirtualPadSettingsView: View {
                 )
             )
         }
+    }
+
+    private var sensitivityLabel: String {
+        String(format: "%.2f×", gyro.sensitivity)
     }
 
     private var selectedSkinDetail: String {

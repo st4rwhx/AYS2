@@ -347,12 +347,15 @@ struct GameScreenView: View {
             refreshRuntimeMenuState()
             consumePendingRetroAchievementsToast()
             startMenuRestorePollingIfNeeded()
+            // AYS2: gyro aim (seam) — only run motion while gameplay is on screen.
+            GyroAimStore.shared.setGameplayActive(overlayRoute == .hidden)
         }
         .onDisappear {
             statusMessageDismissTask?.cancel()
             retroAchievementsToastDismissTask?.cancel()
             stopMenuRestorePolling()
             leaveGameplaySystemChromeMode()
+            GyroAimStore.shared.setGameplayActive(false)
         }
         // Single chokepoint for runtime pause: VM pause derives only from `overlayRoute`
         // (any non-hidden route keeps the VM paused), so one observer covers every child
@@ -360,6 +363,9 @@ struct GameScreenView: View {
         // observers that existed for the old independent booleans.
         .onChange(of: overlayRoute) { _, _ in
             updateRuntimeOverlayPause()
+            // AYS2: gyro aim follows the same pause signal as the VM — active
+            // only when gameplay is visible (route hidden), suspended otherwise.
+            GyroAimStore.shared.setGameplayActive(overlayRoute == .hidden)
             if overlayRoute != .hidden {
                 stopMenuRestorePolling()
             } else {
