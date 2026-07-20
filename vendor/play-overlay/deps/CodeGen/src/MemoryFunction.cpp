@@ -148,6 +148,11 @@ namespace
 
 	bool s_jitModeDetected = false;
 	JitMode s_jitMode = JitMode::Legacy;
+	// AYS2: kept so the on-screen diagnostic (AYS2JITStatus) can report the
+	// detected OS version + TXM probe result — the exact inputs to the mode
+	// decision that just caused a real bug, so a future failure is diagnosable
+	// from the device alone.
+	char s_jitModeDetail[96] = "not detected yet";
 
 #if !TARGET_OS_SIMULATOR
 	bool HasTXM()
@@ -172,9 +177,21 @@ namespace
 			std::snprintf(version, sizeof(version), "0");
 		const int major = std::atoi(version);
 		const bool hasTXM = HasTXM();
-		s_jitMode = (major >= 26 && hasTXM) ? JitMode::LuckTXM : JitMode::Legacy;
-		std::fprintf(stderr, "@@PLAY_JIT_MODE@@ version=%s major=%d txm_probe=%d mode=%s\n",
+		// AYS2: CRITICAL FIX (seam) — the decision is `major >= 26` ONLY, matching
+		// AYS2's own proven-working DarwinMisc::DetectJitMode() exactly. An earlier
+		// version of this port added `&& hasTXM`, which was a real bug: HasTXM()
+		// globs /System/Volumes/Preboot/.../TrustedExecutionMonitor.img4, a path a
+		// sandboxed sideloaded app often CAN'T read — so hasTXM came back false on a
+		// real iOS 26.3 device that genuinely has TXM, wrongly selecting Legacy. That
+		// sent JIT through the vm_protect RW/RX toggle TXM blocks, so the brk #0xf00d
+		// handshake never fired at all (confirmed by its total absence from the
+		// device's StikDebug log) and the app hit a silent black-screen hang. The
+		// main app never gated on hasTXM (it computes it for logging only); this now
+		// matches. hasTXM stays in the log line below purely as a diagnostic.
+		s_jitMode = (major >= 26) ? JitMode::LuckTXM : JitMode::Legacy;
+		std::snprintf(s_jitModeDetail, sizeof(s_jitModeDetail), "iOS %s (major %d), txm_probe=%d, mode=%s",
 			version, major, hasTXM ? 1 : 0, s_jitMode == JitMode::LuckTXM ? "LuckTXM" : "Legacy");
+		std::fprintf(stderr, "@@PLAY_JIT_MODE@@ %s\n", s_jitModeDetail);
 		std::fflush(stderr);
 #endif
 		s_jitModeDetected = true;
@@ -397,16 +414,17 @@ bool AYS2PrepareJIT()
 
 const char* AYS2JITStatus()
 {
-	static char buf[192];
-	if(GetJitMode() != JitMode::LuckTXM)
+	static char buf[320];
+	const JitMode mode = GetJitMode();
+	if(mode != JitMode::LuckTXM)
 	{
-		std::snprintf(buf, sizeof(buf), "Legacy mode (no TXM pool needed)");
+		std::snprintf(buf, sizeof(buf), "%s — Legacy mode, no TXM pool used", s_jitModeDetail);
 		return buf;
 	}
 	auto& pool = GetTXMPool();
 	std::lock_guard<std::mutex> lock(pool.mutex);
-	std::snprintf(buf, sizeof(buf), "TXM pool: %s | used %zu/%zu bytes",
-		pool.lastOutcome, pool.used, TXM_POOL_SIZE);
+	std::snprintf(buf, sizeof(buf), "%s\nTXM pool: %s | used %zu/%zu bytes",
+		s_jitModeDetail, pool.lastOutcome, pool.used, TXM_POOL_SIZE);
 	return buf;
 }
 
