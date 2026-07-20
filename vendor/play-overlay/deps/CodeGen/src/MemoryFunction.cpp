@@ -283,6 +283,12 @@ namespace
 		void* rxBase = nullptr;
 		void* rwBase = nullptr;
 		size_t used = 0;
+		// AYS2: on-device testing has no reliable way to see this app's own
+		// stderr (no crash log is generated either — this whole path fails
+		// as a silent hang, not a crash) — so the *last* concrete outcome
+		// is kept here in plain text, for PrepareJIT()/GetStatus() to
+		// surface directly in the UI instead of stderr nobody can read.
+		char lastOutcome[128] = "not attempted yet";
 	};
 
 	TXMPool& GetTXMPool()
@@ -291,12 +297,12 @@ namespace
 		return pool;
 	}
 
-	// Allocates `size` bytes (BLOCK_ALIGN-aligned) from the shared TXM pool,
-	// registering the pool itself with the attached debugger via
-	// RegisterTXMRegion on first use only. Returns false if the pool
-	// couldn't be set up at all, or is exhausted — callers must fall back
-	// to the Legacy path in either case.
-	bool TXMPoolAlloc(size_t size, void** outRx, void** outRw)
+	// Does the one-time pool mmap + brk-handshake registration + vm_remap,
+	// if not already done. Split out from TXMPoolAlloc (seam) so callers
+	// can trigger and check this eagerly/synchronously — e.g. right when
+	// the user taps a game, with a visible result — instead of it firing
+	// silently deep inside the first JIT'd block's compilation.
+	bool EnsureTXMPoolReady()
 	{
 		auto& pool = GetTXMPool();
 		std::lock_guard<std::mutex> lock(pool.mutex);
@@ -320,40 +326,49 @@ namespace
 						pool.rxBase = rxPtr;
 						pool.rwBase = reinterpret_cast<void*>(rwRegion);
 						pool.ready = true;
-						std::fprintf(stderr, "@@PLAY_JIT_POOL@@ ready rx=%p rw=%p size=0x%zx\n", pool.rxBase, pool.rwBase, TXM_POOL_SIZE);
-						std::fflush(stderr);
+						std::snprintf(pool.lastOutcome, sizeof(pool.lastOutcome), "ready (rx=%p rw=%p)", pool.rxBase, pool.rwBase);
 					}
 					else
 					{
 						if(kr == KERN_SUCCESS)
 							vm_deallocate(mach_task_self(), rwRegion, static_cast<vm_size_t>(TXM_POOL_SIZE));
 						munmap(rxPtr, TXM_POOL_SIZE);
-						std::fprintf(stderr, "@@PLAY_JIT_POOL@@ dualmap_setup_failed kr=%d\n", kr);
-						std::fflush(stderr);
+						std::snprintf(pool.lastOutcome, sizeof(pool.lastOutcome), "vm_remap/mprotect failed kr=%d", kr);
 					}
 				}
 				else
 				{
 					munmap(rxPtr, TXM_POOL_SIZE);
-					std::fprintf(stderr, "@@PLAY_JIT_POOL@@ registration_failed\n");
-					std::fflush(stderr);
+					std::snprintf(pool.lastOutcome, sizeof(pool.lastOutcome), "brk handshake registration failed or timed out");
 				}
 			}
 			else
 			{
-				std::fprintf(stderr, "@@PLAY_JIT_POOL@@ mmap_failed err=%d\n", errno);
-				std::fflush(stderr);
+				std::snprintf(pool.lastOutcome, sizeof(pool.lastOutcome), "mmap failed err=%d", errno);
 			}
+			std::fprintf(stderr, "@@PLAY_JIT_POOL@@ %s\n", pool.lastOutcome);
+			std::fflush(stderr);
 		}
 
-		if(!pool.ready)
+		return pool.ready;
+	}
+
+	// Allocates `size` bytes (BLOCK_ALIGN-aligned) from the shared TXM pool.
+	// Returns false if the pool couldn't be set up at all, or is exhausted
+	// — callers must fall back to the Legacy path in either case.
+	bool TXMPoolAlloc(size_t size, void** outRx, void** outRw)
+	{
+		if(!EnsureTXMPoolReady())
 			return false;
+
+		auto& pool = GetTXMPool();
+		std::lock_guard<std::mutex> lock(pool.mutex);
 
 		const size_t alignedSize = (size + (BLOCK_ALIGN - 1)) & ~static_cast<size_t>(BLOCK_ALIGN - 1);
 		if(pool.used + alignedSize > TXM_POOL_SIZE)
 		{
-			std::fprintf(stderr, "@@PLAY_JIT_POOL@@ exhausted used=0x%zx requested=0x%zx capacity=0x%zx\n",
-				pool.used, alignedSize, TXM_POOL_SIZE);
+			std::snprintf(pool.lastOutcome, sizeof(pool.lastOutcome), "exhausted used=0x%zx requested=0x%zx", pool.used, alignedSize);
+			std::fprintf(stderr, "@@PLAY_JIT_POOL@@ %s\n", pool.lastOutcome);
 			std::fflush(stderr);
 			return false;
 		}
@@ -366,7 +381,41 @@ namespace
 #endif
 } // namespace
 
+// AYS2: eager prepare + visible diagnostics (seam) — PlayBridge calls
+// PrepareJIT() synchronously right when the user taps a game, instead of
+// this firing silently deep inside CBasicBlock::Compile() the first time
+// a block needs JIT'ing. On-device testing showed a real, hard-to-debug
+// gap: no crash log gets generated for this failure mode (it's a silent
+// hang, not a crash), and app stderr isn't reachable without a Mac — so
+// GetStatus() gives AYS2RootView something concrete to put on screen.
+bool AYS2PrepareJIT()
+{
+	if(GetJitMode() != JitMode::LuckTXM)
+		return true; // Legacy path: nothing to pre-register
+	return EnsureTXMPoolReady();
+}
+
+const char* AYS2JITStatus()
+{
+	static char buf[192];
+	if(GetJitMode() != JitMode::LuckTXM)
+	{
+		std::snprintf(buf, sizeof(buf), "Legacy mode (no TXM pool needed)");
+		return buf;
+	}
+	auto& pool = GetTXMPool();
+	std::lock_guard<std::mutex> lock(pool.mutex);
+	std::snprintf(buf, sizeof(buf), "TXM pool: %s | used %zu/%zu bytes",
+		pool.lastOutcome, pool.used, TXM_POOL_SIZE);
+	return buf;
+}
+
 #endif // MEMFUNC_MACHVM_STRICT_PROTECTION
+
+#if !defined(MEMFUNC_MACHVM_STRICT_PROTECTION)
+bool AYS2PrepareJIT() { return true; }
+const char* AYS2JITStatus() { return "N/A (not a dual-mapped iOS build)"; }
+#endif
 
 CMemoryFunction::CMemoryFunction()
 : m_code(nullptr)

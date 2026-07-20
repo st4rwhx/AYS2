@@ -9,6 +9,7 @@
 #import "../ui_shared/BootablesProcesses.h"
 #import "../ui_shared/BootablesDbClient.h"
 #import "PathUtils.h"
+#import "MemoryFunction.h"
 #include <ctime>
 
 // AYS2: not a public header declaration (seam) — same undocumented syscall
@@ -96,6 +97,23 @@ extern "C" int csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersiz
 	uint32_t csFlags = 0;
 	int rv = csops(getpid(), 0 /* CS_OPS_STATUS */, &csFlags, sizeof(csFlags));
 	return (rv == 0) && ((csFlags & 0x10000000u) != 0); // CS_DEBUGGED
+}
+
+// AYS2: eager TXM pool prepare (seam) — see MemoryFunction.h/.cpp. isJITAvailable
+// only checks CS_DEBUGGED, which the OS sets the moment ANY debugger attaches —
+// true well before the TXM pool is actually registered. Booting on that alone
+// let games reach EmulatorViewController with JIT that looked available but
+// wasn't really ready, which on-device testing showed as a silent hang (no
+// crash log at all) instead of a clean pass/fail. Blocks for up to ~15s the
+// first time on iOS 26 TXM devices — call off the main thread.
++ (BOOL)prepareJIT
+{
+	return AYS2PrepareJIT() ? YES : NO;
+}
+
++ (NSString*)jitStatus
+{
+	return [NSString stringWithUTF8String:AYS2JITStatus()];
 }
 
 @end

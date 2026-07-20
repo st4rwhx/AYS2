@@ -6,6 +6,16 @@
 #include <emscripten/bind.h>
 #endif
 
+// AYS2: eager TXM pool prepare + diagnostics (seam) — see MemoryFunction.cpp.
+// Triggers the one-time TXM brk-handshake pool setup synchronously and
+// reports the real outcome, instead of it happening silently the first time
+// a JIT'd block is compiled deep inside VM boot. PlayBridge exposes these to
+// Swift so the app can show the real state on screen — on-device testing
+// showed this failure mode produces neither a crash log nor any way to read
+// the app's own stderr, so this is the only way to see what's happening.
+bool AYS2PrepareJIT();
+const char* AYS2JITStatus();
+
 class CMemoryFunction
 {
 public:

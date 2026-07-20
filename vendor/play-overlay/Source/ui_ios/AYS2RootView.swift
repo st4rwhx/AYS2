@@ -49,6 +49,9 @@ struct AYS2RootView: View {
 	@State private var isLoading = true
 	@State private var jitAlertGame: PlayGame?
 	@State private var jitOpenInProgress = false
+	@State private var isPreparingJIT = false
+	@State private var jitPrepareFailedGame: PlayGame?
+	@State private var jitDiagnosticMessage = ""
 
 	var body: some View {
 		ZStack {
@@ -64,10 +67,41 @@ struct AYS2RootView: View {
 				} else {
 					gameGrid
 				}
+				if isPreparingJIT {
+					VStack(spacing: 12) {
+						ProgressView().tint(Retro.accent)
+						Text("Preparing JIT — this can take up to 15 seconds the first time…")
+							.font(.footnote)
+							.foregroundStyle(Retro.mut)
+							.multilineTextAlignment(.center)
+							.padding(.horizontal, 40)
+					}
+					.padding(20)
+					.background(Retro.panel2, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+				}
 			}
 		}
 		.task {
 			await loadLibrary()
+		}
+		.alert(
+			"JIT prepare failed",
+			isPresented: Binding(get: { jitPrepareFailedGame != nil }, set: { if !$0 { jitPrepareFailedGame = nil } }),
+			presenting: jitPrepareFailedGame
+		) { game in
+			Button("Continue Anyway", role: .destructive) {
+				if let presenter = rootPresenter {
+					PlayBridge.bootGameAtPath(game.path, presentingFrom: presenter)
+				}
+			}
+			Button("Cancel", role: .cancel) {}
+		} message: { _ in
+			// AYS2: this is the case isJITAvailable() alone can't catch — CS_DEBUGGED
+			// was set (a debugger is attached), but the iOS 26 TXM pool registration
+			// itself failed. Shows PlayBridge.jitStatus()'s real diagnostic instead of
+			// a generic message, since on-device testing showed this failure mode
+			// produces neither a crash log nor any way to read the app's own stderr.
+			Text(jitDiagnosticMessage)
 		}
 		.alert(
 			"JIT unavailable",
@@ -215,7 +249,26 @@ struct AYS2RootView: View {
 			jitAlertGame = game
 			return
 		}
-		PlayBridge.bootGameAtPath(game.path, presentingFrom: presenter)
+		// AYS2: eager prepare (seam) — isJITAvailable() only proves a
+		// debugger is attached (CS_DEBUGGED), not that the iOS 26 TXM pool
+		// is actually registered and ready. Doing this here, synchronously,
+		// with a visible result is what replaces the silent hang-with-no-
+		// crash-log on-device testing found when that gap was left for
+		// CBasicBlock::Compile() to discover deep inside VM boot.
+		guard !isPreparingJIT else { return }
+		isPreparingJIT = true
+		Task {
+			let ready = await Task.detached(priority: .userInitiated) {
+				PlayBridge.prepareJIT()
+			}.value
+			isPreparingJIT = false
+			if ready {
+				PlayBridge.bootGameAtPath(game.path, presentingFrom: presenter)
+			} else {
+				jitDiagnosticMessage = PlayBridge.jitStatus()
+				jitPrepareFailedGame = game
+			}
+		}
 	}
 
 	private func presentSettings() {

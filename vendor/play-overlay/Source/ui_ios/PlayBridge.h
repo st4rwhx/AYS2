@@ -60,6 +60,22 @@ NS_ASSUME_NONNULL_BEGIN
 /// check that actually runs before boot in this app.
 + (BOOL)isJITAvailable;
 
+/// Eagerly does the one-time iOS 26 TXM pool setup (mmap + StikDebug brk
+/// handshake + vm_remap) if this device needs it, and reports whether it
+/// actually succeeded — not just whether CS_DEBUGGED happens to be set
+/// (which +isJITAvailable checks, and which the OS sets the instant ANY
+/// debugger attaches, well before the TXM pool is really ready). Blocks for
+/// up to ~15s the first time on a real iOS 26 TXM device — call off the
+/// main thread. Returns YES immediately (no-op) on pre-iOS-26 devices,
+/// where nothing needs pre-registration.
++ (BOOL)prepareJIT;
+
+/// Human-readable JIT/TXM-pool diagnostic string for display — the pool's
+/// real internal state, not app stderr (unreachable without a Mac) or an
+/// iOS crash log (this failure mode doesn't produce one; it hangs rather
+/// than crashes).
++ (NSString *)jitStatus;
+
 @end
 
 NS_ASSUME_NONNULL_END
