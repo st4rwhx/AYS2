@@ -149,8 +149,60 @@ final class EmulatorBridge: @unchecked Sendable {
         state = .running
     }
 
+    // AYS2: per-button autofire (turbo) (seam) — see TurboStore. This is the
+    // single choke point every on-screen/hardware press flows through, so the
+    // repeat loop lives here rather than in each button view. For a
+    // turbo-marked button, holding it starts a timer that toggles the real
+    // press at the configured frequency; releasing stops it. Buttons not
+    // marked turbo take the original direct path unchanged (opt-in, zero cost
+    // and zero behaviour change by default).
+    @ObservationIgnored private var turboTimers: [Int: Timer] = [:]
+    @ObservationIgnored private var turboPhase: [Int: Bool] = [:]
+
     func setPadButton(_ button: ARMSX2PadButton, pressed: Bool) {
-        ARMSX2Bridge.setPadButton(button, pressed: pressed)
+        let raw = button.rawValue
+        guard TurboStore.shared.isTurbo(raw) else {
+            ARMSX2Bridge.setPadButton(button, pressed: pressed)
+            return
+        }
+
+        if pressed {
+            startTurbo(button)
+        } else {
+            stopTurbo(button)
+        }
+    }
+
+    // Not @MainActor-annotated: setPadButton (the caller) is nonisolated, and
+    // in practice always runs on the main thread (SwiftUI gestures / the pad
+    // Coordinator), where scheduling on RunLoop.main is valid. The dictionaries
+    // are only touched from that same main thread.
+    private func startTurbo(_ button: ARMSX2PadButton) {
+        let raw = button.rawValue
+        guard turboTimers[raw] == nil else { return } // already repeating
+
+        // Half-period toggle: at f Hz the button goes down then up f times per
+        // second, i.e. a state flip every 1/(2f) seconds.
+        let interval = 1.0 / (2.0 * max(TurboStore.minFrequency, TurboStore.shared.frequencyHz))
+        turboPhase[raw] = true
+        ARMSX2Bridge.setPadButton(button, pressed: true)
+
+        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let next = !(self.turboPhase[raw] ?? false)
+            self.turboPhase[raw] = next
+            ARMSX2Bridge.setPadButton(button, pressed: next)
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        turboTimers[raw] = timer
+    }
+
+    private func stopTurbo(_ button: ARMSX2PadButton) {
+        let raw = button.rawValue
+        turboTimers[raw]?.invalidate()
+        turboTimers[raw] = nil
+        turboPhase[raw] = nil
+        ARMSX2Bridge.setPadButton(button, pressed: false)
     }
 
     func setLeftStick(x: Float, y: Float) {

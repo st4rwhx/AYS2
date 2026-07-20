@@ -201,6 +201,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		${CMAKE_SOURCE_DIR}/../swift/Models/PatchStore.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/HiddenGamesStore.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/PlayTimeStore.swift
+		${CMAKE_SOURCE_DIR}/../swift/Models/TurboStore.swift
 	)
 
 	configure_file("${CMAKE_SOURCE_DIR}/Info.plist.in" "${CMAKE_BINARY_DIR}/Info.plist" @ONLY)

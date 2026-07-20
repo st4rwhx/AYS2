@@ -21,6 +21,14 @@ struct VirtualPadSettingsView: View {
     @State private var skinPendingDelete: VPadSkinDescriptor?
     @State private var skinPendingRename: VPadSkinDescriptor?
     @State private var skinRenameDraft = ""
+    // AYS2: per-button autofire (seam) — see TurboStore.
+    @State private var turbo = TurboStore.shared
+
+    // Buttons offered for turbo, with their ARMSX2PadButton raw values.
+    private static let turboButtons: [(raw: Int, label: String)] = [
+        (4, "Cross (✕)"), (5, "Circle (○)"), (6, "Square (□)"), (7, "Triangle (△)"),
+        (8, "L1"), (9, "R1"), (10, "L2"), (11, "R2")
+    ]
 
     var body: some View {
         Form {
@@ -42,6 +50,25 @@ struct VirtualPadSettingsView: View {
                     Text("\(settings.localized("Opacity")): \(Int(settings.padOpacity * 100))%")
                     Slider(value: $settings.padOpacity, in: 0.1...1.0, step: 0.05)
                 }
+            }
+
+            // AYS2: per-button autofire / turbo (seam) — see TurboStore.
+            Section {
+                VStack(alignment: .leading) {
+                    Text("\(settings.localized("Turbo Frequency")): \(Int(turbo.frequencyHz)) Hz")
+                    Slider(value: $turbo.frequencyHz,
+                           in: TurboStore.minFrequency...TurboStore.maxFrequency, step: 1)
+                }
+                ForEach(Self.turboButtons, id: \.raw) { item in
+                    Toggle(settings.localized(item.label), isOn: Binding(
+                        get: { turbo.isTurbo(item.raw) },
+                        set: { turbo.setTurbo($0, rawButton: item.raw) }
+                    ))
+                }
+            } header: {
+                Text(settings.localized("Turbo (Autofire)"))
+            } footer: {
+                Text(settings.localized("Marked buttons auto-repeat while held, at the frequency above. Handy for rapid-fire inputs."))
             }
 
             Section(settings.localized("Gameplay")) {
