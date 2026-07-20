@@ -106,6 +106,12 @@ typedef void (^ARMSX2RetroAchievementsCompletion)(BOOL success, NSString * _Nonn
 + (nullable NSString *)currentGameISOName;
 + (nonnull NSString *)isoDirectory;
 + (nonnull NSString *)documentsDirectory;
+
+// Diagnostic log (unified stderr/stdout sink at Documents/pcsx2_log.txt)
++ (nonnull NSString *)diagnosticLogPath;
++ (long long)diagnosticLogSize;
++ (void)clearDiagnosticLog;
+
 + (nonnull NSArray<NSString *> *)availableISOs;
 + (nonnull NSArray<NSDictionary<NSString *, id> *> *)availableISOEntries;
 + (nonnull NSDictionary<NSString *, NSString *> *)gameMetadataForISO:(nonnull NSString *)isoName;
