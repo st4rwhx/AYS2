@@ -1563,6 +1563,8 @@ private extension View {
 struct GameInfoPanel: View {
     @Environment(\.dismiss) private var dismiss
     @State private var settings = SettingsStore.shared
+    // AYS2: play-time display (seam) — see PlayTimeStore.
+    @State private var playTimeStore = PlayTimeStore.shared
 
     let game: ISOEntry
     let coverStore: CoverStore
@@ -1609,6 +1611,20 @@ struct GameInfoPanel: View {
                     }
                     LabeledContent(settings.localized("Size")) {
                         Text(formatSize(game.size))
+                    }
+                }
+
+                // AYS2: per-game play time (seam) — see PlayTimeStore.
+                Section(settings.localized("Play Time")) {
+                    LabeledContent(settings.localized("Total")) {
+                        Text(playTimeStore.formatted(forGame: game.bootName) ?? settings.localized("Never played"))
+                    }
+                    if playTimeStore.seconds(forGame: game.bootName) > 0 {
+                        Button(role: .destructive) {
+                            playTimeStore.resetTime(forGame: game.bootName)
+                        } label: {
+                            Text(settings.localized("Reset Play Time"))
+                        }
                     }
                 }
 
