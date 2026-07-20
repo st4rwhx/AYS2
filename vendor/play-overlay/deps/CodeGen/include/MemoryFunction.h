@@ -47,10 +47,16 @@ private:
 	void* m_code;
 	size_t m_size;
 	// AYS2: iOS 26 TXM dual-mapping (seam) — RW alias of m_code's pages when
-	// dual-mapped (vm_remap), nullptr otherwise. Always declared (not just
-	// under TARGET_OS_IPHONE) so the class layout and GetWritableCode()'s
-	// fallback logic don't need per-platform special-casing.
+	// dual-mapped, nullptr otherwise. Always declared (not just under
+	// TARGET_OS_IPHONE) so the class layout and GetWritableCode()'s fallback
+	// logic don't need per-platform special-casing.
 	void* m_rwAlias = nullptr;
+	// AYS2: iOS 26 TXM dual-mapping (seam) — true when m_code/m_rwAlias are a
+	// sub-range of the shared TXM pool (see MemoryFunction.cpp), not an
+	// independent vm_allocate/mmap of their own. Reset() must never
+	// vm_deallocate/munmap a pooled sub-range — that would unmap the whole
+	// pool out from under every other still-live CMemoryFunction.
+	bool m_pooled = false;
 #if defined(__EMSCRIPTEN__)
 	emscripten::val m_wasmModule;
 #endif

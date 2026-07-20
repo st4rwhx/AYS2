@@ -90,14 +90,35 @@ EM_JS(emscripten::EM_VAL, WasmCreateModule, (uintptr_t code, uintptr_t size),
 // 26's TXM blocks outright, even with CS_DEBUGGED set — regardless of
 // which tool (StikDebug, SideStore, a classic AltServer) granted it.
 //
-// TXM's escape hatch is registering each RX code region with an attached
+// TXM's escape hatch is registering an RX code region with an attached
 // debugger via a `brk #0xf00d` handshake (the StikDebug "Universal"
-// protocol — see PlayBridge.mm's isJITAvailable comment and AYS2's own
-// GameLibrarySnapshot... no, DarwinMisc.cpp for the original), then using
-// vm_remap to get a separate RW alias of the same physical pages: writes
-// go through the RW alias, execution/jumps go through the original RX
-// pointer. No protection toggle needed afterward — RX and RW are both
-// valid simultaneously at their respective addresses.
+// protocol), then using vm_remap to get a separate RW alias of the same
+// physical pages: writes go through the RW alias, execution/jumps go
+// through the original RX pointer. No protection toggle needed afterward.
+//
+// AYS2: shared pool, not per-allocation (seam/fix) — a real on-device test
+// confirmed the first version of this port (one brk-handshake per
+// CMemoryFunction) doesn't work for Play!. The StikDebug "Universal"
+// script detaches its debugger session entirely after the FIRST
+// registration (the app-side handshake ends by design with a real GDB
+// `D`etach packet, matching AYS2's own one-big-pool-at-startup usage).
+// AYS2's own PCSX2 fork only ever calls MmapCodeDualMap once, for one big
+// pool — but Play!'s CBasicBlock allocates a brand new CMemoryFunction
+// PER COMPILED BASIC BLOCK, potentially thousands of times over a play
+// session. Every registration after the first had no attached debugger
+// left to service its brk, and the process died silently (confirmed via
+// StikDebug's own connection log: one early trap forwarded, then total
+// silence, then "Failed to detach from process: -1" — the app was already
+// gone).
+//
+// Fix: allocate ONE large pool on first use (one brk-handshake, exactly
+// like AYS2's own main app), then bump-allocate every individual
+// CMemoryFunction's RX/RW pair as a sub-range of that pool — no further
+// debugger involvement needed after the very first CMemoryFunction is
+// constructed. Reset() must never vm_deallocate a pooled sub-range (see
+// the m_pooled comment in MemoryFunction.h) — pooled memory is only
+// reclaimed at process exit, so a very long play session could
+// theoretically exhaust the pool; see TXM_POOL_SIZE below.
 //
 // This only changes the TARGET_OS_IPHONE (real device or simulator)
 // branch below. TARGET_OS_OSX (MEMFUNC_USE_MMAP + MAP_JIT), Win32, generic
@@ -107,9 +128,11 @@ EM_JS(emscripten::EM_VAL, WasmCreateModule, (uintptr_t code, uintptr_t size),
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <cerrno>
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <mutex>
 #include <setjmp.h>
 #include <sys/mman.h>
 #include <sys/sysctl.h>
@@ -186,10 +209,12 @@ namespace
 
 	// Registers `rxPtr`/`size` with an attached JIT-enabler (StikDebug/
 	// SideStore running the Universal protocol) via the brk handshake.
-	// Same 8s worker-thread timeout as AYS2's own MmapCodeDualMap: the
-	// handshake can hang instead of trapping on some devices/regions, and
-	// this is called from CMemoryFunction's constructor — a hang there
-	// would freeze block compilation, not just JIT setup.
+	// 15s worker-thread timeout (longer than AYS2's own 8s — this now only
+	// ever runs ONCE per app session, registering the whole pool, so a more
+	// generous margin costs nothing): the handshake can hang instead of
+	// trapping on some devices/regions, and this is called from
+	// CMemoryFunction's constructor — a hang there would freeze block
+	// compilation, not just JIT setup.
 	bool RegisterTXMRegion(void* rxPtr, size_t size)
 	{
 		static sigjmp_buf s_brkJmp;
@@ -216,7 +241,7 @@ namespace
 		});
 		worker.detach();
 
-		for(int i = 0; i < 80; i++)
+		for(int i = 0; i < 150; i++)
 		{
 			if(done.load(std::memory_order_relaxed))
 				break;
@@ -231,6 +256,104 @@ namespace
 		sigaction(SIGTRAP, &saBrkOld, nullptr);
 
 		return done.load() && ok.load();
+	}
+
+	// AYS2: shared TXM pool (seam/fix) — see the file-level comment above
+	// for why this exists instead of one brk-handshake per CMemoryFunction.
+	// Sized to comfortably outlast a real play session's worth of compiled
+	// basic blocks; if it's ever exhausted, TXMPoolAlloc starts returning
+	// false and callers fall back to the Legacy per-instance path (which
+	// will likely itself fail under real TXM enforcement — this is a
+	// last-resort degradation, not a real fix for running out of pool).
+	constexpr size_t TXM_POOL_SIZE = 96 * 1024 * 1024; // 96MB
+
+	struct TXMPool
+	{
+		std::mutex mutex;
+		bool initAttempted = false;
+		bool ready = false;
+		void* rxBase = nullptr;
+		void* rwBase = nullptr;
+		size_t used = 0;
+	};
+
+	TXMPool& GetTXMPool()
+	{
+		static TXMPool pool;
+		return pool;
+	}
+
+	// Allocates `size` bytes (BLOCK_ALIGN-aligned) from the shared TXM pool,
+	// registering the pool itself with the attached debugger via
+	// RegisterTXMRegion on first use only. Returns false if the pool
+	// couldn't be set up at all, or is exhausted — callers must fall back
+	// to the Legacy path in either case.
+	bool TXMPoolAlloc(size_t size, void** outRx, void** outRw)
+	{
+		auto& pool = GetTXMPool();
+		std::lock_guard<std::mutex> lock(pool.mutex);
+
+		if(!pool.initAttempted)
+		{
+			pool.initAttempted = true;
+			void* rxPtr = mmap(nullptr, TXM_POOL_SIZE, PROT_READ | PROT_EXEC, MAP_ANON | MAP_PRIVATE, -1, 0);
+			if(rxPtr != MAP_FAILED)
+			{
+				if(RegisterTXMRegion(rxPtr, TXM_POOL_SIZE))
+				{
+					vm_address_t rwRegion = 0;
+					vm_address_t target = reinterpret_cast<vm_address_t>(rxPtr);
+					vm_prot_t curProtection = 0;
+					vm_prot_t maxProtection = 0;
+					const kern_return_t kr = vm_remap(mach_task_self(), &rwRegion, static_cast<vm_size_t>(TXM_POOL_SIZE), 0,
+						VM_FLAGS_ANYWHERE, mach_task_self(), target, false, &curProtection, &maxProtection, VM_INHERIT_DEFAULT);
+					if(kr == KERN_SUCCESS && mprotect(reinterpret_cast<void*>(rwRegion), TXM_POOL_SIZE, PROT_READ | PROT_WRITE) == 0)
+					{
+						pool.rxBase = rxPtr;
+						pool.rwBase = reinterpret_cast<void*>(rwRegion);
+						pool.ready = true;
+						std::fprintf(stderr, "@@PLAY_JIT_POOL@@ ready rx=%p rw=%p size=0x%zx\n", pool.rxBase, pool.rwBase, TXM_POOL_SIZE);
+						std::fflush(stderr);
+					}
+					else
+					{
+						if(kr == KERN_SUCCESS)
+							vm_deallocate(mach_task_self(), rwRegion, static_cast<vm_size_t>(TXM_POOL_SIZE));
+						munmap(rxPtr, TXM_POOL_SIZE);
+						std::fprintf(stderr, "@@PLAY_JIT_POOL@@ dualmap_setup_failed kr=%d\n", kr);
+						std::fflush(stderr);
+					}
+				}
+				else
+				{
+					munmap(rxPtr, TXM_POOL_SIZE);
+					std::fprintf(stderr, "@@PLAY_JIT_POOL@@ registration_failed\n");
+					std::fflush(stderr);
+				}
+			}
+			else
+			{
+				std::fprintf(stderr, "@@PLAY_JIT_POOL@@ mmap_failed err=%d\n", errno);
+				std::fflush(stderr);
+			}
+		}
+
+		if(!pool.ready)
+			return false;
+
+		const size_t alignedSize = (size + (BLOCK_ALIGN - 1)) & ~static_cast<size_t>(BLOCK_ALIGN - 1);
+		if(pool.used + alignedSize > TXM_POOL_SIZE)
+		{
+			std::fprintf(stderr, "@@PLAY_JIT_POOL@@ exhausted used=0x%zx requested=0x%zx capacity=0x%zx\n",
+				pool.used, alignedSize, TXM_POOL_SIZE);
+			std::fflush(stderr);
+			return false;
+		}
+
+		*outRx = static_cast<uint8_t*>(pool.rxBase) + pool.used;
+		*outRw = static_cast<uint8_t*>(pool.rwBase) + pool.used;
+		pool.used += alignedSize;
+		return true;
 	}
 #endif
 } // namespace
@@ -264,36 +387,30 @@ CMemoryFunction::CMemoryFunction(const void* code, size_t size)
 	bool dualMapped = false;
 	if(GetJitMode() == JitMode::LuckTXM)
 	{
-		void* rxPtr = mmap(nullptr, allocSize, PROT_READ | PROT_EXEC, MAP_ANON | MAP_PRIVATE, -1, 0);
-		if(rxPtr != MAP_FAILED && RegisterTXMRegion(rxPtr, allocSize))
+		void* rxPtr = nullptr;
+		void* rwPtr = nullptr;
+		if(TXMPoolAlloc(size, &rxPtr, &rwPtr))
 		{
-			vm_address_t rwRegion = 0;
-			vm_address_t target = reinterpret_cast<vm_address_t>(rxPtr);
-			vm_prot_t curProtection = 0;
-			vm_prot_t maxProtection = 0;
-			const kern_return_t kr = vm_remap(mach_task_self(), &rwRegion, static_cast<vm_size_t>(allocSize), 0,
-				VM_FLAGS_ANYWHERE, mach_task_self(), target, false, &curProtection, &maxProtection, VM_INHERIT_DEFAULT);
-			if(kr == KERN_SUCCESS && mprotect(reinterpret_cast<void*>(rwRegion), allocSize, PROT_READ | PROT_WRITE) == 0)
-			{
-				m_code = rxPtr;
-				m_rwAlias = reinterpret_cast<void*>(rwRegion);
-				memcpy(m_rwAlias, code, size);
-				dualMapped = true;
-			}
-			else if(kr == KERN_SUCCESS)
-			{
-				vm_deallocate(mach_task_self(), rwRegion, static_cast<vm_size_t>(allocSize));
-			}
+			m_code = rxPtr;
+			m_rwAlias = rwPtr;
+			m_pooled = true;
+			memcpy(m_rwAlias, code, size);
+			dualMapped = true;
+			// Pool sub-ranges are exactly `size` bytes (BLOCK_ALIGN-aligned
+			// by TXMPoolAlloc), not page-aligned like the Legacy path below
+			// — m_size must reflect the real allocation size so ClearCache/
+			// icache-invalidate and any later GetSize() callers agree with
+			// what TXMPoolAlloc actually reserved.
+			allocSize = static_cast<unsigned int>((size + (BLOCK_ALIGN - 1)) & ~static_cast<size_t>(BLOCK_ALIGN - 1));
 		}
-		if(!dualMapped && rxPtr != MAP_FAILED)
-			munmap(rxPtr, allocSize);
 	}
 
 	if(!dualMapped)
 	{
-		// Legacy: either DetectJitMode() picked Legacy directly, or TXM
-		// registration failed for this allocation and we fall back to the
-		// original vm_allocate + vm_protect-toggle strategy per-instance.
+		// Legacy: either DetectJitMode() picked Legacy directly, or the
+		// shared TXM pool couldn't be set up/is exhausted, and we fall back
+		// to the original vm_allocate + vm_protect-toggle strategy
+		// per-instance.
 		vm_allocate(mach_task_self(), reinterpret_cast<vm_address_t*>(&m_code), allocSize, TRUE);
 		memcpy(m_code, code, size);
 		kern_return_t result = vm_protect(mach_task_self(), reinterpret_cast<vm_address_t>(m_code), size, 0, VM_PROT_READ | VM_PROT_EXECUTE);
@@ -356,10 +473,15 @@ void CMemoryFunction::Reset()
 		framework_aligned_free(m_code);
 #elif defined(MEMFUNC_USE_MACHVM)
 #if defined(MEMFUNC_MACHVM_STRICT_PROTECTION)
-		if(m_rwAlias != nullptr)
-			vm_deallocate(mach_task_self(), reinterpret_cast<vm_address_t>(m_rwAlias), m_size);
-#endif
+		// AYS2: a pooled sub-range (m_pooled) must NEVER be individually
+		// vm_deallocate'd — it's a slice of the shared TXM pool other
+		// still-live CMemoryFunctions also point into. Pooled memory is
+		// only reclaimed at process exit (see the file-level comment).
+		if(!m_pooled)
+			vm_deallocate(mach_task_self(), reinterpret_cast<vm_address_t>(m_code), m_size);
+#else
 		vm_deallocate(mach_task_self(), reinterpret_cast<vm_address_t>(m_code), m_size);
+#endif
 #elif defined(MEMFUNC_USE_MMAP)
 		munmap(m_code, m_size);
 #elif defined(MEMFUNC_USE_WASM)
@@ -368,6 +490,7 @@ void CMemoryFunction::Reset()
 	}
 	m_code = nullptr;
 	m_rwAlias = nullptr;
+	m_pooled = false;
 	m_size = 0;
 #if defined(MEMFUNC_USE_WASM)
 	m_wasmModule = emscripten::val();
@@ -385,6 +508,7 @@ CMemoryFunction& CMemoryFunction::operator =(CMemoryFunction&& rhs)
 	std::swap(m_code, rhs.m_code);
 	std::swap(m_size, rhs.m_size);
 	std::swap(m_rwAlias, rhs.m_rwAlias);
+	std::swap(m_pooled, rhs.m_pooled);
 #if defined(MEMFUNC_USE_WASM)
 	std::swap(m_wasmModule, rhs.m_wasmModule);
 #endif

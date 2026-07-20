@@ -108,8 +108,40 @@ for this change — `MipsJitter.cpp` and everything else that ends up
 running through `CMemoryFunction` needed no changes at all, since they
 never touch the raw pointer directly.
 
-**Still unverified on real hardware** — this compiles under CI but has
-never actually run a JIT'd block on a device. The dual-mapping strategy
-itself is proven (it's what AYS2's own main app has been running for real
-this whole session), but this is a first port into an unfamiliar
-codebase's exact allocation pattern, with no way to test it from here.
+**First on-device test (iOS 26.3, real hardware) found a real bug in this
+approach, since fixed:** the initial port did one brk-handshake
+registration *per `CMemoryFunction`* — but StikDebug's "Universal" script
+detaches its debugger session entirely (a real GDB `D`etach packet) after
+the very first registration succeeds, which matches AYS2's own main app
+fine (one big pool, one registration, done) but not Play!'s allocation
+pattern: `CBasicBlock::Compile()` constructs a brand new `CMemoryFunction`
+*per compiled MIPS basic block* — potentially thousands over a play
+session. Every registration after the first had no attached debugger left
+to service its `brk`, and the process died silently. Confirmed directly
+from StikDebug's own connection log during the test: one early trap
+forwarded, then total silence, then `Failed to detach from process: -1`
+(the app was already gone by the time StikDebug tried).
+
+Fixed by switching to a shared pool: `TXMPoolAlloc` (in
+`MemoryFunction.cpp`) allocates one 96MB region and does the brk-handshake
+registration exactly once, lazily, on the first `CMemoryFunction`
+construction that needs it. Every `CMemoryFunction` after that just
+bump-allocates a sub-range of the already-registered pool — no further
+debugger involvement needed. `CMemoryFunction::Reset()` must never
+`vm_deallocate`/`munmap` a pooled sub-range (it would unmap the whole pool
+out from under every other still-live block) — pooled memory is only
+reclaimed at process exit. A `m_pooled` flag on the class distinguishes
+pooled sub-ranges from the Legacy path's independent per-instance
+allocations, which still individually deallocate exactly as before.
+
+Trade-off: pooled memory is never returned to the OS mid-session (only
+process exit reclaims it), so an unusually long play session could
+exhaust the 96MB pool; `TXMPoolAlloc` returning false makes that specific
+allocation fall back to the Legacy per-page-toggle path, which will
+likely itself fail under real TXM enforcement — a last-resort degradation
+documented in code, not a real fix for running out of pool.
+
+**Still unverified on real hardware with this fix in place** — the
+previous version compiled fine too and still failed at runtime, so a
+clean compile here is not evidence of a clean run. This needs another
+real on-device test before it can be trusted.
