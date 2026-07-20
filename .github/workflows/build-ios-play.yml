@@ -155,7 +155,15 @@ jobs:
           To request the corresponding source, contact: ${SOURCE_CONTACT}
           OFFER
 
-          CHANGELOG="$(cd ays2 && git log -10 --no-merges --pretty=format:'• %s' -- vendor/play-overlay 2>/dev/null | head -8)"
+          # Limit at git level (-8), NOT `git log -10 | head -8`: under the
+          # step's `set -o pipefail`, head closing the pipe after 8 lines
+          # sends git log a SIGPIPE, making the pipeline exit 141 and `set -e`
+          # kill the whole publish step. That stayed dormant while fewer than
+          # 8 commits touched vendor/play-overlay (head consumed everything,
+          # never closed early) and only started failing once this session's
+          # JIT-fix commits pushed it past 8 — a real bug, not a flaky
+          # release API. No pipe here means no SIGPIPE.
+          CHANGELOG="$(cd ays2 && git log -8 --no-merges --pretty=format:'• %s' -- vendor/play-overlay 2>/dev/null)"
           [ -z "$CHANGELOG" ] && CHANGELOG="• Latest Play! preview build."
           export CHANGELOG
 
