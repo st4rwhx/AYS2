@@ -619,6 +619,10 @@ struct GamesCarouselView: View {
                 isExternal: external
             )
         }
+        // AYS2: user-hidden entries never appear on the carousel (seam) — see
+        // HiddenGamesStore. Un-hiding is done from the Library screen (which has
+        // a reveal toggle), so the carousel just applies the filter unconditionally.
+        .filter { !HiddenGamesStore.shared.isHidden($0.bootName) }
         .sorted { a, b in
             if a.isFavorite != b.isFavorite { return a.isFavorite }
             return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending

@@ -164,6 +164,11 @@ struct GameListView: View {
 	@State private var fileImporter = FileImportHandler.shared
 	@State private var coverStore = CoverStore.shared
 	@State private var externalLibrary = ExternalGameLibrary.shared
+	// AYS2: user-hidden library entries (seam) — see HiddenGamesStore. The
+	// three library layouts (list/grid/cover-flow) all render `visibleGames`
+	// so a hidden entry disappears from every view at once, unless the user
+	// has flipped the toolbar's reveal toggle to un-hide something.
+	@State private var hiddenStore = HiddenGamesStore.shared
 	@State private var externalCoverAutoDownloadAttemptedIDs = Set<String>()
 	@State private var showGameImporter = false
 	@State private var isLoadingGames = false
@@ -322,6 +327,18 @@ struct GameListView: View {
                         if libraryLayout == "grid" {
                             Toggle(isOn: $landscapeCoverFlowEnabled) {
                                 Label(settings.localized("Landscape Cover Flow"), systemImage: "rectangle.landscape.rotate")
+                            }
+                        }
+
+                        // AYS2: reveal hidden entries so they can be un-hidden
+                        // (seam) — only offered when something is actually hidden.
+                        if hiddenStore.hiddenCount > 0 {
+                            Divider()
+                            Toggle(isOn: $hiddenStore.revealHidden) {
+                                Label(
+                                    settings.localized("Show Hidden Games") + " (\(hiddenStore.hiddenCount))",
+                                    systemImage: hiddenStore.revealHidden ? "eye" : "eye.slash"
+                                )
                             }
                         }
                     } label: {
@@ -596,12 +613,18 @@ struct GameListView: View {
 		}
     }
 
+    // AYS2: hidden-entry filter (seam) — see HiddenGamesStore. Reveal mode
+    // shows everything so hidden entries can be un-hidden from the same screen.
+    private var visibleGames: [ISOEntry] {
+        hiddenStore.revealHidden ? games : games.filter { !hiddenStore.isHidden($0.bootName) }
+    }
+
     private var listLibrary: some View {
         List {
             if let gameName = appState.runningGameName {
                 vmStatusSection(gameName: gameName)
             }
-            ForEach(games) { game in
+            ForEach(visibleGames) { game in
                 gameRow(game)
                     .libraryBackgroundListRow(hasCustomBackground)
             }
@@ -618,7 +641,7 @@ struct GameListView: View {
                 }
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 142), spacing: 14, alignment: .top)], spacing: 18) {
-                    ForEach(games) { game in
+                    ForEach(visibleGames) { game in
                         gameGridCard(game)
                     }
                 }
@@ -642,7 +665,7 @@ struct GameListView: View {
                     vmStatusCoverCard(gameName: gameName, metrics: metrics)
                 }
 
-                ForEach(games) { game in
+                ForEach(visibleGames) { game in
                     coverFlowCard(game, metrics: metrics)
                 }
             }
@@ -1090,6 +1113,15 @@ struct GameListView: View {
         }
 
         Divider()
+
+        // AYS2: hide/show this entry in the library (seam) — see HiddenGamesStore.
+        Button {
+            hiddenStore.toggle(bootName: game.bootName)
+        } label: {
+            let hidden = hiddenStore.isHidden(game.bootName)
+            Label(settings.localized(hidden ? "Show in Library" : "Hide from Library"),
+                  systemImage: hidden ? "eye" : "eye.slash")
+        }
 
         Menu {
             Button {
