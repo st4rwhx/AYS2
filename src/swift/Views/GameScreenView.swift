@@ -322,6 +322,20 @@ struct GameScreenView: View {
             )
             .presentationDetents([.medium, .large])
         }
+        // AYS2: in-app walkthrough/guide viewer (seam) — opens a web guide for the
+        // running game without leaving AYS2, remembered per game via GuideStore.
+        .sheet(isPresented: childPresentedBinding(.guide)) {
+            GuideView(
+                settings: settings,
+                gameKey: ARMSX2Bridge.currentGameISOName(),
+                displayTitle: currentRuntimeGameName() ?? "",
+                onDismiss: {
+                    if case .pausedPresenting(.guide) = overlayRoute {
+                        overlayRoute = .paused
+                    }
+                }
+            )
+        }
         .overlay(alignment: .bottom) {
             statusToastOverlay
         }
@@ -830,7 +844,7 @@ struct GameScreenView: View {
         switch destination {
         case .perGame:
             openPerGameSettingsForCurrentGame()
-        case .speed, .saveStates, .cheats, .retroAchievements, .padLayout, .resetROM:
+        case .speed, .saveStates, .cheats, .retroAchievements, .padLayout, .resetROM, .guide:
             overlayRoute = .pausedPresenting(destination)
         }
     }

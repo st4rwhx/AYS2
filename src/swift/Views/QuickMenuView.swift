@@ -6,7 +6,7 @@ import SwiftUI
 /// Destinations the pause menu hands back to the host to present. (Also the associated payload of
 /// the host's overlay route state machine.)
 enum QuickMenuDestination: Equatable {
-    case perGame, speed, saveStates, cheats, retroAchievements, padLayout, resetROM
+    case perGame, speed, saveStates, cheats, retroAchievements, padLayout, resetROM, guide
 }
 
 /// Native in-game pause menu: a premium opaque graphite "command deck" presented by the host as a
@@ -233,6 +233,12 @@ struct QuickMenuView: View {
             OverlayActionRow(label: settings.localized("Cheats & Patches"), systemImage: "rectangle.stack.badge.plus") {
                 onOpen(.cheats)
             }
+        }
+        if gameMenuAvailable || vmMenuAvailable {
+            OverlayActionRow(label: settings.localized("Walkthrough / Guide"), systemImage: "book.closed") {
+                onOpen(.guide)
+            }
+            .accessibilityHint(settings.localized("Open a walkthrough for this game without leaving AYS2"))
         }
     }
 

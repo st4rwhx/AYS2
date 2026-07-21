@@ -145,6 +145,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		${CMAKE_SOURCE_DIR}/../swift/Views/CommunityView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/DiscordLogoShape.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/FloppyDiskShape.swift
+		${CMAKE_SOURCE_DIR}/../swift/Views/WebView.swift
+		${CMAKE_SOURCE_DIR}/../swift/Views/GuideView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/TermsOfUseView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/SoundManager.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/CoreAccessStore.swift
@@ -205,6 +207,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		${CMAKE_SOURCE_DIR}/../swift/Models/TurboStore.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/GyroAimStore.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/ScreenRecorderStore.swift
+		${CMAKE_SOURCE_DIR}/../swift/Models/GuideStore.swift
 	)
 
 	configure_file("${CMAKE_SOURCE_DIR}/Info.plist.in" "${CMAKE_BINARY_DIR}/Info.plist" @ONLY)
