@@ -505,6 +505,8 @@ struct GamesCarouselView: View {
         .onChange(of: anyModalPresented) { _, presented in
             nav.modalPresented = presented
         }
+        // AYS2: reveal/hide toggle reloads the hub list (seam).
+        .onChange(of: hiddenStore.revealHidden) { _, _ in loadGames() }
         // AYS2: debounced via .task(id:)'s automatic cancel-and-restart
         // (seam/fix). .scrollPosition(id:) updates focusedGameID
         // continuously while the user is actively dragging — not just once
@@ -711,6 +713,16 @@ struct GamesCarouselView: View {
                 Picker(settings.localized("Layout"), selection: $viewMode) {
                     ForEach(LibraryViewMode.allCases) { mode in
                         Label(settings.localized(mode.label), systemImage: mode.systemImage).tag(mode)
+                    }
+                }
+                // AYS2: reveal games hidden from the hub (seam) — shared flag with
+                // the Library, so a game hidden via the context menu can be shown
+                // again right here to un-hide it. Only shown when something is hidden.
+                if hiddenStore.hiddenCount > 0 {
+                    Divider()
+                    Toggle(isOn: $hiddenStore.revealHidden) {
+                        Label(settings.localized("Show Hidden Games") + " (\(hiddenStore.hiddenCount))",
+                              systemImage: hiddenStore.revealHidden ? "eye" : "eye.slash")
                     }
                 }
             } label: {
@@ -957,10 +969,10 @@ struct GamesCarouselView: View {
                 isExternal: external
             )
         }
-        // AYS2: user-hidden entries never appear on the carousel (seam) — see
-        // HiddenGamesStore. Un-hiding is done from the Library screen (which has
-        // a reveal toggle), so the carousel just applies the filter unconditionally.
-        .filter { !HiddenGamesStore.shared.isHidden($0.bootName) }
+        // AYS2: user-hidden entries are filtered out of the hub unless the
+        // "Show Hidden Games" reveal toggle (shared with the Library) is on — so
+        // a game hidden from the carousel can also be un-hidden right here (seam).
+        .filter { hiddenStore.revealHidden || !hiddenStore.isHidden($0.bootName) }
         .sorted { a, b in
             if a.isFavorite != b.isFavorite { return a.isFavorite }
             return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
