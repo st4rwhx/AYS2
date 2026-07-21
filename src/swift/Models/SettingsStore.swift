@@ -857,14 +857,6 @@ final class SettingsStore: @unchecked Sendable {
             ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", value: showFrameLimiterButton)
         }
     }
-    // AYS2: user request — an on-screen button to record gameplay from inside
-    // the app (ReplayKit), next to the quick save/load buttons.
-    var showRecordButton: Bool {
-        didSet {
-            guard !suppressINIWrites else { return }
-            ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "ShowRecordButton", value: showRecordButton)
-        }
-    }
     // AYS2: user request — invert analog stick axes (e.g. for games with an
     // inverted camera vs. the modern standard). Applied at the EmulatorBridge
     // stick choke point, so it covers the on-screen sticks and gyro aim. Off by
@@ -1313,7 +1305,6 @@ final class SettingsStore: @unchecked Sendable {
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
         showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
         showFrameLimiterButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", defaultValue: false)
-        showRecordButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowRecordButton", defaultValue: false)
         invertLeftStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", defaultValue: false)
         invertLeftStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", defaultValue: false)
         invertRightStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", defaultValue: false)
@@ -1514,7 +1505,6 @@ final class SettingsStore: @unchecked Sendable {
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
         showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
         showFrameLimiterButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", defaultValue: false)
-        showRecordButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowRecordButton", defaultValue: false)
         invertLeftStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", defaultValue: false)
         invertLeftStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", defaultValue: false)
         invertRightStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", defaultValue: false)

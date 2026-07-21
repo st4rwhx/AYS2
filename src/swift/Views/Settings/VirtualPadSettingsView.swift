@@ -134,12 +134,6 @@ struct VirtualPadSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                // AYS2: on-screen gameplay record button (ReplayKit) (seam).
-                Toggle(settings.localized("On-Screen Record Button"), isOn: $settings.showRecordButton)
-                Text(settings.localized("Adds a floating button to record gameplay from inside the app. Recording uses iOS's encoder, so it has the same performance cost as screen recording."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
                 Toggle(settings.localized("D-pad Diagonals"), isOn: $settings.dpadDiagonalsEnabled)
                 Text(settings.localized("Allows one-finger diagonal and quarter-circle motions on the virtual D-pad."))
                     .font(.caption)
