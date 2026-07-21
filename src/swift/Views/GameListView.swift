@@ -1818,7 +1818,8 @@ private struct DiscLinkPicker: View {
     }
 }
 
-private extension String {
+// AYS2: internal (not fileprivate) so the hub's list rows can reuse it too.
+extension String {
     var pathExtensionLabel: String {
         let ext = (self as NSString).pathExtension.uppercased()
         return ext.isEmpty ? "FILE" : ext
