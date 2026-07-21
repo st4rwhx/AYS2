@@ -858,6 +858,17 @@ final class SettingsStore: @unchecked Sendable {
             ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", value: quitToLauncherOnExit)
         }
     }
+    // AYS2: user suggestion — a Performance Mode that strips the launcher's
+    // heavy visual effects (the full-bleed blurred ambient backdrop, the
+    // per-cover blur/scale transitions, and long UI animations) so the app
+    // spends as little GPU as possible. Off by default. Purely a launcher/UI
+    // toggle — it doesn't change emulation settings.
+    var performanceMode: Bool {
+        didSet {
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "PerformanceMode", value: performanceMode)
+        }
+    }
     var analogStickScale: Float {
         didSet {
             let clamped = Self.clampedAnalogStickScale(analogStickScale)
@@ -1258,6 +1269,7 @@ final class SettingsStore: @unchecked Sendable {
         autoFullscreen = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoFullscreen", defaultValue: true)
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
         showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
+        performanceMode = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "PerformanceMode", defaultValue: false)
         quitToLauncherOnExit = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", defaultValue: false)
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))
         appLanguage = AppLanguage(rawValue: ARMSX2Bridge.getINIString("ARMSX2iOS/UI", key: "AppLanguage", defaultValue: AppLanguage.system.rawValue)) ?? .system
@@ -1451,6 +1463,7 @@ final class SettingsStore: @unchecked Sendable {
         autoFullscreen = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoFullscreen", defaultValue: true)
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
         showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
+        performanceMode = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "PerformanceMode", defaultValue: false)
         quitToLauncherOnExit = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", defaultValue: false)
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))
         appLanguage = AppLanguage(rawValue: ARMSX2Bridge.getINIString("ARMSX2iOS/UI", key: "AppLanguage", defaultValue: AppLanguage.system.rawValue)) ?? .system

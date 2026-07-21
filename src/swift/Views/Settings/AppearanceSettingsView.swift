@@ -35,6 +35,13 @@ struct AppearanceSettingsView: View {
             } footer: {
                 Text(settings.localized("Choose Light, Dark, or follow the system. Applies across the whole app."))
             }
+            // AYS2: user suggestion — a dedicated Performance Mode that strips
+            // the launcher's heavy visual effects for maximum performance.
+            Section {
+                Toggle(settings.localized("Performance Mode"), isOn: $settings.performanceMode)
+            } footer: {
+                Text(settings.localized("Removes the blurred ambient backdrop and cover blur effects in the library for the lightest, fastest UI. Does not change emulation settings."))
+            }
             Section(settings.localized("App Icon")) {
                 NavigationLink {
                     AppIconSettingsView()

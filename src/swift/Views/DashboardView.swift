@@ -97,17 +97,14 @@ struct TopNav: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Logo mark in a rounded square, like the console's home glyph.
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(Retro.line2, lineWidth: 1.5)
-                .frame(width: 34, height: 34)
-                .overlay(
-                    Rectangle()
-                        .fill(LinearGradient(colors: [Retro.accent, Retro.accentDeep],
-                                             startPoint: .top, endPoint: .bottom))
-                        .frame(width: 15, height: 15)
-                        .rotationEffect(.degrees(45))
-                )
+            // AYS2 wordmark (seam) — replaces the old decorative diamond glyph,
+            // which looked tappable but did nothing. A plain brand label reads
+            // clearer and doesn't invite a dead tap.
+            Text("AYS2")
+                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                .foregroundStyle(LinearGradient(colors: [Retro.accent, Retro.accentDeep],
+                                                startPoint: .top, endPoint: .bottom))
+                .fixedSize()
 
             // L1 bumper — steps to the previous tab (matches a controller's L1).
             Button { step(-1) } label: { BumperPill(text: "L1") }
@@ -166,6 +163,7 @@ struct GamesCarouselView: View {
     @State private var coverStore = CoverStore.shared
     @State private var games: [DashGame] = []
     @State private var showImporter = false
+    @State private var showCoverImporter = false
     @State private var showLibrary = false
     @State private var showRestartAlert = false
     @State private var pendingGame: DashGame?
@@ -224,7 +222,9 @@ struct GamesCarouselView: View {
                                         content
                                             .scaleEffect(phase.isIdentity ? 1.0 : 0.72)
                                             .opacity(phase.isIdentity ? 1.0 : 0.35)
-                                            .blur(radius: phase.isIdentity ? 0 : 2)
+                                            // AYS2: skip the per-cover blur in Performance Mode
+                                            // (seam) — scale/opacity keep the focus feel for free.
+                                            .blur(radius: (phase.isIdentity || settings.performanceMode) ? 0 : 2)
                                     }
                             }
                         }
@@ -249,6 +249,31 @@ struct GamesCarouselView: View {
                       allowedContentTypes: [.data, .item],
                       allowsMultipleSelection: true) { result in
             handleImport(result)
+        }
+        // AYS2: cover import + result alert on the hub (seam) — mirrors the
+        // Library screen so covers can be managed without leaving the home.
+        .sheet(isPresented: $showCoverImporter) {
+            ImportDocumentPicker(
+                allowedContentTypes: CoverStore.coverContentTypes,
+                allowsMultipleSelection: true
+            ) { result in
+                showCoverImporter = false
+                switch result {
+                case .success(let urls):
+                    coverStore.importCoverURLs(urls, forGameNamed: nil)
+                    loadGames()
+                case .failure(let error):
+                    if !FileImportHandler.isUserCancelledPickerError(error) {
+                        coverStore.lastCoverMessage = "Cover import failed: \(error.localizedDescription)"
+                        coverStore.showCoverAlert = true
+                    }
+                }
+            }
+        }
+        .alert(settings.localized("Cover Result"), isPresented: $coverStore.showCoverAlert) {
+            Button(settings.localized("OK")) {}
+        } message: {
+            Text(coverStore.lastCoverMessage ?? "")
         }
         .sheet(isPresented: $showLibrary, onDismiss: { loadGames() }) {
             NavigationStack { GameListView() }
@@ -421,6 +446,33 @@ struct GamesCarouselView: View {
             } label: {
                 Image(systemName: "arrow.clockwise").foregroundStyle(Retro.mut)
             }
+            // AYS2: Covers control on the hub (seam) — this was only reachable
+            // from the full Library screen before; user asked for it on the home.
+            Menu {
+                Button {
+                    SoundManager.shared.play(.select)
+                    Task { _ = await coverStore.downloadMissingCovers(for: games.map { $0.asISOEntry.coverInfo }) }
+                } label: {
+                    Label(settings.localized("Download Missing Covers"), systemImage: "icloud.and.arrow.down")
+                }
+                .disabled(coverStore.isDownloadingCovers || games.isEmpty)
+                Button {
+                    SoundManager.shared.play(.select)
+                    showCoverImporter = true
+                } label: {
+                    Label(settings.localized("Import Local Covers"), systemImage: "photo.badge.plus")
+                }
+                Button {
+                    SoundManager.shared.play(.nav)
+                    showLibrary = true
+                } label: {
+                    Label(settings.localized("More Cover Options"), systemImage: "square.grid.2x2")
+                }
+            } label: {
+                Image(systemName: coverStore.isDownloadingCovers ? "icloud.and.arrow.down" : "photo.stack")
+                    .foregroundStyle(Retro.mut)
+            }
+            .accessibilityLabel(settings.localized("Covers"))
             Button {
                 SoundManager.shared.play(.select)
                 showImporter = true

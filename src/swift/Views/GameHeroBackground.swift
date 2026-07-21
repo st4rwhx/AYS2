@@ -17,11 +17,16 @@ import SwiftUI
 struct AmbientHeroBackground: View {
     let focusedImage: UIImage?
     let focusKey: String?
+    // AYS2: Performance Mode (seam) — the full-bleed 32-radius blur of the
+    // focused cover is the single most expensive launcher effect. In
+    // Performance Mode we drop it entirely and show only the flat
+    // RetroBackground, so the hub costs almost nothing to draw.
+    @State private var settings = SettingsStore.shared
 
     var body: some View {
         ZStack {
             RetroBackground()
-            if let focusedImage {
+            if let focusedImage, !settings.performanceMode {
                 GeometryReader { proxy in
                     Image(uiImage: focusedImage)
                         .resizable()
