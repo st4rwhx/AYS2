@@ -42,6 +42,12 @@ struct AppearanceSettingsView: View {
             } footer: {
                 Text(settings.localized("Removes the blurred ambient backdrop and cover blur effects in the library for the lightest, fastest UI. Does not change emulation settings."))
             }
+            // AYS2: user request — allow skipping the launch splash animation (seam).
+            Section {
+                Toggle(settings.localized("Startup Animation"), isOn: $settings.showBootAnimation)
+            } footer: {
+                Text(settings.localized("Shows the AYS2 splash animation when the app launches. Turn off to go straight to the library. Takes effect on next launch."))
+            }
             Section(settings.localized("App Icon")) {
                 NavigationLink {
                     AppIconSettingsView()

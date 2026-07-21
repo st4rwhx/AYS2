@@ -22,7 +22,8 @@ struct RootView: View {
     @State private var appState = AppState.shared
     @State private var settings = SettingsStore.shared
     @State private var fileImporter = FileImportHandler.shared
-    @State private var showBootSplash = true
+    // AYS2: honor the "show boot animation" preference (seam) — start hidden when off.
+    @State private var showBootSplash = SettingsStore.shared.showBootAnimation
     @State private var showCommunityWelcome = false
     @State private var showCoreAccessUpsell = false // AYS2: post-game upsell (seam)
 

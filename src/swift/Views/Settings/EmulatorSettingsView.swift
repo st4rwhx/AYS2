@@ -148,6 +148,15 @@ struct EmulatorSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            // AYS2: user request — keep the screen awake in-game so a game can't
+            // freeze on auto-lock (seam).
+            Section(settings.localized("Display")) {
+                Toggle(settings.localized("Keep Screen Awake During Gameplay"), isOn: $settings.keepAwakeDuringGameplay)
+                Text(settings.localized("Prevents the device from auto-locking while a game is running, so it won't freeze on sleep. Turn off to allow normal auto-lock."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             // AYS2: external front-end integration (seam).
             Section(settings.localized("External Launcher")) {
                 Toggle(settings.localized("Quit to Launcher on Game Exit"), isOn: $settings.quitToLauncherOnExit)

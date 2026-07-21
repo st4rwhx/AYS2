@@ -812,6 +812,15 @@ final class SettingsStore: @unchecked Sendable {
     var hapticFeedback: Bool {
         didSet { ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "HapticFeedback", value: hapticFeedback) }
     }
+    // AYS2: keep the display awake during gameplay (seam) — community request:
+    // some games freeze when the device auto-locks, so default to staying awake.
+    var keepAwakeDuringGameplay: Bool {
+        didSet { ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "KeepAwakeDuringGameplay", value: keepAwakeDuringGameplay) }
+    }
+    // AYS2: user request — let users skip the launch splash animation (seam).
+    var showBootAnimation: Bool {
+        didSet { ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "ShowBootAnimation", value: showBootAnimation) }
+    }
     var dpadDiagonalsEnabled: Bool {
         didSet { ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "DpadDiagonalsEnabled", value: dpadDiagonalsEnabled) }
     }
@@ -1305,6 +1314,8 @@ final class SettingsStore: @unchecked Sendable {
         // UI
         padOpacity = ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "PadOpacity", defaultValue: 0.6)
         hapticFeedback = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HapticFeedback", defaultValue: true)
+        keepAwakeDuringGameplay = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "KeepAwakeDuringGameplay", defaultValue: true)
+        showBootAnimation = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowBootAnimation", defaultValue: true)
         dpadDiagonalsEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "DpadDiagonalsEnabled", defaultValue: true)
         faceComboZonesEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "FaceComboZonesEnabled", defaultValue: true)
         virtualPadSkin = VirtualPadSkin(rawValue: Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "VirtualPadSkin", defaultValue: 0))) ?? .armsx2Refresh
@@ -1506,6 +1517,8 @@ final class SettingsStore: @unchecked Sendable {
         osdShowDeviceStats = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "OsdShowDeviceStats", defaultValue: osdPreset != .off)
         padOpacity = ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "PadOpacity", defaultValue: 0.6)
         hapticFeedback = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HapticFeedback", defaultValue: true)
+        keepAwakeDuringGameplay = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "KeepAwakeDuringGameplay", defaultValue: true)
+        showBootAnimation = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowBootAnimation", defaultValue: true)
         dpadDiagonalsEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "DpadDiagonalsEnabled", defaultValue: true)
         faceComboZonesEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "FaceComboZonesEnabled", defaultValue: true)
         virtualPadSkin = VirtualPadSkin(rawValue: Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "VirtualPadSkin", defaultValue: 0))) ?? .armsx2Refresh

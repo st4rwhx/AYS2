@@ -375,6 +375,12 @@ struct GameScreenView: View {
             startMenuRestorePollingIfNeeded()
             // AYS2: gyro aim (seam) — only run motion while gameplay is on screen.
             GyroAimStore.shared.setGameplayActive(overlayRoute == .hidden)
+            // AYS2: keep the screen awake in-game so a game can't freeze on
+            // auto-lock (seam) — opt-out via Settings.
+            UIApplication.shared.isIdleTimerDisabled = settings.keepAwakeDuringGameplay
+        }
+        .onChange(of: settings.keepAwakeDuringGameplay) { _, keepAwake in
+            UIApplication.shared.isIdleTimerDisabled = keepAwake
         }
         .onDisappear {
             statusMessageDismissTask?.cancel()
@@ -382,6 +388,8 @@ struct GameScreenView: View {
             stopMenuRestorePolling()
             leaveGameplaySystemChromeMode()
             GyroAimStore.shared.setGameplayActive(false)
+            // AYS2: release the wake lock when leaving gameplay (seam).
+            UIApplication.shared.isIdleTimerDisabled = false
             // AYS2: leaving gameplay hands controller navigation back to the menu
             // authority (seam) — resync so a lingering pause-card activation from
             // the exit transition can't leave menu polling off on the Dashboard.
