@@ -13,6 +13,9 @@
 //
 // The @Observable store is kept separate from the ReplayKit preview delegate
 // (a plain NSObject), so the observable type never has to be an NSObject.
+// UIKit access (presenting/dismissing the preview) is hopped onto the main
+// actor via `Task { @MainActor in }`, since ReplayKit's completion handlers
+// run off the main thread.
 
 import Foundation
 import SwiftUI
@@ -58,7 +61,7 @@ final class ScreenRecorderStore: @unchecked Sendable {
         }
         recorder.isMicrophoneEnabled = false
         recorder.startRecording { [weak self] error in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 if let error {
                     status("Couldn't start recording: \(error.localizedDescription)")
                     return
@@ -75,7 +78,7 @@ final class ScreenRecorderStore: @unchecked Sendable {
     private func stop(status: @escaping (String) -> Void) {
 #if canImport(ReplayKit)
         RPScreenRecorder.shared().stopRecording { [weak self] previewController, error in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self?.isRecording = false
                 if let error {
                     status("Recording error: \(error.localizedDescription)")
@@ -94,6 +97,7 @@ final class ScreenRecorderStore: @unchecked Sendable {
     }
 
 #if canImport(ReplayKit)
+    @MainActor
     private static func present(_ controller: UIViewController) {
         guard let scene = UIApplication.shared.connectedScenes
                 .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene,
@@ -114,7 +118,7 @@ final class ScreenRecorderStore: @unchecked Sendable {
 /// observable store into NSObject territory.
 private final class RecorderPreviewDelegate: NSObject, RPPreviewViewControllerDelegate {
     func previewControllerDidFinish(_ previewController: RPPreviewViewController) {
-        previewController.dismiss(animated: true)
+        Task { @MainActor in previewController.dismiss(animated: true) }
     }
 }
 #endif
