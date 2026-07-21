@@ -205,12 +205,17 @@ final class EmulatorBridge: @unchecked Sendable {
         ARMSX2Bridge.setPadButton(button, pressed: false)
     }
 
+    // AYS2: per-axis stick inversion (seam) — see SettingsStore.invert*Stick*.
+    // This is the single point both the on-screen sticks and gyro aim flow
+    // through, so applying it here inverts every source consistently.
     func setLeftStick(x: Float, y: Float) {
-        ARMSX2Bridge.setLeftStickX(x, y: y)
+        let s = SettingsStore.shared
+        ARMSX2Bridge.setLeftStickX(s.invertLeftStickX ? -x : x, y: s.invertLeftStickY ? -y : y)
     }
 
     func setRightStick(x: Float, y: Float) {
-        ARMSX2Bridge.setRightStickX(x, y: y)
+        let s = SettingsStore.shared
+        ARMSX2Bridge.setRightStickX(s.invertRightStickX ? -x : x, y: s.invertRightStickY ? -y : y)
     }
 
     var isOsdVisible: Bool {

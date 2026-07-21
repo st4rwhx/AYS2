@@ -857,6 +857,26 @@ final class SettingsStore: @unchecked Sendable {
             ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", value: showFrameLimiterButton)
         }
     }
+    // AYS2: user request — invert analog stick axes (e.g. for games with an
+    // inverted camera vs. the modern standard). Applied at the EmulatorBridge
+    // stick choke point, so it covers the on-screen sticks and gyro aim. Off by
+    // default; INI-backed under ARMSX2iOS/Pad.
+    var invertLeftStickX: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", value: invertLeftStickX) }
+    }
+    var invertLeftStickY: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", value: invertLeftStickY) }
+    }
+    var invertRightStickX: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", value: invertRightStickX) }
+    }
+    var invertRightStickY: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "InvertRightStickY", value: invertRightStickY) }
+    }
     // AYS2: user suggestion — when a game was launched from an external
     // front-end (deep link), quit the app on game exit so the launcher regains
     // focus instead of dropping into the library. Off by default.
@@ -1278,6 +1298,10 @@ final class SettingsStore: @unchecked Sendable {
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
         showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
         showFrameLimiterButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", defaultValue: false)
+        invertLeftStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", defaultValue: false)
+        invertLeftStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", defaultValue: false)
+        invertRightStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", defaultValue: false)
+        invertRightStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickY", defaultValue: false)
         performanceMode = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "PerformanceMode", defaultValue: false)
         quitToLauncherOnExit = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", defaultValue: false)
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))
@@ -1473,6 +1497,10 @@ final class SettingsStore: @unchecked Sendable {
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
         showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
         showFrameLimiterButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", defaultValue: false)
+        invertLeftStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", defaultValue: false)
+        invertLeftStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", defaultValue: false)
+        invertRightStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", defaultValue: false)
+        invertRightStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickY", defaultValue: false)
         performanceMode = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "PerformanceMode", defaultValue: false)
         quitToLauncherOnExit = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", defaultValue: false)
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))

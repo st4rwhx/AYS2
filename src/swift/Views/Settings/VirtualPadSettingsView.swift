@@ -101,6 +101,18 @@ struct VirtualPadSettingsView: View {
                 Text(settings.localized("Tilt the device to nudge an analog stick — great for fine-tuning aim. Tuned for landscape; if a direction feels backwards, flip its Invert switch. The stick self-centers when the device is still."))
             }
 
+            // AYS2: user request — invert analog stick axes.
+            Section {
+                Toggle(settings.localized("Invert Left Stick X"), isOn: $settings.invertLeftStickX)
+                Toggle(settings.localized("Invert Left Stick Y"), isOn: $settings.invertLeftStickY)
+                Toggle(settings.localized("Invert Right Stick X"), isOn: $settings.invertRightStickX)
+                Toggle(settings.localized("Invert Right Stick Y"), isOn: $settings.invertRightStickY)
+            } header: {
+                Text(settings.localized("Stick Inversion"))
+            } footer: {
+                Text(settings.localized("Flips analog stick axes — handy for games with inverted camera controls. Applies to the on-screen sticks and gyro aim."))
+            }
+
             Section(settings.localized("Gameplay")) {
                 Toggle(settings.localized("Hide Virtual Pad When Controller Is Connected"), isOn: $settings.autoHideVirtualPadWhenControllerConnected)
                 Text(settings.localized("Automatically hides the on-screen controls while an external controller is connected."))
