@@ -463,23 +463,34 @@ struct GameScreenView: View {
     private func quickStateButtonsOverlay(isLandscape: Bool) -> some View {
         if settings.showQuickStateButtons && !menuButtonHidden && overlayRoute == .hidden {
             HStack(spacing: 10) {
-                quickStateButton(systemImage: "arrow.down.circle.fill", label: "Quick Save") { quickSaveState() }
-                quickStateButton(systemImage: "arrow.up.circle.fill", label: "Quick Load") { quickLoadState() }
+                // AYS2: user request — a floppy disk for Quick Save (the
+                // universal "save" glyph) and a reload arrow for Quick Load.
+                quickStateButton(label: "Quick Save", action: { quickSaveState() }) {
+                    FloppyDiskShape()
+                        .fill(.white, style: FillStyle(eoFill: true))
+                        .frame(width: 18, height: 18)
+                }
+                quickStateButton(label: "Quick Load", action: { quickLoadState() }) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 17, weight: .heavy))
+                        .foregroundStyle(.white)
+                }
             }
             .padding(.top, isLandscape ? 8 : 4)
             .padding(.leading, isLandscape ? 8 : 4)
         }
     }
 
-    private func quickStateButton(systemImage: String, label: String, action: @escaping () -> Void) -> some View {
+    private func quickStateButton<Icon: View>(
+        label: String,
+        action: @escaping () -> Void,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
         Button {
             if settings.hapticFeedback { HapticManager.light.impactOccurred() }
             action()
         } label: {
-            Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .heavy))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.white)
+            icon()
                 .frame(width: 28, height: 28)
                 .padding(6)
                 .background(.black.opacity(0.28), in: Circle())
