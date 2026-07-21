@@ -156,6 +156,21 @@ struct EmulatorSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            // AYS2: user request — interval auto-save (see AppState).
+            Section {
+                Picker(settings.localized("Auto-Save Interval"), selection: $settings.autoSaveIntervalMinutes) {
+                    Text(settings.localized("Off")).tag(0)
+                    Text("1 min").tag(1)
+                    Text("5 min").tag(5)
+                    Text("10 min").tag(10)
+                    Text("15 min").tag(15)
+                }
+            } header: {
+                Text(settings.localized("Auto-Save"))
+            } footer: {
+                Text(settings.localized("Automatically saves a state at the chosen interval while a game is running, to a dedicated auto-slot (Slot 10) so your manual saves are never overwritten. Protects against crashes and battery loss."))
+            }
+
             Section(settings.localized("Host Filesystem")) {
                 Toggle(settings.localized("Enable Host Filesystem"), isOn: $settings.hostFilesystem)
                 Text(settings.localized("Allows PS2 homebrew and ELF tools to access files through the host: device. This is separate from USB/SSD game storage, is off by default, and takes effect on next VM boot."))

@@ -1838,8 +1838,16 @@ private struct SaveStateSlotRow: View {
                     .frame(width: 96, height: 72)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("\(settings.localized("Slot")) \(info.slot)")
-                        .font(.headline)
+                    // AYS2: mark the reserved auto-save slot so it's clearly
+                    // distinguishable from manual slots when auto-save is on.
+                    if settings.autoSaveIntervalMinutes > 0 && info.slot == AppState.autoSaveSlot {
+                        Text("\(settings.localized("Auto-Save")) (\(settings.localized("Slot")) \(info.slot))")
+                            .font(.headline)
+                            .foregroundStyle(.orange)
+                    } else {
+                        Text("\(settings.localized("Slot")) \(info.slot)")
+                            .font(.headline)
+                    }
 
                     if info.occupied {
                         if let modifiedDate = info.modifiedDate {

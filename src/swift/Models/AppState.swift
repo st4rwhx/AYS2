@@ -51,6 +51,16 @@ final class AppState: @unchecked Sendable {
     @ObservationIgnored private var playSessionStart: Date?
     @ObservationIgnored private var backgroundObserver: NSObjectProtocol?
 
+    // AYS2: interval auto-save (seam) — a rolling background save-state to a
+    // dedicated slot so a crash / dead battery doesn't lose progress. The tick
+    // runs every minute while a real game is running and re-reads the interval,
+    // so changing it in Settings takes effect without rebooting the game.
+    // Slot 10 (the last manual slot) is reserved as the auto-slot; the Save
+    // States panel labels it so it's distinguishable from manual saves.
+    static let autoSaveSlot: Int = 10
+    @ObservationIgnored private var autoSaveTimer: Timer?
+    @ObservationIgnored private var minutesSinceAutoSave = 0
+
     private init() {
         shutdownObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("ARMSX2iOSVMDidShutdown"),
@@ -96,10 +106,41 @@ final class AppState: @unchecked Sendable {
         ARMSX2Bridge.prepareGameRenderViewForCurrentRenderer()
         runningGameName = isoName
         beginPlaySession(for: isoName)
+        startAutoSaveTimer()
         currentScreen = .playing
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             ARMSX2Bridge.requestVMBoot()
         }
+    }
+
+    // MARK: - Interval auto-save
+
+    private func startAutoSaveTimer() {
+        stopAutoSaveTimer()
+        minutesSinceAutoSave = 0
+        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
+            self?.autoSaveTick()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        autoSaveTimer = timer
+    }
+
+    private func stopAutoSaveTimer() {
+        autoSaveTimer?.invalidate()
+        autoSaveTimer = nil
+    }
+
+    private func autoSaveTick() {
+        let interval = SettingsStore.shared.autoSaveIntervalMinutes
+        guard interval > 0 else { return }
+        // Only real games — never BIOS-only or the auto-boot placeholder.
+        guard let game = runningGameName, game != "BIOS", game != "AutoBoot" else { return }
+        guard ARMSX2Bridge.isVMRunning() else { return }
+
+        minutesSinceAutoSave += 1
+        guard minutesSinceAutoSave >= interval else { return }
+        minutesSinceAutoSave = 0
+        ARMSX2Bridge.saveState(toSlot: Self.autoSaveSlot, completion: nil)
     }
 
     func bootBIOSOnly() {
@@ -205,5 +246,6 @@ final class AppState: @unchecked Sendable {
 
     private func endPlaySession() {
         flushPlaySession(keepOpen: false)
+        stopAutoSaveTimer()
     }
 }

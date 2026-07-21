@@ -877,6 +877,13 @@ final class SettingsStore: @unchecked Sendable {
         didSet { guard !suppressINIWrites else { return }
             ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "InvertRightStickY", value: invertRightStickY) }
     }
+    // AYS2: user request — interval auto-save. Minutes between background
+    // save-states (0 = off). Saves to a dedicated auto-slot (see
+    // AppState.autoSaveSlot) so manual slots aren't clobbered. INI-backed.
+    var autoSaveIntervalMinutes: Int {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIInt("ARMSX2iOS/UI", key: "AutoSaveIntervalMinutes", value: Int32(autoSaveIntervalMinutes)) }
+    }
     // AYS2: user suggestion — when a game was launched from an external
     // front-end (deep link), quit the app on game exit so the launcher regains
     // focus instead of dropping into the library. Off by default.
@@ -1302,6 +1309,7 @@ final class SettingsStore: @unchecked Sendable {
         invertLeftStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", defaultValue: false)
         invertRightStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", defaultValue: false)
         invertRightStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickY", defaultValue: false)
+        autoSaveIntervalMinutes = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "AutoSaveIntervalMinutes", defaultValue: 0))
         performanceMode = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "PerformanceMode", defaultValue: false)
         quitToLauncherOnExit = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", defaultValue: false)
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))
@@ -1501,6 +1509,7 @@ final class SettingsStore: @unchecked Sendable {
         invertLeftStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", defaultValue: false)
         invertRightStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", defaultValue: false)
         invertRightStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickY", defaultValue: false)
+        autoSaveIntervalMinutes = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "AutoSaveIntervalMinutes", defaultValue: 0))
         performanceMode = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "PerformanceMode", defaultValue: false)
         quitToLauncherOnExit = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", defaultValue: false)
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))
