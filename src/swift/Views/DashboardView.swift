@@ -217,6 +217,11 @@ struct GamesCarouselView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(alignment: .top, spacing: 20) {
                             ForEach(games) { game in
+                                // AYS2: read Performance Mode here (main-actor view
+                                // build) into a Sendable local — the scrollTransition
+                                // closure below is nonisolated and can't touch the
+                                // main-actor `settings` directly (seam/fix).
+                                let reduceBlur = settings.performanceMode
                                 coverItem(game)
                                     .scrollTransition(.interactive, axis: .horizontal) { content, phase in
                                         content
@@ -224,7 +229,7 @@ struct GamesCarouselView: View {
                                             .opacity(phase.isIdentity ? 1.0 : 0.35)
                                             // AYS2: skip the per-cover blur in Performance Mode
                                             // (seam) — scale/opacity keep the focus feel for free.
-                                            .blur(radius: (phase.isIdentity || settings.performanceMode) ? 0 : 2)
+                                            .blur(radius: (phase.isIdentity || reduceBlur) ? 0 : 2)
                                     }
                             }
                         }
