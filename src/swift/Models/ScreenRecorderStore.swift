@@ -11,11 +11,13 @@
 // the performance cost during recording is the same — it's an in-app trigger,
 // not a cheaper capture path.
 //
-// The @Observable store is kept separate from the ReplayKit preview delegate
-// (a plain NSObject), so the observable type never has to be an NSObject.
-// UIKit access (presenting/dismissing the preview) is hopped onto the main
-// actor via `Task { @MainActor in }`, since ReplayKit's completion handlers
-// run off the main thread.
+// Concurrency: ReplayKit's completion handlers run on an arbitrary thread with
+// non-Sendable values (the preview controller, errors). Under strict
+// concurrency, hopping those into a `Task { @MainActor in }` trips
+// "sending non-Sendable" errors, and a bare DispatchQueue.main.async closure
+// isn't recognised as main-actor-isolated for the UIKit calls. The standard fix
+// is DispatchQueue.main.async (guaranteed main thread) + MainActor.assumeIsolated
+// (a synchronous same-thread assertion — no isolation boundary is crossed).
 
 import Foundation
 import SwiftUI
@@ -61,13 +63,15 @@ final class ScreenRecorderStore: @unchecked Sendable {
         }
         recorder.isMicrophoneEnabled = false
         recorder.startRecording { [weak self] error in
-            Task { @MainActor in
-                if let error {
-                    status("Couldn't start recording: \(error.localizedDescription)")
-                    return
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    if let error {
+                        status("Couldn't start recording: \(error.localizedDescription)")
+                        return
+                    }
+                    self?.isRecording = true
+                    status("Recording started")
                 }
-                self?.isRecording = true
-                status("Recording started")
             }
         }
 #else
@@ -78,19 +82,21 @@ final class ScreenRecorderStore: @unchecked Sendable {
     private func stop(status: @escaping (String) -> Void) {
 #if canImport(ReplayKit)
         RPScreenRecorder.shared().stopRecording { [weak self] previewController, error in
-            Task { @MainActor in
-                self?.isRecording = false
-                if let error {
-                    status("Recording error: \(error.localizedDescription)")
-                    return
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.isRecording = false
+                    if let error {
+                        status("Recording error: \(error.localizedDescription)")
+                        return
+                    }
+                    guard let previewController else {
+                        status("Recording stopped.")
+                        return
+                    }
+                    previewController.previewControllerDelegate = self?.previewDelegate
+                    Self.present(previewController)
+                    status("Recording stopped — save or share it")
                 }
-                guard let previewController else {
-                    status("Recording stopped.")
-                    return
-                }
-                previewController.previewControllerDelegate = self?.previewDelegate
-                Self.present(previewController)
-                status("Recording stopped — save or share it")
             }
         }
 #endif
@@ -115,10 +121,13 @@ final class ScreenRecorderStore: @unchecked Sendable {
 
 #if canImport(ReplayKit)
 /// Plain NSObject so it can be an @objc ReplayKit delegate without dragging the
-/// observable store into NSObject territory.
+/// observable store into NSObject territory. The delegate is invoked on the main
+/// thread, so assumeIsolated is safe here.
 private final class RecorderPreviewDelegate: NSObject, RPPreviewViewControllerDelegate {
     func previewControllerDidFinish(_ previewController: RPPreviewViewController) {
-        Task { @MainActor in previewController.dismiss(animated: true) }
+        MainActor.assumeIsolated {
+            previewController.dismiss(animated: true)
+        }
     }
 }
 #endif
