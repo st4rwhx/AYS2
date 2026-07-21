@@ -499,7 +499,7 @@ struct GameScreenView: View {
         // Nominal (0) <-> Unlimited (3): "unlimited" removes the speed cap so the
         // emulator runs as fast as it can. We reflect the resulting state so the
         // icon shows whether the limiter is currently off.
-        let unlimited = 3, nominal = 0
+        let unlimited: Int32 = 3, nominal: Int32 = 0
         let nowOff = ARMSX2Bridge.limiterMode() == unlimited
         ARMSX2Bridge.setLimiterMode(nowOff ? nominal : unlimited)
         frameLimiterOff = !nowOff
