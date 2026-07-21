@@ -11,13 +11,15 @@
 // the performance cost during recording is the same — it's an in-app trigger,
 // not a cheaper capture path.
 //
-// Concurrency: rather than the RPPreviewViewController flow (which forces manual
-// UIViewController presentation and drags non-Sendable values across actor
-// boundaries — a losing fight with strict concurrency), we stop straight to a
-// file with stopRecording(withOutput:). The completion delivers only an Error,
-// which we reduce to a Sendable String before hopping to the main actor. The
-// store is @MainActor and publishes a shareItem the view turns into a SwiftUI
-// share sheet — so only Sendable values (URL, String) ever cross a boundary.
+// Concurrency: the completion-handler ReplayKit APIs deliver non-Sendable
+// values (a preview controller, errors) off the main thread, which fights strict
+// concurrency. So we drive the *async/await* variants instead — Swift
+// auto-generates `startRecording() async throws` and
+// `stopRecording(withOutput:) async throws` from the (Error?)->Void completions.
+// The whole flow runs on the main actor (`run()` is @MainActor), so there are no
+// escaping closures capturing self and nothing non-Sendable ever crosses an
+// isolation boundary. The recording stops straight to a file; the view turns the
+// resulting shareItem into a SwiftUI share sheet.
 
 import Foundation
 import SwiftUI
@@ -46,29 +48,37 @@ final class ScreenRecorderStore: @unchecked Sendable {
     }
 
     func toggle() {
-        if isRecording { stop() } else { start() }
+        Task { @MainActor in await run() }
     }
 
-    private func start() {
+    @MainActor
+    private func run() async {
 #if canImport(ReplayKit)
         let recorder = RPScreenRecorder.shared()
-        guard recorder.isAvailable else {
-            lastStatusMessage = "Screen recording isn't available right now."
-            return
-        }
-        recorder.isMicrophoneEnabled = false
-        recorder.startRecording { [weak self] error in
-            // Hop to main for SwiftUI. No @MainActor/Task needed: the body only
-            // sets this store's (nonisolated) @Observable properties, no UIKit —
-            // so there's no isolation boundary to send non-Sendable values across.
-            DispatchQueue.main.async {
-                guard let self else { return }
-                if let error {
-                    self.lastStatusMessage = "Couldn't start recording: \(error.localizedDescription)"
-                    return
-                }
-                self.isRecording = true
-                self.lastStatusMessage = "Recording started"
+        if isRecording {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("AYS2-\(Self.fileTimestamp()).mp4")
+            do {
+                try await recorder.stopRecording(withOutput: url)
+                isRecording = false
+                shareItem = ShareSheetItem(url: url)
+                lastStatusMessage = "Recording saved — share it"
+            } catch {
+                isRecording = false
+                lastStatusMessage = "Recording error: \(error.localizedDescription)"
+            }
+        } else {
+            guard recorder.isAvailable else {
+                lastStatusMessage = "Screen recording isn't available right now."
+                return
+            }
+            recorder.isMicrophoneEnabled = false
+            do {
+                try await recorder.startRecording()
+                isRecording = true
+                lastStatusMessage = "Recording started"
+            } catch {
+                lastStatusMessage = "Couldn't start recording: \(error.localizedDescription)"
             }
         }
 #else
@@ -76,22 +86,9 @@ final class ScreenRecorderStore: @unchecked Sendable {
 #endif
     }
 
-    private func stop() {
-#if canImport(ReplayKit)
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AYS2-\(UUID().uuidString).mp4")
-        RPScreenRecorder.shared().stopRecording(withOutput: url) { [weak self] error in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.isRecording = false
-                if let error {
-                    self.lastStatusMessage = "Recording error: \(error.localizedDescription)"
-                    return
-                }
-                self.shareItem = ShareSheetItem(url: url)
-                self.lastStatusMessage = "Recording saved — share it"
-            }
-        }
-#endif
+    private static func fileTimestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        return formatter.string(from: Date())
     }
 }
