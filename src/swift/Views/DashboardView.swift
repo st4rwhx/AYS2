@@ -15,6 +15,27 @@ enum DashSection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// AYS2: how the hub's games section is laid out — the flowing carousel, a
+/// cover grid, or a compact list. Persisted via @AppStorage.
+enum LibraryViewMode: String, CaseIterable, Identifiable {
+    case carousel, grid, list
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .carousel: return "Carousel"
+        case .grid:     return "Grid"
+        case .list:     return "List"
+        }
+    }
+    var systemImage: String {
+        switch self {
+        case .carousel: return "rectangle.stack"
+        case .grid:     return "square.grid.2x2"
+        case .list:     return "list.bullet"
+        }
+    }
+}
+
 /// AYS2: routes controller navigation commands from the Dashboard's single
 /// controller scope down to whichever section is active (seam). The active
 /// section observes `token` and reads `command`. Sections also report whether a
@@ -244,6 +265,8 @@ struct GamesCarouselView: View {
     @State private var showProfileImporter = false
     @State private var profileImportGame: DashGame?
     @State private var profileMessage: String?
+    // AYS2: hub games layout — carousel / grid / list (seam), remembered.
+    @AppStorage("ays2LibraryViewMode") private var viewMode: LibraryViewMode = .carousel
 
     private var indexedText: String {
         "\(settings.localized("Indexed")) \(games.count) \(settings.localized(games.count == 1 ? "game" : "games"))"
@@ -308,44 +331,15 @@ struct GamesCarouselView: View {
                 if games.isEmpty {
                     emptyState
                 } else {
-                    focusedInfo
-                    // AYS2: the snap step is cover-width + this spacing —
-                    // 30pt/190pt made the swipe distance needed to cross into
-                    // the next game roughly half the screen width (too far
-                    // for a normal thumb swipe). That got overcorrected to
-                    // 14pt/160pt, which fixed the swipe but left covers
-                    // cramped and small — the real swipe-feel fix turned out
-                    // to be the .task(id:) debounce below (main-thread
-                    // contention during the drag, not physical distance), so
-                    // there's headroom to size back up without the step
-                    // getting anywhere near the original 220pt (seam/fix).
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(alignment: .top, spacing: 20) {
-                            ForEach(games) { game in
-                                // AYS2: read Performance Mode here (main-actor view
-                                // build) into a Sendable local — the scrollTransition
-                                // closure below is nonisolated and can't touch the
-                                // main-actor `settings` directly (seam/fix).
-                                let reduceBlur = settings.performanceMode
-                                coverItem(game)
-                                    .scrollTransition(.interactive, axis: .horizontal) { content, phase in
-                                        content
-                                            .scaleEffect(phase.isIdentity ? 1.0 : 0.72)
-                                            .opacity(phase.isIdentity ? 1.0 : 0.35)
-                                            // AYS2: skip the per-cover blur in Performance Mode
-                                            // (seam) — scale/opacity keep the focus feel for free.
-                                            .blur(radius: (phase.isIdentity || reduceBlur) ? 0 : 2)
-                                    }
-                            }
-                        }
-                        .scrollTargetLayout()
-                        .padding(.horizontal, (UIScreen.main.bounds.width - Self.heroCoverWidth) / 2)
-                        .padding(.top, 18)
-                        .padding(.bottom, 16)
+                    switch viewMode {
+                    case .carousel:
+                        focusedInfo
+                        carouselScroll
+                    case .grid:
+                        gridScroll
+                    case .list:
+                        listScroll
                     }
-                    .scrollTargetBehavior(.viewAligned(limitBehavior: .always))
-                    .scrollPosition(id: $focusedGameID, anchor: .center)
-                    .frame(maxHeight: .infinity, alignment: .center)
                 }
                 Spacer(minLength: 0)
                 HintBar(hints: [
@@ -569,6 +563,113 @@ struct GamesCarouselView: View {
         }
     }
 
+    /// The flowing hero carousel (default). Horizontal snap scroller keyed to
+    /// `focusedGameID`, with scale/opacity/blur focus transitions.
+    private var carouselScroll: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 20) {
+                ForEach(games) { game in
+                    // AYS2: read Performance Mode into a Sendable local — the
+                    // nonisolated scrollTransition closure can't touch `settings`.
+                    let reduceBlur = settings.performanceMode
+                    coverItem(game)
+                        .scrollTransition(.interactive, axis: .horizontal) { content, phase in
+                            content
+                                .scaleEffect(phase.isIdentity ? 1.0 : 0.72)
+                                .opacity(phase.isIdentity ? 1.0 : 0.35)
+                                .blur(radius: (phase.isIdentity || reduceBlur) ? 0 : 2)
+                        }
+                }
+            }
+            .scrollTargetLayout()
+            .padding(.horizontal, (UIScreen.main.bounds.width - Self.heroCoverWidth) / 2)
+            .padding(.top, 18)
+            .padding(.bottom, 16)
+        }
+        .scrollTargetBehavior(.viewAligned(limitBehavior: .always))
+        .scrollPosition(id: $focusedGameID, anchor: .center)
+        .frame(maxHeight: .infinity, alignment: .center)
+    }
+
+    /// A cover grid — more games visible at once, adaptive columns.
+    private var gridScroll: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 16)], spacing: 18) {
+                ForEach(games) { game in
+                    Button {
+                        SoundManager.shared.play(.boot)
+                        selectGame(game)
+                    } label: {
+                        VStack(spacing: 6) {
+                            CleanCover(game: game, width: 104)
+                            Text(displayName(for: game))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Retro.ink)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu { gameContextMenu(for: game) }
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+            .padding(.bottom, 20)
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    /// A compact list — a thumbnail, the title, and format, one row per game.
+    private var listScroll: some View {
+        ScrollView {
+            LazyVStack(spacing: 8) {
+                ForEach(games) { game in
+                    Button {
+                        SoundManager.shared.play(.boot)
+                        selectGame(game)
+                    } label: {
+                        HStack(spacing: 12) {
+                            CleanCover(game: game, width: 46)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(displayName(for: game))
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(Retro.ink)
+                                    .lineLimit(1)
+                                Text(game.name.pathExtensionLabel)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Retro.mut)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 8)
+                            if game.isFavorite {
+                                Image(systemName: "star.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(Retro.accent)
+                            }
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Retro.line2)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Retro.panel.opacity(0.55))
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu { gameContextMenu(for: game) }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 20)
+        }
+        .frame(maxHeight: .infinity)
+    }
+
     private var focusedInfo: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let synopsis = focusedSynopsis, !synopsis.isEmpty {
@@ -604,6 +705,27 @@ struct GamesCarouselView: View {
             } label: {
                 Image(systemName: "arrow.clockwise").foregroundStyle(Retro.mut)
             }
+            // AYS2: layout switcher (seam) — carousel / grid / list, next to the
+            // Covers control, styled as an accent pill showing the active mode.
+            Menu {
+                Picker(settings.localized("Layout"), selection: $viewMode) {
+                    ForEach(LibraryViewMode.allCases) { mode in
+                        Label(settings.localized(mode.label), systemImage: mode.systemImage).tag(mode)
+                    }
+                }
+            } label: {
+                Image(systemName: viewMode.systemImage)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(LinearGradient(colors: [Retro.accent, Retro.accentDeep],
+                                                 startPoint: .top, endPoint: .bottom))
+                    )
+            }
+            .accessibilityLabel(settings.localized("Layout"))
+            .onChange(of: viewMode) { _, _ in SoundManager.shared.play(.nav) }
             // AYS2: Covers control on the hub (seam) — this was only reachable
             // from the full Library screen before; user asked for it on the home.
             Menu {
