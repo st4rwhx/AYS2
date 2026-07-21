@@ -58,11 +58,13 @@ final class ScreenRecorderStore: @unchecked Sendable {
         }
         recorder.isMicrophoneEnabled = false
         recorder.startRecording { [weak self] error in
-            let message = error.map { "Couldn't start recording: \($0.localizedDescription)" }
-            Task { @MainActor in
+            // Hop to main for SwiftUI. No @MainActor/Task needed: the body only
+            // sets this store's (nonisolated) @Observable properties, no UIKit —
+            // so there's no isolation boundary to send non-Sendable values across.
+            DispatchQueue.main.async {
                 guard let self else { return }
-                if let message {
-                    self.lastStatusMessage = message
+                if let error {
+                    self.lastStatusMessage = "Couldn't start recording: \(error.localizedDescription)"
                     return
                 }
                 self.isRecording = true
@@ -79,12 +81,11 @@ final class ScreenRecorderStore: @unchecked Sendable {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("AYS2-\(UUID().uuidString).mp4")
         RPScreenRecorder.shared().stopRecording(withOutput: url) { [weak self] error in
-            let message = error?.localizedDescription
-            Task { @MainActor in
+            DispatchQueue.main.async {
                 guard let self else { return }
                 self.isRecording = false
-                if let message {
-                    self.lastStatusMessage = "Recording error: \(message)"
+                if let error {
+                    self.lastStatusMessage = "Recording error: \(error.localizedDescription)"
                     return
                 }
                 self.shareItem = ShareSheetItem(url: url)
