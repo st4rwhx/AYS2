@@ -237,6 +237,13 @@ struct GamesCarouselView: View {
     // AYS2: custom display name editing (seam).
     @State private var renameTarget: DashGame?
     @State private var renameText = ""
+    // AYS2: menu parity with the library (seam) — settings-profile export/import
+    // and hide-from-library, so the carousel long-press menu matches the list.
+    @State private var hiddenStore = HiddenGamesStore.shared
+    @State private var profileShareItem: ShareSheetItem?
+    @State private var showProfileImporter = false
+    @State private var profileImportGame: DashGame?
+    @State private var profileMessage: String?
 
     private var indexedText: String {
         "\(settings.localized("Indexed")) \(games.count) \(settings.localized(games.count == 1 ? "game" : "games"))"
@@ -249,6 +256,7 @@ struct GamesCarouselView: View {
             || showActionAlert || gameInfoTarget != nil || gameSettingsTarget != nil
             || cheatsManagerTarget != nil || pendingDeleteDataGame != nil
             || pendingDeleteGame != nil || renameTarget != nil
+            || profileShareItem != nil || showProfileImporter || profileMessage != nil
     }
 
     /// The game currently centered in the carousel (the controller's selection).
@@ -419,6 +427,27 @@ struct GamesCarouselView: View {
             }
         } message: {
             Text(settings.localized("Set a custom name shown in the library. Leave empty to restore the original."))
+        }
+        // AYS2: settings-profile export/import (seam) — menu parity with the library.
+        .sheet(item: $profileShareItem) { item in
+            ActivityShareSheet(activityItems: [item.url])
+        }
+        .sheet(isPresented: $showProfileImporter) {
+            ImportDocumentPicker(
+                allowedContentTypes: [UTType(filenameExtension: "ini") ?? .data, .data],
+                allowsMultipleSelection: false
+            ) { result in
+                showProfileImporter = false
+                importSettingsProfile(result)
+            }
+        }
+        .alert(settings.localized("Settings Profile"), isPresented: Binding(
+            get: { profileMessage != nil },
+            set: { if !$0 { profileMessage = nil } }
+        )) {
+            Button(settings.localized("OK")) { profileMessage = nil }
+        } message: {
+            Text(profileMessage ?? "")
         }
         .alert(settings.localized("Restart VM?"), isPresented: $showRestartAlert) {
             Button(settings.localized("Cancel"), role: .cancel) {}
@@ -857,6 +886,26 @@ struct GamesCarouselView: View {
             Label(settings.localized("Rename"), systemImage: "pencil")
         }
 
+        // AYS2: export/import this game's per-game settings profile (seam) —
+        // menu parity with the library list.
+        Menu {
+            Button {
+                exportSettingsProfile(for: game)
+            } label: {
+                Label(settings.localized("Export Profile"), systemImage: "square.and.arrow.up")
+            }
+            Button {
+                presentMenuPanel {
+                    profileImportGame = game
+                    showProfileImporter = true
+                }
+            } label: {
+                Label(settings.localized("Import Profile"), systemImage: "square.and.arrow.down")
+            }
+        } label: {
+            Label(settings.localized("Settings Profile"), systemImage: "doc.badge.gearshape")
+        }
+
         Button {
             presentMenuPanel { cheatsManagerTarget = game }
         } label: {
@@ -884,6 +933,17 @@ struct GamesCarouselView: View {
         }
 
         Divider()
+
+        // AYS2: hide/show this entry in the library (seam) — menu parity with
+        // the library list.
+        Button {
+            hiddenStore.toggle(bootName: game.bootName)
+            loadGames()
+        } label: {
+            let hidden = hiddenStore.isHidden(game.bootName)
+            Label(settings.localized(hidden ? "Show in Library" : "Hide from Library"),
+                  systemImage: hidden ? "eye" : "eye.slash")
+        }
 
         Menu {
             Button {
@@ -925,6 +985,45 @@ struct GamesCarouselView: View {
         Task {
             _ = await coverStore.downloadMissingCovers(for: [game.asISOEntry.coverInfo])
             loadGames()
+        }
+    }
+
+    // AYS2: per-game settings profile export/import (seam) — same behavior as the
+    // library list. Shares the game's per-game .ini as "<Game Name>.ini"; import
+    // writes it back for the same game (applies on next boot).
+    private func exportSettingsProfile(for game: DashGame) {
+        guard let path = ARMSX2Bridge.perGameSettingsFilePath(forISO: game.bootName) else {
+            profileMessage = settings.localized("This game has no per-game settings to export yet. Set some in Per-Game Settings first.")
+            return
+        }
+        let source = URL(fileURLWithPath: path)
+        let safeName = game.name.replacingOccurrences(of: "/", with: "-")
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName).ini")
+        do {
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: source, to: destination)
+            profileShareItem = ShareSheetItem(url: destination)
+        } catch {
+            profileMessage = "\(settings.localized("Could not export the profile:")) \(error.localizedDescription)"
+        }
+    }
+
+    private func importSettingsProfile(_ result: Result<[URL], Error>) {
+        guard let game = profileImportGame else { return }
+        profileImportGame = nil
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            let granted = url.startAccessingSecurityScopedResource()
+            defer { if granted { url.stopAccessingSecurityScopedResource() } }
+            let ok = ARMSX2Bridge.importPerGameSettings(fromFile: url.path, forISO: game.bootName)
+            profileMessage = ok
+                ? "\(settings.localized("Imported settings profile for")) \(game.name). \(settings.localized("It applies the next time this game boots."))"
+                : "\(settings.localized("Couldn't import the profile for")) \(game.name)."
+        case .failure(let error):
+            if !FileImportHandler.isUserCancelledPickerError(error) {
+                profileMessage = "\(settings.localized("Import failed:")) \(error.localizedDescription)"
+            }
         }
     }
 
