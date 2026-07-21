@@ -25,6 +25,9 @@ final class DashboardNav {
     private(set) var command: MenuCommand?
     private(set) var token: UInt64 = 0
     var modalPresented = false
+    /// Set by a section that has pushed a sub-screen, so L1/R1 don't switch the
+    /// Dashboard section out from under it (commands still flow, so Back works).
+    var suppressSectionSwitch = false
 
     func send(_ command: MenuCommand) {
         self.command = command
@@ -102,6 +105,9 @@ struct DashboardView: View {
     }
 
     private func stepSection(_ delta: Int) {
+        // A section that has pushed a sub-screen suppresses tab switching so it
+        // doesn't change out from under the pushed screen.
+        guard !nav.suppressSectionSwitch else { return }
         let all = DashSection.allCases
         guard let idx = all.firstIndex(of: section) else { return }
         section = all[(idx + delta + all.count) % all.count]
@@ -113,7 +119,7 @@ struct DashboardView: View {
         switch section {
         case .games:    GamesCarouselView(nav: nav)
         case .bios:     BIOSListView()
-        case .settings: SettingsGridView()
+        case .settings: SettingsGridView(nav: nav)
         case .help:     HelpView()
         }
     }
@@ -996,68 +1002,163 @@ struct CleanCover: View {
 
 // MARK: - Settings as a tiled grid (console-dashboard "hub")
 
+/// A Settings hub category — value-driven so it can be pushed by touch or by a
+/// controller's select command through the NavigationStack path.
+enum SettingsCategory: String, CaseIterable, Identifiable, Hashable {
+    case emulation, video, overlay, controls, virtualPad
+    case achievements, appearance, system, coreAccess
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .emulation: return "Emulation"
+        case .video: return "Video"
+        case .overlay: return "Overlay"
+        case .controls: return "Controls"
+        case .virtualPad: return "Virtual Pad"
+        case .achievements: return "Achievements"
+        case .appearance: return "Appearance"
+        case .system: return "System"
+        case .coreAccess: return "Core Access"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .emulation: return "Core · Speed · Cheats"
+        case .video: return "Renderer · Resolution · FPS"
+        case .overlay: return "OSD · HUD · Stats"
+        case .controls: return "Gamepad · Mapping"
+        case .virtualPad: return "Touch · Layout · Scale"
+        case .achievements: return "Login · Hardcore · Progress"
+        case .appearance: return "Theme · Background"
+        case .system: return "Sounds · About · Version"
+        case .coreAccess: return "Support · Perks · Betas"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .emulation: return "cpu"
+        case .video: return "display"
+        case .overlay: return "text.below.photo"
+        case .controls: return "gamecontroller"
+        case .virtualPad: return "hand.draw"
+        case .achievements: return "trophy"
+        case .appearance: return "circle.lefthalf.filled"
+        case .system: return "gearshape"
+        case .coreAccess: return "crown.fill"
+        }
+    }
+}
+
 struct SettingsGridView: View {
+    // AYS2: controller navigation router from the Dashboard (seam).
+    let nav: DashboardNav
+
     private let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
+    private let categories = SettingsCategory.allCases
+
+    @State private var path: [SettingsCategory] = []
+    // AYS2: controller focus index into the tile grid (seam).
+    @State private var focusedIndex = 0
+    @State private var input = MenuControllerInput.shared
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 14) {
-                    SettingsTile(title: "Emulation", subtitle: "Core · Speed · Cheats",
-                                 systemImage: "cpu") { EmulatorSettingsView() }
-                    SettingsTile(title: "Video", subtitle: "Renderer · Resolution · FPS",
-                                 systemImage: "display") { GraphicsSettingsView() }
-                    SettingsTile(title: "Overlay", subtitle: "OSD · HUD · Stats",
-                                 systemImage: "text.below.photo") { OverlaySettingsView() }
-                    SettingsTile(title: "Controls", subtitle: "Gamepad · Mapping",
-                                 systemImage: "gamecontroller") { GamepadSettingsView() }
-                    SettingsTile(title: "Virtual Pad", subtitle: "Touch · Layout · Scale",
-                                 systemImage: "hand.draw") { VirtualPadSettingsView() }
-                    // AYS2: RetroAchievements tile (seam) — it had a settings entry
-                    // in the full settings list but was missing from this hub grid.
-                    SettingsTile(title: "Achievements", subtitle: "Login · Hardcore · Progress",
-                                 systemImage: "trophy") { RetroAchievementsSettingsView() }
-                    SettingsTile(title: "Appearance", subtitle: "Theme · Background",
-                                 systemImage: "circle.lefthalf.filled") { AppearanceSettingsView() }
-                    SettingsTile(title: "System", subtitle: "Sounds · About · Version",
-                                 systemImage: "gearshape") { SystemSettingsView() }
-                    SettingsTile(title: "Core Access", subtitle: "Support · Perks · Betas",
-                                 systemImage: "crown.fill") { CoreAccessView(showsClose: false) }
+                    ForEach(Array(categories.enumerated()), id: \.element) { index, category in
+                        SettingsTile(
+                            category: category,
+                            // Only show the controller focus ring when a controller is
+                            // connected — touch users never see a stuck highlight.
+                            isFocused: input.controllerConnected && index == focusedIndex
+                        ) {
+                            path.append(category)
+                        }
+                    }
                 }
                 .padding(16)
             }
             .background(RetroBackground())
             .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: SettingsCategory.self) { category in
+                destination(for: category)
+            }
+        }
+        // AYS2: consume forwarded controller commands (seam).
+        .onChange(of: nav.token) { _, _ in
+            if let command = nav.command { handleControllerCommand(command) }
+        }
+        // Suppress Dashboard section switching while a sub-screen is pushed.
+        .onChange(of: path.isEmpty) { _, empty in
+            nav.suppressSectionSwitch = !empty
+        }
+        .onDisappear { nav.suppressSectionSwitch = false }
+    }
+
+    @ViewBuilder
+    private func destination(for category: SettingsCategory) -> some View {
+        switch category {
+        case .emulation:    EmulatorSettingsView()
+        case .video:        GraphicsSettingsView()
+        case .overlay:      OverlaySettingsView()
+        case .controls:     GamepadSettingsView()
+        case .virtualPad:   VirtualPadSettingsView()
+        case .achievements: RetroAchievementsSettingsView()
+        case .appearance:   AppearanceSettingsView()
+        case .system:       SystemSettingsView()
+        case .coreAccess:   CoreAccessView(showsClose: false)
+        }
+    }
+
+    private func handleControllerCommand(_ command: MenuCommand) {
+        // While a sub-screen is pushed, only Back (pop) is handled here; the
+        // pushed screen's own controls are touch-driven.
+        if !path.isEmpty {
+            if command == .back { path.removeLast() }
+            return
+        }
+        let count = categories.count
+        switch command {
+        case .left:  focusedIndex = max(0, focusedIndex - 1)
+        case .right: focusedIndex = min(count - 1, focusedIndex + 1)
+        case .up:    focusedIndex = max(0, focusedIndex - 2)
+        case .down:  focusedIndex = min(count - 1, focusedIndex + 2)
+        case .select, .menu:
+            SoundManager.shared.play(.nav)
+            path.append(categories[focusedIndex])
+        case .back, .altAction, .pageLeft, .pageRight:
+            break
         }
     }
 }
 
 /// One large solid tile in the Settings hub.
-struct SettingsTile<Destination: View>: View {
-    let title: String
-    let subtitle: String
-    let systemImage: String
-    @ViewBuilder let destination: () -> Destination
+struct SettingsTile: View {
+    let category: SettingsCategory
+    let isFocused: Bool
+    let onSelect: () -> Void
 
     var body: some View {
-        NavigationLink {
-            destination()
-        } label: {
+        Button(action: onSelect) {
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(LinearGradient(colors: [Retro.accent, Retro.accentDeep],
                                          startPoint: .topLeading, endPoint: .bottomTrailing))
-                Image(systemName: systemImage)
+                Image(systemName: category.systemImage)
                     .font(.system(size: 58, weight: .regular))
                     .foregroundStyle(.white.opacity(0.20))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(10)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title.uppercased())
+                    Text(category.title.uppercased())
                         .font(.system(size: 19, weight: .bold))
                         .foregroundStyle(.white)
                     Spacer(minLength: 0)
-                    Text(subtitle)
+                    Text(category.subtitle)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white.opacity(0.82))
                         .lineLimit(1)
@@ -1066,7 +1167,16 @@ struct SettingsTile<Destination: View>: View {
                 .padding(14)
             }
             .frame(height: 132)
-            .shadow(color: Retro.accentDeep.opacity(0.25), radius: 8, x: 0, y: 5)
+            // AYS2: controller focus ring (seam) — a bright border + lift when the
+            // tile is the current controller selection.
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.white, lineWidth: isFocused ? 3 : 0)
+            )
+            .scaleEffect(isFocused ? 1.04 : 1.0)
+            .shadow(color: Retro.accentDeep.opacity(isFocused ? 0.5 : 0.25),
+                    radius: isFocused ? 12 : 8, x: 0, y: 5)
+            .animation(.easeOut(duration: 0.14), value: isFocused)
         }
         .buttonStyle(.plain)
     }
