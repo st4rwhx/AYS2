@@ -15,6 +15,23 @@ enum DashSection: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// AYS2: routes controller navigation commands from the Dashboard's single
+/// controller scope down to whichever section is active (seam). The active
+/// section observes `token` and reads `command`. Sections also report whether a
+/// modal (sheet/alert) is up via `modalPresented`, which disables controller
+/// navigation while the modal is open (touch drives modals for now).
+@Observable
+final class DashboardNav {
+    private(set) var command: MenuCommand?
+    private(set) var token: UInt64 = 0
+    var modalPresented = false
+
+    func send(_ command: MenuCommand) {
+        self.command = command
+        token &+= 1
+    }
+}
+
 /// One indexed game shown in the carousel, resolved against the ARMSX2 library.
 struct DashGame: Identifiable {
     let id: String
@@ -53,6 +70,8 @@ struct DashGame: Identifiable {
 
 struct DashboardView: View {
     @State private var section: DashSection = .games
+    // AYS2: routes physical-controller navigation into the active section (seam).
+    @State private var nav = DashboardNav()
 
     var body: some View {
         ZStack {
@@ -69,12 +88,30 @@ struct DashboardView: View {
                 .padding(.bottom, 22)
         }
         .tint(Retro.accent)
+        // AYS2: controller menu navigation (seam). This single scope is always
+        // mounted while the Dashboard is on screen, so L1/R1 section switching
+        // works from any tab; everything else forwards to the active section.
+        // Disabled while a section has a modal up (touch owns modals for now).
+        .menuControllerScope("dashboard", isActive: !nav.modalPresented) { command in
+            switch command {
+            case .pageLeft:  stepSection(-1)
+            case .pageRight: stepSection(1)
+            default:         nav.send(command)
+            }
+        }
+    }
+
+    private func stepSection(_ delta: Int) {
+        let all = DashSection.allCases
+        guard let idx = all.firstIndex(of: section) else { return }
+        section = all[(idx + delta + all.count) % all.count]
+        SoundManager.shared.play(.nav)
     }
 
     @ViewBuilder
     private var content: some View {
         switch section {
-        case .games:    GamesCarouselView()
+        case .games:    GamesCarouselView(nav: nav)
         case .bios:     BIOSListView()
         case .settings: SettingsGridView()
         case .help:     HelpView()
@@ -158,6 +195,9 @@ struct TopNav: View {
 // MARK: - Games as a horizontal cover carousel
 
 struct GamesCarouselView: View {
+    // AYS2: controller navigation router from the Dashboard (seam).
+    let nav: DashboardNav
+
     @State private var appState = AppState.shared
     @State private var settings = SettingsStore.shared
     @State private var coverStore = CoverStore.shared
@@ -191,6 +231,54 @@ struct GamesCarouselView: View {
 
     private var indexedText: String {
         "\(settings.localized("Indexed")) \(games.count) \(settings.localized(games.count == 1 ? "game" : "games"))"
+    }
+
+    /// True while any sheet/alert is presented from the carousel — controller
+    /// navigation is suspended so it doesn't move the row behind an open modal.
+    private var anyModalPresented: Bool {
+        showImporter || showCoverImporter || showLibrary || showRestartAlert
+            || showActionAlert || gameInfoTarget != nil || gameSettingsTarget != nil
+            || cheatsManagerTarget != nil || pendingDeleteDataGame != nil
+            || pendingDeleteGame != nil
+    }
+
+    /// The game currently centered in the carousel (the controller's selection).
+    private var focusedGame: DashGame? {
+        games.first { $0.id == focusedGameID } ?? games.first
+    }
+
+    /// Moves the carousel selection by `delta` (controller left/right). The
+    /// `.scrollPosition(id:)` binding scrolls the row to the new focus.
+    private func moveFocus(_ delta: Int) {
+        guard !games.isEmpty else { return }
+        let currentIndex = games.firstIndex { $0.id == focusedGameID } ?? 0
+        let next = max(0, min(games.count - 1, currentIndex + delta))
+        guard next != currentIndex else { return }
+        withAnimation(.easeOut(duration: 0.18)) {
+            focusedGameID = games[next].id
+        }
+    }
+
+    private func handleControllerCommand(_ command: MenuCommand) {
+        guard !anyModalPresented else { return }
+        switch command {
+        case .left:  moveFocus(-1)
+        case .right: moveFocus(1)
+        case .select:
+            if games.isEmpty {
+                showImporter = true
+            } else if let game = focusedGame {
+                selectGame(game)
+            }
+        case .altAction:
+            // Triangle / Y — add game (matches the on-screen hint).
+            showImporter = true
+        case .menu:
+            // Menu / Options — open the focused game's info & actions.
+            if let game = focusedGame { gameInfoTarget = game.asISOEntry }
+        case .up, .down, .back, .pageLeft, .pageRight:
+            break // handled at the Dashboard level or not applicable here
+        }
     }
 
     var body: some View {
@@ -358,6 +446,14 @@ struct GamesCarouselView: View {
             Text(settings.localized("Delete the selected game file? You can also remove its generated game data at the same time."))
         }
         .onAppear { loadGames() }
+        // AYS2: controller navigation (seam) — consume forwarded commands and
+        // keep the Dashboard scope disabled while a modal is up.
+        .onChange(of: nav.token) { _, _ in
+            if let command = nav.command { handleControllerCommand(command) }
+        }
+        .onChange(of: anyModalPresented) { _, presented in
+            nav.modalPresented = presented
+        }
         // AYS2: debounced via .task(id:)'s automatic cancel-and-restart
         // (seam/fix). .scrollPosition(id:) updates focusedGameID
         // continuously while the user is actively dragging — not just once

@@ -66,6 +66,9 @@ struct RootView: View {
         .onAppear {
             applyAppColorScheme(settings.appColorScheme)
             StikDebugLauncher.autoOpenIfNeeded(reason: "app launch")
+            // AYS2: controller menu navigation is active whenever a menu (not a
+            // running game) is on screen (seam).
+            MenuControllerInput.shared.setMenuActive(appState.currentScreen == .menu)
         }
         .onChange(of: settings.appColorScheme) { _, newValue in
             applyAppColorScheme(newValue)
@@ -74,6 +77,9 @@ struct RootView: View {
         // CoreAccessStore enforces the cadence (never the first 3 days, ≥4 days
         // apart, never for members, permanent opt-out).
         .onChange(of: appState.currentScreen) { oldScreen, newScreen in
+            // AYS2: only poll the controller for menu navigation while a menu is
+            // shown; gameplay owns the controller during .playing (seam).
+            MenuControllerInput.shared.setMenuActive(newScreen == .menu)
             if oldScreen == .playing, newScreen == .menu,
                CoreAccessStore.shared.shouldShowPostGameUpsell {
                 CoreAccessStore.shared.markUpsellShown()
