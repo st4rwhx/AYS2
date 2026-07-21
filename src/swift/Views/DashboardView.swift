@@ -691,6 +691,39 @@ struct GamesCarouselView: View {
         .frame(minHeight: 20, alignment: .top)
     }
 
+    /// The carousel / grid / list switcher (accent pill) plus the Show-Hidden
+    /// reveal. Its own property so the header HStack stays type-checkable.
+    private var layoutMenu: some View {
+        Menu {
+            Picker(settings.localized("Layout"), selection: $viewMode) {
+                ForEach(LibraryViewMode.allCases) { mode in
+                    Label(settings.localized(mode.label), systemImage: mode.systemImage).tag(mode)
+                }
+            }
+            // AYS2: reveal games hidden from the hub (seam) — shared flag with the
+            // Library, so a game hidden via the context menu can be un-hidden here.
+            if hiddenStore.hiddenCount > 0 {
+                Divider()
+                Toggle(isOn: $hiddenStore.revealHidden) {
+                    Label(settings.localized("Show Hidden Games") + " (\(hiddenStore.hiddenCount))",
+                          systemImage: hiddenStore.revealHidden ? "eye" : "eye.slash")
+                }
+            }
+        } label: {
+            Image(systemName: viewMode.systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(LinearGradient(colors: [Retro.accent, Retro.accentDeep],
+                                             startPoint: .top, endPoint: .bottom))
+                )
+        }
+        .accessibilityLabel(settings.localized("Layout"))
+        .onChange(of: viewMode) { _, _ in SoundManager.shared.play(.nav) }
+    }
+
     private var header: some View {
         HStack(alignment: .center) {
             RetroLabel(text: indexedText)
@@ -708,36 +741,8 @@ struct GamesCarouselView: View {
                 Image(systemName: "arrow.clockwise").foregroundStyle(Retro.mut)
             }
             // AYS2: layout switcher (seam) — carousel / grid / list, next to the
-            // Covers control, styled as an accent pill showing the active mode.
-            Menu {
-                Picker(settings.localized("Layout"), selection: $viewMode) {
-                    ForEach(LibraryViewMode.allCases) { mode in
-                        Label(settings.localized(mode.label), systemImage: mode.systemImage).tag(mode)
-                    }
-                }
-                // AYS2: reveal games hidden from the hub (seam) — shared flag with
-                // the Library, so a game hidden via the context menu can be shown
-                // again right here to un-hide it. Only shown when something is hidden.
-                if hiddenStore.hiddenCount > 0 {
-                    Divider()
-                    Toggle(isOn: $hiddenStore.revealHidden) {
-                        Label(settings.localized("Show Hidden Games") + " (\(hiddenStore.hiddenCount))",
-                              systemImage: hiddenStore.revealHidden ? "eye" : "eye.slash")
-                    }
-                }
-            } label: {
-                Image(systemName: viewMode.systemImage)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(LinearGradient(colors: [Retro.accent, Retro.accentDeep],
-                                                 startPoint: .top, endPoint: .bottom))
-                    )
-            }
-            .accessibilityLabel(settings.localized("Layout"))
-            .onChange(of: viewMode) { _, _ in SoundManager.shared.play(.nav) }
+            // Covers control. Extracted to keep the header type-checkable.
+            layoutMenu
             // AYS2: Covers control on the hub (seam) — this was only reachable
             // from the full Library screen before; user asked for it on the home.
             Menu {
