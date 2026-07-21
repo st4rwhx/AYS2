@@ -117,6 +117,13 @@ typedef void (^ARMSX2RetroAchievementsCompletion)(BOOL success, NSString * _Nonn
 + (nonnull NSDictionary<NSString *, NSString *> *)gameMetadataForISO:(nonnull NSString *)isoName;
 + (nonnull NSDictionary<NSString *, id> *)gameSettingsForISO:(nonnull NSString *)isoName NS_SWIFT_NAME(gameSettings(forISO:));
 + (nullable NSDictionary<NSString *, id> *)gameSettingsForCurrentGame;
+
+// AYS2: per-game settings profile export/import (seam). exportPerGameSettingsForISO
+// returns the path to the game's per-game .ini (nil if the game has no per-game
+// overrides yet). importPerGameSettingsFromFile copies an .ini onto the game's
+// per-game settings; the profile takes effect the next time the game boots.
++ (nullable NSString *)perGameSettingsFilePathForISO:(nonnull NSString *)isoName NS_SWIFT_NAME(perGameSettingsFilePath(forISO:));
++ (BOOL)importPerGameSettingsFromFile:(nonnull NSString *)sourcePath forISO:(nonnull NSString *)isoName NS_SWIFT_NAME(importPerGameSettings(fromFile:forISO:));
 + (void)setGameSettingsForISO:(nonnull NSString *)isoName
                        enabled:(BOOL)enabled
              upscaleMultiplier:(float)upscaleMultiplier

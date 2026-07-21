@@ -191,6 +191,11 @@ struct GameListView: View {
     @State private var cheatsManagerTarget: ISOEntry?
     @State private var pendingDeleteGame: ISOEntry?
     @State private var pendingDeleteDataGame: ISOEntry?
+    // AYS2: per-game settings profile export/import (seam).
+    @State private var profileShareItem: ShareSheetItem?
+    @State private var showProfileImporter = false
+    @State private var profileImportGame: ISOEntry?
+    @State private var profileMessage: String?
     @State private var gameActionTitle = ""
     @State private var gameActionMessage: String?
     @AppStorage("ARMSX2iOSGameLibraryLayout") private var libraryLayout = "grid"
@@ -549,6 +554,27 @@ struct GameListView: View {
                         pendingCoverGameName = nil
                     }
                 }
+            }
+            // AYS2: per-game settings profile export/import (seam).
+            .sheet(item: $profileShareItem) { item in
+                ActivityShareSheet(activityItems: [item.url])
+            }
+            .sheet(isPresented: $showProfileImporter) {
+                ImportDocumentPicker(
+                    allowedContentTypes: [UTType(filenameExtension: "ini") ?? .data, .data],
+                    allowsMultipleSelection: false
+                ) { result in
+                    showProfileImporter = false
+                    importSettingsProfile(result)
+                }
+            }
+            .alert(settings.localized("Settings Profile"), isPresented: Binding(
+                get: { profileMessage != nil },
+                set: { if !$0 { profileMessage = nil } }
+            )) {
+                Button(settings.localized("OK")) { profileMessage = nil }
+            } message: {
+                Text(profileMessage ?? "")
             }
             .photosPicker(
                 isPresented: $showCoverPhotoPicker,
@@ -1062,6 +1088,25 @@ struct GameListView: View {
             Label(settings.localized("Per-Game Settings"), systemImage: "slider.horizontal.3")
         }
 
+        // AYS2: export/import this game's per-game settings profile (seam).
+        Menu {
+            Button {
+                exportSettingsProfile(for: game)
+            } label: {
+                Label(settings.localized("Export Profile"), systemImage: "square.and.arrow.up")
+            }
+            Button {
+                presentMenuPanel("import_profile") {
+                    profileImportGame = game
+                    showProfileImporter = true
+                }
+            } label: {
+                Label(settings.localized("Import Profile"), systemImage: "square.and.arrow.down")
+            }
+        } label: {
+            Label(settings.localized("Settings Profile"), systemImage: "doc.badge.gearshape")
+        }
+
         if game.isELF {
             discPathMenu(for: game)
         }
@@ -1151,6 +1196,45 @@ struct GameListView: View {
 			Label(settings.localized("Game Data"), systemImage: "externaldrive")
 		}
 	}
+
+    // AYS2: per-game settings profile export/import (seam) — user request. Shares
+    // the game's per-game .ini as "<Game Name>.ini"; import writes it back for the
+    // same game (applies on next boot).
+    private func exportSettingsProfile(for game: ISOEntry) {
+        guard let path = ARMSX2Bridge.perGameSettingsFilePath(forISO: game.bootName) else {
+            profileMessage = settings.localized("This game has no per-game settings to export yet. Set some in Per-Game Settings first.")
+            return
+        }
+        let source = URL(fileURLWithPath: path)
+        let safeName = game.name.replacingOccurrences(of: "/", with: "-")
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName).ini")
+        do {
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: source, to: destination)
+            profileShareItem = ShareSheetItem(url: destination)
+        } catch {
+            profileMessage = "\(settings.localized("Could not export the profile:")) \(error.localizedDescription)"
+        }
+    }
+
+    private func importSettingsProfile(_ result: Result<[URL], Error>) {
+        guard let game = profileImportGame else { return }
+        profileImportGame = nil
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            let granted = url.startAccessingSecurityScopedResource()
+            defer { if granted { url.stopAccessingSecurityScopedResource() } }
+            let ok = ARMSX2Bridge.importPerGameSettings(fromFile: url.path, forISO: game.bootName)
+            profileMessage = ok
+                ? "\(settings.localized("Imported settings profile for")) \(game.name). \(settings.localized("It applies the next time this game boots."))"
+                : "\(settings.localized("Couldn't import the profile for")) \(game.name)."
+        case .failure(let error):
+            if !FileImportHandler.isUserCancelledPickerError(error) {
+                profileMessage = "\(settings.localized("Import failed:")) \(error.localizedDescription)"
+            }
+        }
+    }
 
 	@ViewBuilder
 	private func discPathMenu(for game: ISOEntry) -> some View {

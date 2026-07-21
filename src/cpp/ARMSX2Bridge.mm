@@ -2604,6 +2604,49 @@ static std::string ARMSX2PerGameSettingsPath(const std::string& serial, u32 crc)
     return result;
 }
 
+// AYS2: per-game settings profile export/import (seam) — user request, à la
+// AethersX2. Each game's per-game overrides live in a single .ini keyed by
+// serial/crc; exporting hands back that file, importing copies an .ini onto it.
+// The profile applies the next time the game boots (same as editing per-game
+// settings), so no live reload is attempted here.
++ (nullable NSString *)perGameSettingsFilePathForISO:(nonnull NSString *)isoName {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForISO(isoName, &serial, &crc))
+        return nil;
+
+    const std::string path = ARMSX2PerGameSettingsPath(serial, crc);
+    if (!FileSystem::FileExists(path.c_str()))
+        return nil;
+
+    return [NSString stringWithUTF8String:path.c_str()];
+}
+
++ (BOOL)importPerGameSettingsFromFile:(nonnull NSString *)sourcePath forISO:(nonnull NSString *)isoName {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForISO(isoName, &serial, &crc)) {
+        NSLog(@"[ARMSX2Bridge] Per-game settings import rejected: cannot resolve %@", isoName);
+        return NO;
+    }
+
+    NSError* error = nil;
+    NSString* contents = [NSString stringWithContentsOfFile:sourcePath encoding:NSUTF8StringEncoding error:&error];
+    if (!contents) {
+        NSLog(@"[ARMSX2Bridge] Per-game settings import failed to read %@: %@", sourcePath, error);
+        return NO;
+    }
+
+    const std::string destination = ARMSX2PerGameSettingsPath(serial, crc);
+    if (![contents writeToFile:[NSString stringWithUTF8String:destination.c_str()]
+                    atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
+        NSLog(@"[ARMSX2Bridge] Per-game settings import failed to write %s: %@", destination.c_str(), error);
+        return NO;
+    }
+
+    return YES;
+}
+
 + (void)setGameSettingsForISO:(nonnull NSString *)isoName
                        enabled:(BOOL)enabled
              upscaleMultiplier:(float)upscaleMultiplier
