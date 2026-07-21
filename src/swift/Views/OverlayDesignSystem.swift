@@ -297,6 +297,7 @@ struct OverlayActionRow: View {
     private let systemImage: String?
     private let trailingValue: String?
     private let isDestructive: Bool
+    private let isFocused: Bool
     private let action: () -> Void
 
     init(
@@ -304,12 +305,14 @@ struct OverlayActionRow: View {
         systemImage: String? = nil,
         trailingValue: String? = nil,
         isDestructive: Bool = false,
+        isFocused: Bool = false,
         action: @escaping () -> Void
     ) {
         self.label = label
         self.systemImage = systemImage
         self.trailingValue = trailingValue
         self.isDestructive = isDestructive
+        self.isFocused = isFocused
         self.action = action
     }
 
@@ -336,9 +339,36 @@ struct OverlayActionRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(minHeight: compact ? 38 : 44)
+            .overlayRowFocus(isFocused)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// AYS2: controller-focus highlight for overlay rows (seam) — a filled elevated
+/// background plus an accent border, shown when a row is the current controller
+/// selection in the pause menu. A no-op when not focused, so touch is unaffected.
+private struct OverlayRowFocus: ViewModifier {
+    let isFocused: Bool
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(OverlayTheme.cardElevated)
+                    .opacity(isFocused ? 1 : 0)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(OverlayTheme.accent, lineWidth: isFocused ? 2 : 0)
+            )
+            .animation(.easeOut(duration: 0.12), value: isFocused)
+    }
+}
+
+extension View {
+    func overlayRowFocus(_ isFocused: Bool) -> some View {
+        modifier(OverlayRowFocus(isFocused: isFocused))
     }
 }
 
@@ -348,11 +378,13 @@ struct OverlayToggleRow: View {
     @Environment(\.overlayCompact) private var compact
     private let label: String
     private let systemImage: String
+    private let isFocused: Bool
     @Binding private var isOn: Bool
 
-    init(label: String, systemImage: String, isOn: Binding<Bool>) {
+    init(label: String, systemImage: String, isFocused: Bool = false, isOn: Binding<Bool>) {
         self.label = label
         self.systemImage = systemImage
+        self.isFocused = isFocused
         self._isOn = isOn
     }
 
@@ -370,5 +402,6 @@ struct OverlayToggleRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(minHeight: compact ? 38 : 44)
+        .overlayRowFocus(isFocused)
     }
 }

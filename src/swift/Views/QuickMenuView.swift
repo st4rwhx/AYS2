@@ -43,11 +43,85 @@ struct QuickMenuView: View {
     /// larger, liked sizing is reserved for iPhone portrait.
     private var compact: Bool { variant != .phonePortrait }
 
+    // MARK: - Controller focus (seam)
+    // AYS2: physical-controller navigation of the pause card. A flat ordered list
+    // of the focusable action/toggle rows (the two injected SwiftUI Menus — disc
+    // and controller skin — can't be opened by a controller, so they're skipped).
+    // D-pad moves focus, A activates the focused row, B resumes.
+    @State private var focusedIndex = 0
+    @State private var input = MenuControllerInput.shared
+
+    private struct PauseFocusItem {
+        let id: String
+        let activate: () -> Void
+    }
+
+    private var focusItems: [PauseFocusItem] {
+        var items: [PauseFocusItem] = [
+            .init(id: "osd", activate: onCycleOSD),
+            .init(id: "virtualPad", activate: { padVisible.toggle() }),
+            .init(id: "fullScreen", activate: { fullScreen.toggle() }),
+            .init(id: "hideMenu", activate: {
+                let newValue = !(menuButtonHidden || settings.hideMenuButton)
+                menuButtonHidden = newValue
+                settings.hideMenuButton = newValue
+            }),
+        ]
+        if vmMenuAvailable { items.append(.init(id: "speed", activate: { onOpen(.speed) })) }
+        if gameMenuAvailable { items.append(.init(id: "perGame", activate: { onOpen(.perGame) })) }
+        items.append(.init(id: "padLayout", activate: { onOpen(.padLayout) }))
+        if gameMenuAvailable || vmMenuAvailable {
+            items.append(.init(id: "saveStates", activate: { onOpen(.saveStates) }))
+        }
+        if gameMenuAvailable {
+            items.append(.init(id: "retroAchievements", activate: { onOpen(.retroAchievements) }))
+            items.append(.init(id: "cheats", activate: { onOpen(.cheats) }))
+        }
+        if gameMenuAvailable || vmMenuAvailable {
+            items.append(.init(id: "guide", activate: { onOpen(.guide) }))
+        }
+        if vmMenuAvailable { items.append(.init(id: "resetROM", activate: { onOpen(.resetROM) })) }
+        if gameMenuAvailable { items.append(.init(id: "clearCache", activate: onClearCache)) }
+        items.append(.init(id: "backToMenu", activate: onBackToMenu))
+        return items
+    }
+
+    /// The id of the row the controller is on — only when a controller is
+    /// connected, so touch users never see a focus highlight.
+    private var currentFocusID: String? {
+        guard input.controllerConnected else { return nil }
+        let items = focusItems
+        guard focusedIndex >= 0, focusedIndex < items.count else { return nil }
+        return items[focusedIndex].id
+    }
+
+    private func handlePauseCommand(_ command: MenuCommand) {
+        let count = focusItems.count
+        guard count > 0 else { return }
+        switch command {
+        case .up, .left:
+            focusedIndex = (focusedIndex - 1 + count) % count
+        case .down, .right:
+            focusedIndex = (focusedIndex + 1) % count
+        case .select:
+            let items = focusItems
+            if focusedIndex >= 0, focusedIndex < items.count { items[focusedIndex].activate() }
+        case .back, .menu:
+            onResume()
+        case .altAction, .pageLeft, .pageRight:
+            break
+        }
+    }
+
     var body: some View {
         // The host (GameOverlayContainer) frames this view to the bounded card size; read that
         // size here to decide whether the geometry comfortably supports two columns.
         GeometryReader { geo in
             overlayBody(width: geo.size.width, height: geo.size.height)
+        }
+        // AYS2: controller navigation of the pause card (seam).
+        .menuControllerScope("pauseMenu") { command in
+            handlePauseCommand(command)
         }
     }
 
@@ -161,11 +235,12 @@ struct QuickMenuView: View {
             label: settings.localized("OSD"),
             systemImage: "speedometer",
             trailingValue: settings.localized(settings.osdPreset.label),
+            isFocused: currentFocusID == "osd",
             action: onCycleOSD
         )
         .accessibilityHint(settings.localized("Cycles the on-screen display"))
 
-        OverlayToggleRow(label: settings.localized("Virtual Pad"), systemImage: "gamecontroller", isOn: $padVisible)
+        OverlayToggleRow(label: settings.localized("Virtual Pad"), systemImage: "gamecontroller", isFocused: currentFocusID == "virtualPad", isOn: $padVisible)
             .accessibilityHint(settings.localized("Show or hide the on-screen controls"))
 
         if virtualPadHiddenByController {
@@ -177,12 +252,13 @@ struct QuickMenuView: View {
                 .padding(.bottom, 4)
         }
 
-        OverlayToggleRow(label: settings.localized("Full Screen"), systemImage: "arrow.up.left.and.arrow.down.right", isOn: $fullScreen)
+        OverlayToggleRow(label: settings.localized("Full Screen"), systemImage: "arrow.up.left.and.arrow.down.right", isFocused: currentFocusID == "fullScreen", isOn: $fullScreen)
             .accessibilityHint(settings.localized("Hide system bars and fill the screen"))
 
         OverlayToggleRow(
             label: settings.localized("Hide Menu Button"),
             systemImage: "eye.slash",
+            isFocused: currentFocusID == "hideMenu",
             isOn: Binding(
                 get: { menuButtonHidden || settings.hideMenuButton },
                 set: { newValue in
@@ -194,7 +270,7 @@ struct QuickMenuView: View {
         .accessibilityHint(settings.localized("Tap the game area or press any controller button to show it again"))
 
         if vmMenuAvailable {
-            OverlayActionRow(label: settings.localized("Speed / Fast Forward"), systemImage: "forward.fill") {
+            OverlayActionRow(label: settings.localized("Speed / Fast Forward"), systemImage: "forward.fill", isFocused: currentFocusID == "speed") {
                 onOpen(.speed)
             }
         }
@@ -202,7 +278,7 @@ struct QuickMenuView: View {
 
     @ViewBuilder private var thisGameRows: some View {
         if gameMenuAvailable {
-            OverlayActionRow(label: settings.localized("Per-Game Settings"), systemImage: "slider.horizontal.3") {
+            OverlayActionRow(label: settings.localized("Per-Game Settings"), systemImage: "slider.horizontal.3", isFocused: currentFocusID == "perGame") {
                 onOpen(.perGame)
             }
             .accessibilityHint(settings.localized("Graphics, audio, CPU, pad, and fixes for this title"))
@@ -211,7 +287,8 @@ struct QuickMenuView: View {
         OverlayActionRow(
             label: settings.localized("Edit Virtual Pad Layout"),
             systemImage: "square.resize",
-            trailingValue: activePadLayoutName
+            trailingValue: activePadLayoutName,
+            isFocused: currentFocusID == "padLayout"
         ) {
             onOpen(.padLayout)
         }
@@ -219,7 +296,7 @@ struct QuickMenuView: View {
 
     @ViewBuilder private var gameToolsRows: some View {
         if gameMenuAvailable || vmMenuAvailable {
-            OverlayActionRow(label: settings.localized("Save / Load States"), systemImage: "square.stack.3d.up.fill") {
+            OverlayActionRow(label: settings.localized("Save / Load States"), systemImage: "square.stack.3d.up.fill", isFocused: currentFocusID == "saveStates") {
                 onOpen(.saveStates)
             }
         }
@@ -227,15 +304,15 @@ struct QuickMenuView: View {
             injectedMenuRow(discMenu)
         }
         if gameMenuAvailable {
-            OverlayActionRow(label: settings.localized("RetroAchievements"), systemImage: "trophy.fill") {
+            OverlayActionRow(label: settings.localized("RetroAchievements"), systemImage: "trophy.fill", isFocused: currentFocusID == "retroAchievements") {
                 onOpen(.retroAchievements)
             }
-            OverlayActionRow(label: settings.localized("Cheats & Patches"), systemImage: "rectangle.stack.badge.plus") {
+            OverlayActionRow(label: settings.localized("Cheats & Patches"), systemImage: "rectangle.stack.badge.plus", isFocused: currentFocusID == "cheats") {
                 onOpen(.cheats)
             }
         }
         if gameMenuAvailable || vmMenuAvailable {
-            OverlayActionRow(label: settings.localized("Walkthrough / Guide"), systemImage: "book.closed") {
+            OverlayActionRow(label: settings.localized("Walkthrough / Guide"), systemImage: "book.closed", isFocused: currentFocusID == "guide") {
                 onOpen(.guide)
             }
             .accessibilityHint(settings.localized("Open a walkthrough for this game without leaving AYS2"))
@@ -244,14 +321,14 @@ struct QuickMenuView: View {
 
     @ViewBuilder private var resetAndExitRows: some View {
         if vmMenuAvailable {
-            OverlayActionRow(label: settings.localized("Reset ROM"), systemImage: "arrow.counterclockwise.circle", isDestructive: true) {
+            OverlayActionRow(label: settings.localized("Reset ROM"), systemImage: "arrow.counterclockwise.circle", isDestructive: true, isFocused: currentFocusID == "resetROM") {
                 onOpen(.resetROM)
             }
         }
         if gameMenuAvailable {
-            OverlayActionRow(label: settings.localized("Clear Current Game Cache"), systemImage: "trash.slash", action: onClearCache)
+            OverlayActionRow(label: settings.localized("Clear Current Game Cache"), systemImage: "trash.slash", isFocused: currentFocusID == "clearCache", action: onClearCache)
         }
-        OverlayActionRow(label: settings.localized("Back to Menu"), systemImage: "list.bullet", action: onBackToMenu)
+        OverlayActionRow(label: settings.localized("Back to Menu"), systemImage: "list.bullet", isFocused: currentFocusID == "backToMenu", action: onBackToMenu)
             .accessibilityHint(settings.localized("Quits this game and returns to the library"))
     }
 

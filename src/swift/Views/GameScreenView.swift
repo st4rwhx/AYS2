@@ -382,6 +382,10 @@ struct GameScreenView: View {
             stopMenuRestorePolling()
             leaveGameplaySystemChromeMode()
             GyroAimStore.shared.setGameplayActive(false)
+            // AYS2: leaving gameplay hands controller navigation back to the menu
+            // authority (seam) — resync so a lingering pause-card activation from
+            // the exit transition can't leave menu polling off on the Dashboard.
+            MenuControllerInput.shared.setMenuActive(appState.currentScreen == .menu)
         }
         // Single chokepoint for runtime pause: VM pause derives only from `overlayRoute`
         // (any non-hidden route keeps the VM paused), so one observer covers every child
@@ -392,6 +396,10 @@ struct GameScreenView: View {
             // AYS2: gyro aim follows the same pause signal as the VM — active
             // only when gameplay is visible (route hidden), suspended otherwise.
             GyroAimStore.shared.setGameplayActive(overlayRoute == .hidden)
+            // AYS2: controller menu navigation is active only while the pause card
+            // itself is shown (seam) — so a controller can drive the pause menu but
+            // never steals input during gameplay or a touch-driven child screen.
+            MenuControllerInput.shared.setMenuActive(overlayRoute == .paused)
             if overlayRoute != .hidden {
                 stopMenuRestorePolling()
             } else {
