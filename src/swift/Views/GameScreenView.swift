@@ -94,6 +94,8 @@ struct GameScreenView: View {
     @State private var menuButtonHidden = false
     // AYS2: reflects the on-screen frame-limiter toggle (see toggleFrameLimiter).
     @State private var frameLimiterOff = false
+    // AYS2: in-app gameplay recorder (ReplayKit) — see ScreenRecorderStore.
+    @State private var recorder = ScreenRecorderStore.shared
     @State private var vmMenuAvailable = false
     @State private var gameMenuAvailable = false
     // MARK: Overlay Route
@@ -284,6 +286,14 @@ struct GameScreenView: View {
                 )
             }
         }
+        // AYS2: gameplay recording (seam) — share the finished clip, and surface
+        // the recorder's status messages through the normal status toast.
+        .sheet(item: $recorder.shareItem) { item in
+            ActivityShareSheet(activityItems: [item.url])
+        }
+        .onChange(of: recorder.lastStatusMessage) { _, message in
+            if let message { presentStatusMessage(message) }
+        }
         .sheet(isPresented: childPresentedBinding(.speed)) {
             SpeedControlPanel(settings: settings)
                 .presentationDetents([.medium])
@@ -464,6 +474,7 @@ struct GameScreenView: View {
     @ViewBuilder
     private func quickStateButtonsOverlay(isLandscape: Bool) -> some View {
         let anyButtonEnabled = settings.showQuickStateButtons || settings.showFrameLimiterButton
+            || settings.showRecordButton
         if anyButtonEnabled && !menuButtonHidden && overlayRoute == .hidden {
             HStack(spacing: 10) {
                 if settings.showQuickStateButtons {
@@ -489,6 +500,14 @@ struct GameScreenView: View {
                             .foregroundStyle(frameLimiterOff ? .yellow : .white)
                     }
                 }
+                if settings.showRecordButton && recorder.isAvailable {
+                    // AYS2: user request — record gameplay from inside the app.
+                    quickStateButton(label: "Record Gameplay", action: { toggleRecording() }) {
+                        Image(systemName: recorder.isRecording ? "stop.circle.fill" : "record.circle")
+                            .font(.system(size: 17, weight: .heavy))
+                            .foregroundStyle(recorder.isRecording ? .red : .white)
+                    }
+                }
             }
             .padding(.top, isLandscape ? 8 : 4)
             .padding(.leading, isLandscape ? 8 : 4)
@@ -506,6 +525,10 @@ struct GameScreenView: View {
         presentStatusMessage(frameLimiterOff
             ? settings.localized("Frame limiter off (unlimited speed)")
             : settings.localized("Frame limiter on"))
+    }
+
+    private func toggleRecording() {
+        recorder.toggle()
     }
 
     private func quickStateButton<Icon: View>(
