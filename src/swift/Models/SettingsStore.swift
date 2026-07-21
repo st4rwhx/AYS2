@@ -821,6 +821,11 @@ final class SettingsStore: @unchecked Sendable {
     var showBootAnimation: Bool {
         didSet { ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "ShowBootAnimation", value: showBootAnimation) }
     }
+    // AYS2: hotkey — open the pause menu with the controller's Menu/Options
+    // button during gameplay (seam). Most-requested controller hotkey.
+    var openMenuWithControllerButton: Bool {
+        didSet { ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "OpenMenuWithControllerButton", value: openMenuWithControllerButton) }
+    }
     var dpadDiagonalsEnabled: Bool {
         didSet { ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "DpadDiagonalsEnabled", value: dpadDiagonalsEnabled) }
     }
@@ -1316,6 +1321,7 @@ final class SettingsStore: @unchecked Sendable {
         hapticFeedback = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HapticFeedback", defaultValue: true)
         keepAwakeDuringGameplay = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "KeepAwakeDuringGameplay", defaultValue: true)
         showBootAnimation = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowBootAnimation", defaultValue: true)
+        openMenuWithControllerButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "OpenMenuWithControllerButton", defaultValue: true)
         dpadDiagonalsEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "DpadDiagonalsEnabled", defaultValue: true)
         faceComboZonesEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "FaceComboZonesEnabled", defaultValue: true)
         virtualPadSkin = VirtualPadSkin(rawValue: Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "VirtualPadSkin", defaultValue: 0))) ?? .armsx2Refresh
@@ -1519,6 +1525,7 @@ final class SettingsStore: @unchecked Sendable {
         hapticFeedback = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HapticFeedback", defaultValue: true)
         keepAwakeDuringGameplay = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "KeepAwakeDuringGameplay", defaultValue: true)
         showBootAnimation = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowBootAnimation", defaultValue: true)
+        openMenuWithControllerButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "OpenMenuWithControllerButton", defaultValue: true)
         dpadDiagonalsEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "DpadDiagonalsEnabled", defaultValue: true)
         faceComboZonesEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "FaceComboZonesEnabled", defaultValue: true)
         virtualPadSkin = VirtualPadSkin(rawValue: Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "VirtualPadSkin", defaultValue: 0))) ?? .armsx2Refresh

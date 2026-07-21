@@ -126,6 +126,12 @@ struct GameScreenView: View {
     // from SDL/core. Started when the menu is hidden during gameplay, stopped on restore.
     @State private var menuRestorePollTimer: Timer?
     @State private var lastControllerInputActive = false
+    // AYS2: gameplay hotkey poll (seam) — opens the pause menu when the
+    // controller's Menu/Options button is pressed. Snapshot reads only, so it
+    // never steals input from SDL/core; the game may also see the press but the
+    // VM pauses instantly, so it's inert.
+    @State private var hotkeyPollTimer: Timer?
+    @State private var lastHotkeyMenuPressed = false
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -373,6 +379,7 @@ struct GameScreenView: View {
             refreshRuntimeMenuState()
             consumePendingRetroAchievementsToast()
             startMenuRestorePollingIfNeeded()
+            startHotkeyPollingIfNeeded()
             // AYS2: gyro aim (seam) — only run motion while gameplay is on screen.
             GyroAimStore.shared.setGameplayActive(overlayRoute == .hidden)
             // AYS2: keep the screen awake in-game so a game can't freeze on
@@ -386,6 +393,7 @@ struct GameScreenView: View {
             statusMessageDismissTask?.cancel()
             retroAchievementsToastDismissTask?.cancel()
             stopMenuRestorePolling()
+            stopHotkeyPolling()
             leaveGameplaySystemChromeMode()
             GyroAimStore.shared.setGameplayActive(false)
             // AYS2: release the wake lock when leaving gameplay (seam).
@@ -410,8 +418,10 @@ struct GameScreenView: View {
             MenuControllerInput.shared.setMenuActive(overlayRoute == .paused)
             if overlayRoute != .hidden {
                 stopMenuRestorePolling()
+                stopHotkeyPolling()
             } else {
                 startMenuRestorePollingIfNeeded()
+                startHotkeyPollingIfNeeded()
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -791,6 +801,50 @@ struct GameScreenView: View {
         lastControllerInputActive = false
     }
 
+    /// True while the controller's Menu (≡) or Options button is pressed. Snapshot
+    /// read only — does not install handlers, so it never conflicts with SDL/core.
+    private func controllerMenuButtonPressed() -> Bool {
+        for controller in GCController.controllers() {
+            guard let gamepad = controller.extendedGamepad else { continue }
+            if gamepad.buttonMenu.isPressed { return true }
+            if #available(iOS 13, *), let options = gamepad.buttonOptions, options.isPressed { return true }
+        }
+        return false
+    }
+
+    /// Polls the controller during gameplay so the Menu/Options button opens the
+    /// pause menu (the most-requested controller hotkey). Runs only while gameplay
+    /// is active, a controller is connected, and the hotkey is enabled.
+    private func startHotkeyPollingIfNeeded() {
+        guard settings.openMenuWithControllerButton,
+              externalControllerConnected,
+              overlayRoute == .hidden,
+              hotkeyPollTimer == nil else { return }
+        lastHotkeyMenuPressed = controllerMenuButtonPressed()
+        hotkeyPollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+            Task { @MainActor in
+                guard settings.openMenuWithControllerButton,
+                      externalControllerConnected,
+                      overlayRoute == .hidden else {
+                    stopHotkeyPolling()
+                    return
+                }
+                let pressed = controllerMenuButtonPressed()
+                if pressed && !lastHotkeyMenuPressed {
+                    if settings.hapticFeedback { HapticManager.light.impactOccurred() }
+                    overlayRoute = .paused
+                }
+                lastHotkeyMenuPressed = pressed
+            }
+        }
+    }
+
+    private func stopHotkeyPolling() {
+        hotkeyPollTimer?.invalidate()
+        hotkeyPollTimer = nil
+        lastHotkeyMenuPressed = false
+    }
+
     /// Reads a non-destructive snapshot of every external controller's input state. Returns
     /// true if any face button, shoulder, trigger, d-pad direction, thumbstick, or the
     /// menu/options/L3/R3 buttons are currently active. Setting valueChangedHandler would
@@ -901,6 +955,12 @@ struct GameScreenView: View {
         let connected = !GCController.controllers().isEmpty
         if externalControllerConnected != connected {
             externalControllerConnected = connected
+        }
+        // AYS2: a controller (dis)connecting mid-game starts/stops the hotkey poll.
+        if connected {
+            startHotkeyPollingIfNeeded()
+        } else {
+            stopHotkeyPolling()
         }
     }
 

@@ -100,6 +100,13 @@ struct GamepadSettingsView: View {
                 Text(settings.localized("Deadzone, sensitivity, inversion and vibration for the analog sticks and triggers."))
             }
 
+            // AYS2: controller hotkeys (seam).
+            Section(settings.localized("Hotkeys")) {
+                Toggle(settings.localized("Open Pause Menu with Menu Button"), isOn: $settings.openMenuWithControllerButton)
+            } footer: {
+                Text(settings.localized("Press your controller's Menu (\u{2261}) or Options button during a game to open the pause menu — then navigate it with the controller. No need to reach for the on-screen button."))
+            }
+
             Section {
                 ForEach(ps2Buttons) { btn in
                     mappingRow(btn)
