@@ -196,6 +196,9 @@ struct GameListView: View {
     @State private var showProfileImporter = false
     @State private var profileImportGame: ISOEntry?
     @State private var profileMessage: String?
+    // AYS2: custom display name editing (seam).
+    @State private var renameTarget: ISOEntry?
+    @State private var renameText = ""
     @State private var gameActionTitle = ""
     @State private var gameActionMessage: String?
     @AppStorage("ARMSX2iOSGameLibraryLayout") private var libraryLayout = "grid"
@@ -419,6 +422,26 @@ struct GameListView: View {
                 Button(settings.localized("OK")) {}
             } message: {
                 Text(coverStore.lastCoverMessage ?? "")
+            }
+            // AYS2: rename a game's display name (seam).
+            .alert(
+                settings.localized("Rename Game"),
+                isPresented: Binding(
+                    get: { renameTarget != nil },
+                    set: { if !$0 { renameTarget = nil } }
+                )
+            ) {
+                TextField(settings.localized("Display name"), text: $renameText)
+                Button(settings.localized("Cancel"), role: .cancel) { renameTarget = nil }
+                Button(settings.localized("Save")) {
+                    if let game = renameTarget {
+                        GameNameStore.shared.setName(renameText, forBoot: game.bootName)
+                        loadGames()
+                    }
+                    renameTarget = nil
+                }
+            } message: {
+                Text(settings.localized("Set a custom name shown in the library. Leave empty to restore the original."))
             }
             .alert(settings.localized("Cover Source"), isPresented: $showCoverTemplateEditor) {
                 TextField("https://.../${serial}.jpg", text: $coverTemplateDraft)
@@ -807,7 +830,7 @@ struct GameListView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text(coverStore.displayName(forGameName: game.name))
+                        Text(GameNameStore.shared.customName(forBoot: game.bootName) ?? coverStore.displayName(forGameName: game.name))
                             .font(.body)
                             .fontWeight(.medium)
                             .foregroundStyle(.primary)
@@ -878,7 +901,7 @@ struct GameListView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text(coverStore.displayName(forGameName: game.name))
+                        Text(GameNameStore.shared.customName(forBoot: game.bootName) ?? coverStore.displayName(forGameName: game.name))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(2)
@@ -950,7 +973,7 @@ struct GameListView: View {
                 }
 
                 VStack(spacing: 4) {
-                    Text(coverStore.displayName(forGameName: game.name))
+                    Text(GameNameStore.shared.customName(forBoot: game.bootName) ?? coverStore.displayName(forGameName: game.name))
                         .font((metrics.isCompact ? Font.subheadline : Font.headline).weight(.semibold))
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
@@ -1086,6 +1109,14 @@ struct GameListView: View {
             }
         } label: {
             Label(settings.localized("Per-Game Settings"), systemImage: "slider.horizontal.3")
+        }
+
+        // AYS2: custom display name (seam) — mainly for modded ISOs.
+        Button {
+            renameText = GameNameStore.shared.customName(forBoot: game.bootName) ?? ""
+            presentMenuPanel("rename") { renameTarget = game }
+        } label: {
+            Label(settings.localized("Rename"), systemImage: "pencil")
         }
 
         // AYS2: export/import this game's per-game settings profile (seam).
@@ -1667,7 +1698,7 @@ struct GameInfoPanel: View {
                         )
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(coverStore.displayName(forGameName: game.name))
+                            Text(GameNameStore.shared.customName(forBoot: game.bootName) ?? coverStore.displayName(forGameName: game.name))
                                 .font(.headline)
                             Text(game.name)
                                 .font(.caption)

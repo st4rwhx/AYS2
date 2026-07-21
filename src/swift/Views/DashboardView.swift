@@ -234,6 +234,9 @@ struct GamesCarouselView: View {
     @State private var cheatsManagerTarget: DashGame?
     @State private var pendingDeleteDataGame: DashGame?
     @State private var pendingDeleteGame: DashGame?
+    // AYS2: custom display name editing (seam).
+    @State private var renameTarget: DashGame?
+    @State private var renameText = ""
 
     private var indexedText: String {
         "\(settings.localized("Indexed")) \(games.count) \(settings.localized(games.count == 1 ? "game" : "games"))"
@@ -245,7 +248,7 @@ struct GamesCarouselView: View {
         showImporter || showCoverImporter || showLibrary || showRestartAlert
             || showActionAlert || gameInfoTarget != nil || gameSettingsTarget != nil
             || cheatsManagerTarget != nil || pendingDeleteDataGame != nil
-            || pendingDeleteGame != nil
+            || pendingDeleteGame != nil || renameTarget != nil
     }
 
     /// The game currently centered in the carousel (the controller's selection).
@@ -397,6 +400,25 @@ struct GamesCarouselView: View {
             Button(settings.localized("OK")) {}
         } message: {
             Text(actionMessage)
+        }
+        // AYS2: rename a game's display name (seam).
+        .alert(
+            settings.localized("Rename Game"),
+            isPresented: Binding(
+                get: { renameTarget != nil },
+                set: { if !$0 { renameTarget = nil } }
+            )
+        ) {
+            TextField(settings.localized("Display name"), text: $renameText)
+            Button(settings.localized("Cancel"), role: .cancel) { renameTarget = nil }
+            Button(settings.localized("Save")) {
+                if let game = renameTarget {
+                    GameNameStore.shared.setName(renameText, forBoot: game.bootName)
+                }
+                renameTarget = nil
+            }
+        } message: {
+            Text(settings.localized("Set a custom name shown in the library. Leave empty to restore the original."))
         }
         .alert(settings.localized("Restart VM?"), isPresented: $showRestartAlert) {
             Button(settings.localized("Cancel"), role: .cancel) {}
@@ -654,7 +676,7 @@ struct GamesCarouselView: View {
                                 .padding(7)
                         }
                     }
-                Text(displayName(game.name))
+                Text(displayName(for: game))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Retro.ink)
                     .lineLimit(2)
@@ -679,6 +701,12 @@ struct GamesCarouselView: View {
             return String(name.dropLast(ext.count))
         }
         return name
+    }
+
+    /// AYS2: a game's shown name — the user's custom name if set, else the
+    /// extension-stripped original (seam). Never affects identity/boot.
+    private func displayName(for game: DashGame) -> String {
+        GameNameStore.shared.customName(forBoot: game.bootName) ?? displayName(game.name)
     }
 
     private var emptyState: some View {
@@ -818,6 +846,15 @@ struct GamesCarouselView: View {
             presentMenuPanel { gameSettingsTarget = game.asISOEntry }
         } label: {
             Label(settings.localized("Per-Game Settings"), systemImage: "slider.horizontal.3")
+        }
+
+        // AYS2: custom display name (seam) — mainly for modded ISOs with a
+        // glitched embedded title.
+        Button {
+            renameText = GameNameStore.shared.customName(forBoot: game.bootName) ?? ""
+            presentMenuPanel { renameTarget = game }
+        } label: {
+            Label(settings.localized("Rename"), systemImage: "pencil")
         }
 
         Button {
@@ -961,7 +998,7 @@ struct CleanCover: View {
                     .scaledToFit()
             } else {
                 LinearGradient(colors: [Retro.panel, Retro.panel2], startPoint: .top, endPoint: .bottom)
-                Text(game.name)
+                Text(GameNameStore.shared.displayName(forBoot: game.bootName, fallback: game.name))
                     .font(.system(size: width * 0.11, weight: .semibold))
                     .foregroundStyle(Retro.mut)
                     .multilineTextAlignment(.center)
