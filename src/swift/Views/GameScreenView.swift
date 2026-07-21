@@ -286,6 +286,14 @@ struct GameScreenView: View {
                 )
             }
         }
+        // AYS2: gameplay recording (seam) — share the finished clip, and surface
+        // the recorder's status messages through the normal status toast.
+        .sheet(item: $recorder.shareItem) { item in
+            ActivityShareSheet(activityItems: [item.url])
+        }
+        .onChange(of: recorder.lastStatusMessage) { _, message in
+            if let message { presentStatusMessage(message) }
+        }
         .sheet(isPresented: childPresentedBinding(.speed)) {
             SpeedControlPanel(settings: settings)
                 .presentationDetents([.medium])
@@ -520,9 +528,7 @@ struct GameScreenView: View {
     }
 
     private func toggleRecording() {
-        recorder.toggle { message in
-            presentStatusMessage(message)
-        }
+        recorder.toggle()
     }
 
     private func quickStateButton<Icon: View>(

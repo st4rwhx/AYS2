@@ -3,21 +3,21 @@
 //
 // AYS2: user request — record gameplay from inside the app (a button), rather
 // than reaching into iOS Control Center. ReplayKit's RPScreenRecorder captures
-// the whole app (video + app audio) without touching the Metal render path, and
-// hands back a preview controller to save to Photos or share. Microphone is off
-// (so no NSMicrophoneUsageDescription is required); app audio is still captured.
+// the whole app (video + app audio) without touching the Metal render path.
+// Microphone is off (so no NSMicrophoneUsageDescription is required); app audio
+// is still captured.
 //
 // Note: this uses the same real-time H.264 encoder as iOS screen recording, so
 // the performance cost during recording is the same — it's an in-app trigger,
 // not a cheaper capture path.
 //
-// Concurrency: ReplayKit's completion handlers run on an arbitrary thread with
-// non-Sendable values (the preview controller, errors). Under strict
-// concurrency, hopping those into a `Task { @MainActor in }` trips
-// "sending non-Sendable" errors, and a bare DispatchQueue.main.async closure
-// isn't recognised as main-actor-isolated for the UIKit calls. The standard fix
-// is DispatchQueue.main.async (guaranteed main thread) + MainActor.assumeIsolated
-// (a synchronous same-thread assertion — no isolation boundary is crossed).
+// Concurrency: rather than the RPPreviewViewController flow (which forces manual
+// UIViewController presentation and drags non-Sendable values across actor
+// boundaries — a losing fight with strict concurrency), we stop straight to a
+// file with stopRecording(withOutput:). The completion delivers only an Error,
+// which we reduce to a Sendable String before hopping to the main actor. The
+// store is @MainActor and publishes a shareItem the view turns into a SwiftUI
+// share sheet — so only Sendable values (URL, String) ever cross a boundary.
 
 import Foundation
 import SwiftUI
@@ -30,10 +30,10 @@ final class ScreenRecorderStore: @unchecked Sendable {
     static let shared = ScreenRecorderStore()
 
     private(set) var isRecording = false
-
-#if canImport(ReplayKit)
-    @ObservationIgnored private let previewDelegate = RecorderPreviewDelegate()
-#endif
+    /// Set when a recording finishes; the view presents a share sheet for it.
+    var shareItem: ShareSheetItem?
+    /// Set on start/stop/errors; the view surfaces it as a status toast.
+    var lastStatusMessage: String?
 
     private init() {}
 
@@ -45,89 +45,52 @@ final class ScreenRecorderStore: @unchecked Sendable {
 #endif
     }
 
-    /// Toggles recording. `status` reports user-facing messages (start/stop/errors).
-    func toggle(status: @escaping (String) -> Void) {
-        if isRecording {
-            stop(status: status)
-        } else {
-            start(status: status)
-        }
+    func toggle() {
+        if isRecording { stop() } else { start() }
     }
 
-    private func start(status: @escaping (String) -> Void) {
+    private func start() {
 #if canImport(ReplayKit)
         let recorder = RPScreenRecorder.shared()
         guard recorder.isAvailable else {
-            status("Screen recording isn't available right now.")
+            lastStatusMessage = "Screen recording isn't available right now."
             return
         }
         recorder.isMicrophoneEnabled = false
         recorder.startRecording { [weak self] error in
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    if let error {
-                        status("Couldn't start recording: \(error.localizedDescription)")
-                        return
-                    }
-                    self?.isRecording = true
-                    status("Recording started")
+            let message = error.map { "Couldn't start recording: \($0.localizedDescription)" }
+            Task { @MainActor in
+                guard let self else { return }
+                if let message {
+                    self.lastStatusMessage = message
+                    return
                 }
+                self.isRecording = true
+                self.lastStatusMessage = "Recording started"
             }
         }
 #else
-        status("Screen recording isn't available on this platform.")
+        lastStatusMessage = "Screen recording isn't available on this platform."
 #endif
     }
 
-    private func stop(status: @escaping (String) -> Void) {
+    private func stop() {
 #if canImport(ReplayKit)
-        RPScreenRecorder.shared().stopRecording { [weak self] previewController, error in
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    self?.isRecording = false
-                    if let error {
-                        status("Recording error: \(error.localizedDescription)")
-                        return
-                    }
-                    guard let previewController else {
-                        status("Recording stopped.")
-                        return
-                    }
-                    previewController.previewControllerDelegate = self?.previewDelegate
-                    Self.present(previewController)
-                    status("Recording stopped — save or share it")
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AYS2-\(UUID().uuidString).mp4")
+        RPScreenRecorder.shared().stopRecording(withOutput: url) { [weak self] error in
+            let message = error?.localizedDescription
+            Task { @MainActor in
+                guard let self else { return }
+                self.isRecording = false
+                if let message {
+                    self.lastStatusMessage = "Recording error: \(message)"
+                    return
                 }
+                self.shareItem = ShareSheetItem(url: url)
+                self.lastStatusMessage = "Recording saved — share it"
             }
         }
 #endif
     }
-
-#if canImport(ReplayKit)
-    @MainActor
-    private static func present(_ controller: UIViewController) {
-        guard let scene = UIApplication.shared.connectedScenes
-                .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene,
-              let root = scene.keyWindow?.rootViewController else {
-            return
-        }
-        var top = root
-        while let presented = top.presentedViewController { top = presented }
-        // formSheet on iPad, full screen on iPhone — matches the system preview.
-        controller.modalPresentationStyle = UIDevice.current.userInterfaceIdiom == .pad ? .formSheet : .fullScreen
-        top.present(controller, animated: true)
-    }
-#endif
 }
-
-#if canImport(ReplayKit)
-/// Plain NSObject so it can be an @objc ReplayKit delegate without dragging the
-/// observable store into NSObject territory. The delegate is invoked on the main
-/// thread, so assumeIsolated is safe here.
-private final class RecorderPreviewDelegate: NSObject, RPPreviewViewControllerDelegate {
-    func previewControllerDidFinish(_ previewController: RPPreviewViewController) {
-        MainActor.assumeIsolated {
-            previewController.dismiss(animated: true)
-        }
-    }
-}
-#endif
