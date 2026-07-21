@@ -849,6 +849,14 @@ final class SettingsStore: @unchecked Sendable {
             ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", value: showQuickStateButtons)
         }
     }
+    // AYS2: user request — an on-screen button to toggle the frame limiter
+    // (unlimited speed) during gameplay, next to the quick save/load buttons.
+    var showFrameLimiterButton: Bool {
+        didSet {
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", value: showFrameLimiterButton)
+        }
+    }
     // AYS2: user suggestion — when a game was launched from an external
     // front-end (deep link), quit the app on game exit so the launcher regains
     // focus instead of dropping into the library. Off by default.
@@ -1269,6 +1277,7 @@ final class SettingsStore: @unchecked Sendable {
         autoFullscreen = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoFullscreen", defaultValue: true)
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
         showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
+        showFrameLimiterButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", defaultValue: false)
         performanceMode = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "PerformanceMode", defaultValue: false)
         quitToLauncherOnExit = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", defaultValue: false)
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))
@@ -1463,6 +1472,7 @@ final class SettingsStore: @unchecked Sendable {
         autoFullscreen = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoFullscreen", defaultValue: true)
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
         showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
+        showFrameLimiterButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", defaultValue: false)
         performanceMode = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "PerformanceMode", defaultValue: false)
         quitToLauncherOnExit = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", defaultValue: false)
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))

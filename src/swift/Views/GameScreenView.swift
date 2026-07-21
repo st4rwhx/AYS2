@@ -92,6 +92,8 @@ struct GameScreenView: View {
     @State private var externalControllerConnected = false
     @State private var fullScreen = false
     @State private var menuButtonHidden = false
+    // AYS2: reflects the on-screen frame-limiter toggle (see toggleFrameLimiter).
+    @State private var frameLimiterOff = false
     @State private var vmMenuAvailable = false
     @State private var gameMenuAvailable = false
     // MARK: Overlay Route
@@ -461,24 +463,49 @@ struct GameScreenView: View {
 
     @ViewBuilder
     private func quickStateButtonsOverlay(isLandscape: Bool) -> some View {
-        if settings.showQuickStateButtons && !menuButtonHidden && overlayRoute == .hidden {
+        let anyButtonEnabled = settings.showQuickStateButtons || settings.showFrameLimiterButton
+        if anyButtonEnabled && !menuButtonHidden && overlayRoute == .hidden {
             HStack(spacing: 10) {
-                // AYS2: user request — a floppy disk for Quick Save (the
-                // universal "save" glyph) and a reload arrow for Quick Load.
-                quickStateButton(label: "Quick Save", action: { quickSaveState() }) {
-                    FloppyDiskShape()
-                        .fill(.white, style: FillStyle(eoFill: true))
-                        .frame(width: 18, height: 18)
+                if settings.showQuickStateButtons {
+                    // AYS2: user request — a floppy disk for Quick Save (the
+                    // universal "save" glyph) and a reload arrow for Quick Load.
+                    quickStateButton(label: "Quick Save", action: { quickSaveState() }) {
+                        FloppyDiskShape()
+                            .fill(.white, style: FillStyle(eoFill: true))
+                            .frame(width: 18, height: 18)
+                    }
+                    quickStateButton(label: "Quick Load", action: { quickLoadState() }) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 17, weight: .heavy))
+                            .foregroundStyle(.white)
+                    }
                 }
-                quickStateButton(label: "Quick Load", action: { quickLoadState() }) {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 17, weight: .heavy))
-                        .foregroundStyle(.white)
+                if settings.showFrameLimiterButton {
+                    // AYS2: user request — toggle the frame limiter (unlimited
+                    // speed) on screen, just like the save/load buttons.
+                    quickStateButton(label: "Toggle Frame Limiter", action: { toggleFrameLimiter() }) {
+                        Image(systemName: "speedometer")
+                            .font(.system(size: 17, weight: .heavy))
+                            .foregroundStyle(frameLimiterOff ? .yellow : .white)
+                    }
                 }
             }
             .padding(.top, isLandscape ? 8 : 4)
             .padding(.leading, isLandscape ? 8 : 4)
         }
+    }
+
+    private func toggleFrameLimiter() {
+        // Nominal (0) <-> Unlimited (3): "unlimited" removes the speed cap so the
+        // emulator runs as fast as it can. We reflect the resulting state so the
+        // icon shows whether the limiter is currently off.
+        let unlimited = 3, nominal = 0
+        let nowOff = ARMSX2Bridge.limiterMode() == unlimited
+        ARMSX2Bridge.setLimiterMode(nowOff ? nominal : unlimited)
+        frameLimiterOff = !nowOff
+        presentStatusMessage(frameLimiterOff
+            ? settings.localized("Frame limiter off (unlimited speed)")
+            : settings.localized("Frame limiter on"))
     }
 
     private func quickStateButton<Icon: View>(
