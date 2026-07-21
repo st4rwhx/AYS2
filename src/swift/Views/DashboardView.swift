@@ -598,21 +598,7 @@ struct GamesCarouselView: View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 16)], spacing: 18) {
                 ForEach(games) { game in
-                    Button {
-                        SoundManager.shared.play(.boot)
-                        selectGame(game)
-                    } label: {
-                        VStack(spacing: 6) {
-                            CleanCover(game: game, width: 104)
-                            Text(displayName(for: game))
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(Retro.ink)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu { gameContextMenu(for: game) }
+                    gridTile(for: game)
                 }
             }
             .padding(.horizontal, 18)
@@ -622,47 +608,33 @@ struct GamesCarouselView: View {
         .frame(maxHeight: .infinity)
     }
 
+    // Extracted so each row/tile type-checks on its own — the inlined
+    // `gameContextMenu` makes the whole ForEach body too large otherwise.
+    @ViewBuilder
+    private func gridTile(for game: DashGame) -> some View {
+        Button {
+            SoundManager.shared.play(.boot)
+            selectGame(game)
+        } label: {
+            VStack(spacing: 6) {
+                CleanCover(game: game, width: 104)
+                Text(displayName(for: game))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Retro.ink)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .buttonStyle(.plain)
+        .contextMenu { gameContextMenu(for: game) }
+    }
+
     /// A compact list — a thumbnail, the title, and format, one row per game.
     private var listScroll: some View {
         ScrollView {
             LazyVStack(spacing: 8) {
                 ForEach(games) { game in
-                    Button {
-                        SoundManager.shared.play(.boot)
-                        selectGame(game)
-                    } label: {
-                        HStack(spacing: 12) {
-                            CleanCover(game: game, width: 46)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(displayName(for: game))
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(Retro.ink)
-                                    .lineLimit(1)
-                                Text(game.name.pathExtensionLabel)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Retro.mut)
-                                    .lineLimit(1)
-                            }
-                            Spacer(minLength: 8)
-                            if game.isFavorite {
-                                Image(systemName: "star.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(Retro.accent)
-                            }
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(Retro.line2)
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Retro.panel.opacity(0.55))
-                        )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu { gameContextMenu(for: game) }
+                    listRow(for: game)
                 }
             }
             .padding(.horizontal, 16)
@@ -670,6 +642,46 @@ struct GamesCarouselView: View {
             .padding(.bottom, 20)
         }
         .frame(maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private func listRow(for game: DashGame) -> some View {
+        Button {
+            SoundManager.shared.play(.boot)
+            selectGame(game)
+        } label: {
+            HStack(spacing: 12) {
+                CleanCover(game: game, width: 46)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(displayName(for: game))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Retro.ink)
+                        .lineLimit(1)
+                    Text(game.name.pathExtensionLabel)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Retro.mut)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                if game.isFavorite {
+                    Image(systemName: "star.fill")
+                        .font(.caption)
+                        .foregroundStyle(Retro.accent)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Retro.line2)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Retro.panel.opacity(0.55))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu { gameContextMenu(for: game) }
     }
 
     private var focusedInfo: some View {
