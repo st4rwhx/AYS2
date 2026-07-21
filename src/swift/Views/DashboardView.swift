@@ -895,6 +895,10 @@ struct SettingsGridView: View {
                                  systemImage: "gamecontroller") { GamepadSettingsView() }
                     SettingsTile(title: "Virtual Pad", subtitle: "Touch · Layout · Scale",
                                  systemImage: "hand.draw") { VirtualPadSettingsView() }
+                    // AYS2: RetroAchievements tile (seam) — it had a settings entry
+                    // in the full settings list but was missing from this hub grid.
+                    SettingsTile(title: "Achievements", subtitle: "Login · Hardcore · Progress",
+                                 systemImage: "trophy") { RetroAchievementsSettingsView() }
                     SettingsTile(title: "Appearance", subtitle: "Theme · Background",
                                  systemImage: "circle.lefthalf.filled") { AppearanceSettingsView() }
                     SettingsTile(title: "System", subtitle: "Sounds · About · Version",
