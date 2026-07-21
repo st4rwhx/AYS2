@@ -845,6 +845,8 @@ struct CleanCover: View {
     var width: CGFloat = 168
 
     @State private var image: UIImage?
+    // AYS2: user request — show total play time on the cover (see PlayTimeStore).
+    @State private var playTimeStore = PlayTimeStore.shared
 
     private var height: CGFloat { width * Retro.coverRatio }
 
@@ -871,6 +873,21 @@ struct CleanCover: View {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .strokeBorder(Retro.line2, lineWidth: 1)
         )
+        // AYS2: play-time badge, pinned to the top of the cover (user request).
+        .overlay(alignment: .topLeading) {
+            if let playtime = playTimeStore.formatted(forGame: game.bootName) {
+                HStack(spacing: 3) {
+                    Image(systemName: "clock.fill")
+                    Text(playtime)
+                }
+                .font(.system(size: max(9, width * 0.058), weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.black.opacity(0.55), in: Capsule())
+                .padding(6)
+            }
+        }
         .shadow(color: .black.opacity(0.28), radius: 12, x: 0, y: 10)
         .task(id: game.coverURL) {
             image = nil
