@@ -132,6 +132,13 @@ struct GameScreenView: View {
     // VM pauses instantly, so it's inert.
     @State private var hotkeyPollTimer: Timer?
     @State private var lastHotkeyMenuPressed = false
+    // AYS2: hold-Menu + button combos (seam) — a combo used during a Menu hold
+    // suppresses the pause-menu-open on release, and each combo button is
+    // edge-detected so it fires once per press.
+    @State private var hotkeyComboUsed = false
+    @State private var lastComboSavePressed = false
+    @State private var lastComboLoadPressed = false
+    @State private var lastComboFastForwardPressed = false
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -812,15 +819,37 @@ struct GameScreenView: View {
         return false
     }
 
-    /// Polls the controller during gameplay so the Menu/Options button opens the
-    /// pause menu (the most-requested controller hotkey). Runs only while gameplay
-    /// is active, a controller is connected, and the hotkey is enabled.
+    /// Snapshot of the combo action buttons (used while Menu is held): Cross → quick
+    /// save, Circle → quick load, R1 → toggle fast-forward.
+    private func hotkeyComboButtons() -> (save: Bool, load: Bool, fastForward: Bool) {
+        var save = false, load = false, fastForward = false
+        for controller in GCController.controllers() {
+            guard let gamepad = controller.extendedGamepad else { continue }
+            if gamepad.buttonA.isPressed { save = true }
+            if gamepad.buttonB.isPressed { load = true }
+            if gamepad.rightShoulder.isPressed { fastForward = true }
+        }
+        return (save, load, fastForward)
+    }
+
+    /// Polls the controller during gameplay for hotkeys (the most-requested
+    /// controller feature). Runs only while gameplay is active, a controller is
+    /// connected, and hotkeys are enabled.
+    ///
+    /// - Tap Menu/Options → open the pause menu (fires on release, so a combo can
+    ///   be distinguished from a plain press).
+    /// - Hold Menu + Cross → quick save state.
+    /// - Hold Menu + Circle → quick load state.
+    /// - Hold Menu + R1 → toggle fast-forward.
+    ///
+    /// A combo used during a Menu hold suppresses the pause-menu-open on release.
     private func startHotkeyPollingIfNeeded() {
         guard settings.openMenuWithControllerButton,
               externalControllerConnected,
               overlayRoute == .hidden,
               hotkeyPollTimer == nil else { return }
         lastHotkeyMenuPressed = controllerMenuButtonPressed()
+        resetHotkeyComboState()
         hotkeyPollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
             Task { @MainActor in
                 guard settings.openMenuWithControllerButton,
@@ -829,20 +858,60 @@ struct GameScreenView: View {
                     stopHotkeyPolling()
                     return
                 }
-                let pressed = controllerMenuButtonPressed()
-                if pressed && !lastHotkeyMenuPressed {
-                    if settings.hapticFeedback { HapticManager.light.impactOccurred() }
-                    overlayRoute = .paused
+                let menuNow = controllerMenuButtonPressed()
+
+                if menuNow {
+                    // Menu just pressed: begin a fresh hold (no combo used yet).
+                    if !lastHotkeyMenuPressed {
+                        hotkeyComboUsed = false
+                        resetHotkeyComboState()
+                    }
+                    // Menu held: combo buttons act as hotkeys (edge-detected).
+                    let combo = hotkeyComboButtons()
+                    if combo.save && !lastComboSavePressed {
+                        hotkeyComboUsed = true
+                        if settings.hapticFeedback { HapticManager.light.impactOccurred() }
+                        quickSaveState()
+                    }
+                    if combo.load && !lastComboLoadPressed {
+                        hotkeyComboUsed = true
+                        if settings.hapticFeedback { HapticManager.light.impactOccurred() }
+                        quickLoadState()
+                    }
+                    if combo.fastForward && !lastComboFastForwardPressed {
+                        hotkeyComboUsed = true
+                        if settings.hapticFeedback { HapticManager.light.impactOccurred() }
+                        toggleFrameLimiter()
+                    }
+                    lastComboSavePressed = combo.save
+                    lastComboLoadPressed = combo.load
+                    lastComboFastForwardPressed = combo.fastForward
+                } else if lastHotkeyMenuPressed {
+                    // Menu just released: open the pause menu only if it was a plain
+                    // press (no combo fired during the hold).
+                    if !hotkeyComboUsed {
+                        if settings.hapticFeedback { HapticManager.light.impactOccurred() }
+                        overlayRoute = .paused
+                    }
+                    resetHotkeyComboState()
                 }
-                lastHotkeyMenuPressed = pressed
+                lastHotkeyMenuPressed = menuNow
             }
         }
+    }
+
+    private func resetHotkeyComboState() {
+        lastComboSavePressed = false
+        lastComboLoadPressed = false
+        lastComboFastForwardPressed = false
     }
 
     private func stopHotkeyPolling() {
         hotkeyPollTimer?.invalidate()
         hotkeyPollTimer = nil
         lastHotkeyMenuPressed = false
+        hotkeyComboUsed = false
+        resetHotkeyComboState()
     }
 
     /// Reads a non-destructive snapshot of every external controller's input state. Returns

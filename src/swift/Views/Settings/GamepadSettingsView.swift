@@ -102,11 +102,11 @@ struct GamepadSettingsView: View {
 
             // AYS2: controller hotkeys (seam).
             Section {
-                Toggle(settings.localized("Open Pause Menu with Menu Button"), isOn: $settings.openMenuWithControllerButton)
+                Toggle(settings.localized("Controller Hotkeys"), isOn: $settings.openMenuWithControllerButton)
             } header: {
                 Text(settings.localized("Hotkeys"))
             } footer: {
-                Text(settings.localized("Press your controller's Menu (\u{2261}) or Options button during a game to open the pause menu — then navigate it with the controller. No need to reach for the on-screen button."))
+                Text(settings.localized("Tap Menu (\u{2261}) / Options to open the pause menu — then navigate it with the controller. Or hold Menu and press: Cross = quick save, Circle = quick load, R1 = toggle fast-forward. No need to reach for the on-screen buttons."))
             }
 
             Section {
