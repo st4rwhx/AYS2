@@ -167,10 +167,10 @@ final class VPadSkinLibraryStore: @unchecked Sendable {
 
     static var defaultDescriptor: VPadSkinDescriptor {
         VPadSkinDescriptor(
-            id: VirtualPadSkin.armsx2Refresh.descriptorID,
-            displayName: VirtualPadSkin.armsx2Refresh.label,
+            id: VirtualPadSkin.ays2.descriptorID,
+            displayName: VirtualPadSkin.ays2.label,
             source: .builtIn,
-            builtInSkinRawValue: VirtualPadSkin.armsx2Refresh.rawValue
+            builtInSkinRawValue: VirtualPadSkin.ays2.rawValue
         )
     }
 

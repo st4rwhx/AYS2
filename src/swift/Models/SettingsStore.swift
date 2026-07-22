@@ -1330,7 +1330,7 @@ final class SettingsStore: @unchecked Sendable {
         openMenuWithControllerButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "OpenMenuWithControllerButton", defaultValue: true)
         dpadDiagonalsEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "DpadDiagonalsEnabled", defaultValue: true)
         faceComboZonesEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "FaceComboZonesEnabled", defaultValue: true)
-        virtualPadSkin = VirtualPadSkin(rawValue: Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "VirtualPadSkin", defaultValue: 0))) ?? .armsx2Refresh
+        virtualPadSkin = VirtualPadSkin(rawValue: Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "VirtualPadSkin", defaultValue: Int32(VirtualPadSkin.ays2.rawValue)))) ?? .ays2
         autoHideVirtualPadWhenControllerConnected = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoHideVirtualPadWhenControllerConnected", defaultValue: true)
         autoFullscreen = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoFullscreen", defaultValue: true)
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
@@ -1535,7 +1535,7 @@ final class SettingsStore: @unchecked Sendable {
         openMenuWithControllerButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "OpenMenuWithControllerButton", defaultValue: true)
         dpadDiagonalsEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "DpadDiagonalsEnabled", defaultValue: true)
         faceComboZonesEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "FaceComboZonesEnabled", defaultValue: true)
-        virtualPadSkin = VirtualPadSkin(rawValue: Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "VirtualPadSkin", defaultValue: 0))) ?? .armsx2Refresh
+        virtualPadSkin = VirtualPadSkin(rawValue: Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "VirtualPadSkin", defaultValue: Int32(VirtualPadSkin.ays2.rawValue)))) ?? .ays2
         autoHideVirtualPadWhenControllerConnected = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoHideVirtualPadWhenControllerConnected", defaultValue: true)
         autoFullscreen = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoFullscreen", defaultValue: true)
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
