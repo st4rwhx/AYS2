@@ -227,6 +227,11 @@ struct GameScreenView: View {
                     ZStack {
                         MetalGameView()
                             .onTapGesture { restoreMenuButtonIfHidden() }
+                        // AYS2: floating touch sticks (seam) — screen-half analog
+                        // sticks, below the pad so face buttons keep priority.
+                        if settings.floatingTouchSticks {
+                            FloatingTouchSticksView(enabled: overlayRoute == .hidden)
+                        }
                         if effectiveVirtualPadVisible {
                             VirtualControllerView(
                                 isLandscape: true,
@@ -255,6 +260,12 @@ struct GameScreenView: View {
                             .frame(height: gameHeight)
                             .clipped()
                             .onTapGesture { restoreMenuButtonIfHidden() }
+                            // AYS2: floating touch sticks over the portrait game viewport (seam).
+                            .overlay {
+                                if settings.floatingTouchSticks {
+                                    FloatingTouchSticksView(enabled: overlayRoute == .hidden)
+                                }
+                            }
 
                         if effectiveVirtualPadVisible {
                             ZStack {

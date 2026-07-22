@@ -113,6 +113,15 @@ struct VirtualPadSettingsView: View {
                 Text(settings.localized("Flips analog stick axes — handy for games with inverted camera controls. Applies to the on-screen sticks and gyro aim."))
             }
 
+            // AYS2: floating touch sticks (seam) — screen-half analog sticks.
+            Section {
+                Toggle(settings.localized("Floating Touch Sticks"), isOn: $settings.floatingTouchSticks)
+            } header: {
+                Text(settings.localized("Touch Sticks"))
+            } footer: {
+                Text(settings.localized("The left half of the game area becomes the left analog stick and the right half the right stick — a stick appears wherever your thumb lands and follows it. Best used with the on-screen sticks hidden in the pad editor. Works alongside the face buttons and a physical controller."))
+            }
+
             Section(settings.localized("Gameplay")) {
                 Toggle(settings.localized("Hide Virtual Pad When Controller Is Connected"), isOn: $settings.autoHideVirtualPadWhenControllerConnected)
                 Text(settings.localized("Automatically hides the on-screen controls while an external controller is connected."))

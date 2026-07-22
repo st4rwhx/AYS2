@@ -883,6 +883,12 @@ final class SettingsStore: @unchecked Sendable {
     // inverted camera vs. the modern standard). Applied at the EmulatorBridge
     // stick choke point, so it covers the on-screen sticks and gyro aim. Off by
     // default; INI-backed under ARMSX2iOS/Pad.
+    // AYS2: floating touch sticks (seam) — left half of the game area is the left
+    // analog stick, right half the right stick; a stick spawns under the thumb.
+    var floatingTouchSticks: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "FloatingTouchSticks", value: floatingTouchSticks) }
+    }
     var invertLeftStickX: Bool {
         didSet { guard !suppressINIWrites else { return }
             ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", value: invertLeftStickX) }
@@ -1331,6 +1337,7 @@ final class SettingsStore: @unchecked Sendable {
         showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
         showFrameLimiterButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", defaultValue: false)
         showRecordButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowRecordButton", defaultValue: false)
+        floatingTouchSticks = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingTouchSticks", defaultValue: false)
         invertLeftStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", defaultValue: false)
         invertLeftStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", defaultValue: false)
         invertRightStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", defaultValue: false)
@@ -1535,6 +1542,7 @@ final class SettingsStore: @unchecked Sendable {
         showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
         showFrameLimiterButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", defaultValue: false)
         showRecordButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowRecordButton", defaultValue: false)
+        floatingTouchSticks = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingTouchSticks", defaultValue: false)
         invertLeftStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", defaultValue: false)
         invertLeftStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", defaultValue: false)
         invertRightStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", defaultValue: false)
