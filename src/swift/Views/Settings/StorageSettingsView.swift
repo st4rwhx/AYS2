@@ -277,6 +277,9 @@ struct StorageSettingsView: View {
     @State private var showExternalGameFilePicker = false
     @State private var showExternalFolderPicker = false
     @State private var externalActionMessage: String?
+    // AYS2: in-app log export (seam) — see diagnosticLogPath / clearDiagnosticLog.
+    @State private var logShareItem: ShareSheetItem?
+    @State private var logExportMessage: String?
 
     private var externalGameFileContentTypes: [UTType] {
         var types: [UTType] = [.item, .data, .content]
@@ -320,7 +323,7 @@ struct StorageSettingsView: View {
                     ContentUnavailableView(
                         settings.localized("No External Games"),
                         systemImage: "externaldrive",
-                        description: Text(settings.localized("Add a folder or game file from Files to play without copying it into ARMSX2."))
+                        description: Text(settings.localized("Add a folder or game file from Files to play without copying it into AYS2."))
                     )
                     .frame(maxWidth: .infinity)
                 } else {
@@ -355,7 +358,23 @@ struct StorageSettingsView: View {
             } header: {
                 Text(settings.localized("External Games"))
             } footer: {
-                Text(settings.localized("USB/SSD folders can be scanned and played directly. Removing an entry only removes ARMSX2's bookmark and does not delete the game."))
+                Text(settings.localized("USB/SSD folders can be scanned and played directly. Removing an entry only removes AYS2's bookmark and does not delete the game."))
+            }
+
+            // AYS2: user suggestion — clear and export logs from within the app.
+            // Clearing lives in Cleanup below; here we add the missing export so a
+            // fresh log can be shared straight into a bug report.
+            Section {
+                Button {
+                    exportDiagnosticLog()
+                } label: {
+                    Label(settings.localized("Export Diagnostic Log"), systemImage: "square.and.arrow.up.on.square")
+                }
+                .disabled(isWorking)
+            } header: {
+                Text(settings.localized("Diagnostics"))
+            } footer: {
+                Text(settings.localized("Shares pcsx2_log.txt (the current run's log) so you can attach it to a bug report. Use Clear Diagnostic Logs below to start a fresh log first."))
             }
 
             Section(settings.localized("Cleanup")) {
@@ -475,6 +494,20 @@ struct StorageSettingsView: View {
         } message: {
             Text(resultMessage ?? "")
         }
+        .sheet(item: $logShareItem) { item in
+            ActivityShareSheet(activityItems: [item.url])
+        }
+        .alert(
+            settings.localized("Diagnostics"),
+            isPresented: Binding(
+                get: { logExportMessage != nil },
+                set: { if !$0 { logExportMessage = nil } }
+            )
+        ) {
+            Button(settings.localized("OK")) { logExportMessage = nil }
+        } message: {
+            Text(logExportMessage ?? "")
+        }
         .alert(
             settings.localized("External Games"),
             isPresented: Binding(
@@ -506,6 +539,13 @@ struct StorageSettingsView: View {
             settings.dumpReplaceableTextures = false
         }
 
+        if action.includesDiagnosticLogs {
+            // The live log is a still-open freopen'd stderr stream; truncating the
+            // file via FileHandle leaves the stream's offset intact (sparse refill).
+            // Re-open it through the bridge so the current run's log truly resets.
+            ARMSX2Bridge.clearDiagnosticLog()
+        }
+
         report = await StorageCleaner.report(paths: paths)
         isWorking = false
 
@@ -515,6 +555,30 @@ struct StorageSettingsView: View {
         }
         resultMessage = message
         showResult = true
+    }
+
+    private func exportDiagnosticLog() {
+        let logURL = URL(fileURLWithPath: ARMSX2Bridge.diagnosticLogPath())
+        guard FileManager.default.fileExists(atPath: logURL.path) else {
+            logExportMessage = settings.localized("No diagnostic log is available yet.")
+            return
+        }
+
+        // Share a timestamped snapshot copy rather than the live file: it gives
+        // a friendly filename and avoids handing the share sheet a file that the
+        // emulator is still appending to.
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        let name = "AYS2-log-\(formatter.string(from: Date())).txt"
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+
+        do {
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: logURL, to: destination)
+            logShareItem = ShareSheetItem(url: destination)
+        } catch {
+            logExportMessage = "\(settings.localized("Could not export the log:"))\n\(error.localizedDescription)"
+        }
     }
 
     private func formatBytes(_ bytes: Int64) -> String {

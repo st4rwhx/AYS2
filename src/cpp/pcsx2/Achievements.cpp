@@ -2183,6 +2183,22 @@ const char* Achievements::GetLoggedInUserName()
 	return user->username;
 }
 
+// AYS2: expose the user's points so the fullscreen heading can show Casual
+// (softcore) points next to Hardcore points (user suggestion). rc_client
+// already tracks both — score is hardcore, score_softcore is casual.
+bool Achievements::GetLoggedInUserScore(u32* hardcore_points, u32* softcore_points)
+{
+	const rc_client_user_t* user = rc_client_get_user_info(s_client);
+	if (!user) [[unlikely]]
+		return false;
+
+	if (hardcore_points)
+		*hardcore_points = user->score;
+	if (softcore_points)
+		*softcore_points = user->score_softcore;
+	return true;
+}
+
 std::string Achievements::GetLoggedInUserBadgePath()
 {
 	std::string badge_path;
@@ -2916,6 +2932,24 @@ void Achievements::DrawAchievementsWindow()
 			if (ImGui::IsWindowHovered() || ImGui::IsWindowFocused())
 				s_sidebar_has_focus = false;
 
+			// AYS2: jump-to-top / jump-to-bottom for long achievement lists (seam).
+			// User suggestion — sets with hundreds of achievements are tedious to
+			// scroll through. The floating buttons below only raise a request; the
+			// scroll is applied here at the start of the next frame, when
+			// GetScrollMaxY() reflects the full (stable) content height.
+			static bool s_jump_to_top = false;
+			static bool s_jump_to_bottom = false;
+			if (s_jump_to_top)
+			{
+				ImGui::SetScrollY(0.0f);
+				s_jump_to_top = false;
+			}
+			else if (s_jump_to_bottom)
+			{
+				ImGui::SetScrollY(ImGui::GetScrollMaxY());
+				s_jump_to_bottom = false;
+			}
+
 			static std::map<std::pair<u32, u32>, bool> buckets_collapsed;
 			static const char* bucket_names[NUM_RC_CLIENT_ACHIEVEMENT_BUCKETS] = {
 				TRANSLATE_NOOP("Achievements", "Unknown"),
@@ -2961,6 +2995,23 @@ void Achievements::DrawAchievementsWindow()
 			}
 
 			ImGuiFullscreen::EndMenuButtons();
+
+			// AYS2: floating jump-to-bottom / jump-to-top controls (seam). Only
+			// shown once the list actually overflows. FloatingButton positions
+			// absolutely and does not advance the layout cursor, so it overlays
+			// the list without disturbing it.
+			if (ImGui::GetScrollMaxY() > 0.0f)
+			{
+				const float margin = ImGuiFullscreen::LayoutScale(20.0f);
+				const float btn = ImGuiFullscreen::LayoutScale(60.0f);
+				const float gap = ImGuiFullscreen::LayoutScale(12.0f);
+				if (ImGuiFullscreen::FloatingButton(
+					ICON_FA_CHEVRON_DOWN, margin, margin, btn, btn, 1.0f, 1.0f, true, g_large_font))
+					s_jump_to_bottom = true;
+				if (ImGuiFullscreen::FloatingButton(
+					ICON_FA_CHEVRON_UP, margin, margin + btn + gap, btn, btn, 1.0f, 1.0f, true, g_large_font))
+					s_jump_to_top = true;
+			}
 		}
 		ImGui::EndChild();
 

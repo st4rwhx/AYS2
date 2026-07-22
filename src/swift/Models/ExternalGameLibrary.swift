@@ -63,7 +63,7 @@ final class ExternalGameLibrary: @unchecked Sendable {
 	        }
 	        if cloudProvider {
 	            NSLog("[ARMSX2 iOS External Games] rejected cloud provider direct access path=%@", standardizedURL.path)
-	            return "Google Drive cannot be used as direct external storage.\n\nCloud files are not guaranteed to be downloaded as stable, seekable files. Use Import Games to copy the ISO into ARMSX2 first."
+	            return "Google Drive cannot be used as direct external storage.\n\nCloud files are not guaranteed to be downloaded as stable, seekable files. Use Import Games to copy the ISO into AYS2 first."
 	        }
 
         do {

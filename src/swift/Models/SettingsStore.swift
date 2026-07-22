@@ -478,19 +478,34 @@ final class SettingsStore: @unchecked Sendable {
         }
     }
     var halfPixelOffset: Int {
-        didSet { ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_HalfPixelOffset", value: Int32(halfPixelOffset)) }
+        didSet {
+            ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_HalfPixelOffset", value: Int32(halfPixelOffset))
+            requestGraphicsApply()
+        }
     }
     var roundSprite: Int {
-        didSet { ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_round_sprite_offset", value: Int32(roundSprite)) }
+        didSet {
+            ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_round_sprite_offset", value: Int32(roundSprite))
+            requestGraphicsApply()
+        }
     }
     var alignSprite: Bool {
-        didSet { ARMSX2Bridge.setINIBool("EmuCore/GS", key: "UserHacks_align_sprite_X", value: alignSprite) }
+        didSet {
+            ARMSX2Bridge.setINIBool("EmuCore/GS", key: "UserHacks_align_sprite_X", value: alignSprite)
+            requestGraphicsApply()
+        }
     }
     var mergeSprite: Bool {
-        didSet { ARMSX2Bridge.setINIBool("EmuCore/GS", key: "UserHacks_merge_pp_sprite", value: mergeSprite) }
+        didSet {
+            ARMSX2Bridge.setINIBool("EmuCore/GS", key: "UserHacks_merge_pp_sprite", value: mergeSprite)
+            requestGraphicsApply()
+        }
     }
     var wildArmsOffset: Bool {
-        didSet { ARMSX2Bridge.setINIBool("EmuCore/GS", key: "UserHacks_ForceEvenSpritePosition", value: wildArmsOffset) }
+        didSet {
+            ARMSX2Bridge.setINIBool("EmuCore/GS", key: "UserHacks_ForceEvenSpritePosition", value: wildArmsOffset)
+            requestGraphicsApply()
+        }
     }
     var textureOffsetX: Int {
         didSet {
@@ -500,6 +515,7 @@ final class SettingsStore: @unchecked Sendable {
                 return
             }
             ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_TCOffsetX", value: Int32(textureOffsetX))
+            requestGraphicsApply()
         }
     }
     var textureOffsetY: Int {
@@ -510,6 +526,7 @@ final class SettingsStore: @unchecked Sendable {
                 return
             }
             ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_TCOffsetY", value: Int32(textureOffsetY))
+            requestGraphicsApply()
         }
     }
     var skipDrawStart: Int {
@@ -520,6 +537,7 @@ final class SettingsStore: @unchecked Sendable {
                 return
             }
             ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_SkipDraw_Start", value: Int32(skipDrawStart))
+            requestGraphicsApply()
         }
     }
     var skipDrawEnd: Int {
@@ -530,6 +548,7 @@ final class SettingsStore: @unchecked Sendable {
                 return
             }
             ARMSX2Bridge.setINIInt("EmuCore/GS", key: "UserHacks_SkipDraw_End", value: Int32(skipDrawEnd))
+            requestGraphicsApply()
         }
     }
     var loadTextureReplacements: Bool {
@@ -793,6 +812,20 @@ final class SettingsStore: @unchecked Sendable {
     var hapticFeedback: Bool {
         didSet { ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "HapticFeedback", value: hapticFeedback) }
     }
+    // AYS2: keep the display awake during gameplay (seam) — community request:
+    // some games freeze when the device auto-locks, so default to staying awake.
+    var keepAwakeDuringGameplay: Bool {
+        didSet { ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "KeepAwakeDuringGameplay", value: keepAwakeDuringGameplay) }
+    }
+    // AYS2: user request — let users skip the launch splash animation (seam).
+    var showBootAnimation: Bool {
+        didSet { ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "ShowBootAnimation", value: showBootAnimation) }
+    }
+    // AYS2: hotkey — open the pause menu with the controller's Menu/Options
+    // button during gameplay (seam). Most-requested controller hotkey.
+    var openMenuWithControllerButton: Bool {
+        didSet { ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "OpenMenuWithControllerButton", value: openMenuWithControllerButton) }
+    }
     var dpadDiagonalsEnabled: Bool {
         didSet { ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "DpadDiagonalsEnabled", value: dpadDiagonalsEnabled) }
     }
@@ -820,6 +853,169 @@ final class SettingsStore: @unchecked Sendable {
             ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "HideMenuButton", value: hideMenuButton)
         }
     }
+    // AYS2: user suggestion — on-screen quick save/load-state buttons (seam),
+    // like Aether/Nether. When on, a small save + load pair floats on the game
+    // screen and operates on a fixed "quick" slot (slot 1); the full slot
+    // picker stays in the pause menu's Save States panel.
+    var showQuickStateButtons: Bool {
+        didSet {
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", value: showQuickStateButtons)
+        }
+    }
+    // AYS2: user request — an on-screen button to toggle the frame limiter
+    // (unlimited speed) during gameplay, next to the quick save/load buttons.
+    var showFrameLimiterButton: Bool {
+        didSet {
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", value: showFrameLimiterButton)
+        }
+    }
+    // AYS2: user request — an on-screen button to record gameplay from inside
+    // the app (ReplayKit), next to the quick save/load buttons.
+    var showRecordButton: Bool {
+        didSet {
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "ShowRecordButton", value: showRecordButton)
+        }
+    }
+    // AYS2: user request — invert analog stick axes (e.g. for games with an
+    // inverted camera vs. the modern standard). Applied at the EmulatorBridge
+    // stick choke point, so it covers the on-screen sticks and gyro aim. Off by
+    // default; INI-backed under ARMSX2iOS/Pad.
+    // AYS2: floating touch sticks (seam) — left half of the game area is the left
+    // analog stick, right half the right stick; a stick spawns under the thumb.
+    var floatingTouchSticks: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "FloatingTouchSticks", value: floatingTouchSticks) }
+    }
+    // AYS2: user request — per-half enable for the floating touch sticks, so the
+    // player can keep only the left, only the right, or neither.
+    var floatingStickLeftEnabled: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "FloatingStickLeftEnabled", value: floatingStickLeftEnabled) }
+    }
+    var floatingStickRightEnabled: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "FloatingStickRightEnabled", value: floatingStickRightEnabled) }
+    }
+    // AYS2: user request — swap the floating sticks so the left half drives the
+    // RIGHT analog stick and the right half drives the LEFT stick.
+    var floatingSticksSwapped: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "FloatingSticksSwapped", value: floatingSticksSwapped) }
+    }
+    // AYS2: user request — size of the floating touch sticks (ring radius scale).
+    var floatingStickScale: Float {
+        didSet {
+            let clamped = Self.clampedFloatingStickScale(floatingStickScale)
+            guard abs(floatingStickScale - clamped) <= 0.001 else {
+                floatingStickScale = clamped
+                return
+            }
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIFloat("ARMSX2iOS/Pad", key: "FloatingStickScale", value: floatingStickScale)
+        }
+    }
+    // AYS2: user request — visual style of the floating touch sticks.
+    var floatingStickSkin: Int {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIInt("ARMSX2iOS/Pad", key: "FloatingStickSkin", value: Int32(floatingStickSkin)) }
+    }
+    // AYS2: user request — hide the fixed on-screen analog sticks (lstick/rstick)
+    // so they don't clutter the pad while the floating touch sticks are in use.
+    var hideFixedAnalogSticks: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "HideFixedAnalogSticks", value: hideFixedAnalogSticks) }
+    }
+    // AYS2: mobile-friendly tuning for the floating touch sticks.
+    var floatingStickDeadzone: Float {
+        didSet {
+            let clamped = min(max(floatingStickDeadzone, 0.0), 0.4)
+            guard abs(floatingStickDeadzone - clamped) <= 0.001 else { floatingStickDeadzone = clamped; return }
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIFloat("ARMSX2iOS/Pad", key: "FloatingStickDeadzone", value: floatingStickDeadzone)
+        }
+    }
+    var floatingStickSensitivity: Float {
+        didSet {
+            let clamped = min(max(floatingStickSensitivity, 0.5), 2.0)
+            guard abs(floatingStickSensitivity - clamped) <= 0.001 else { floatingStickSensitivity = clamped; return }
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIFloat("ARMSX2iOS/Pad", key: "FloatingStickSensitivity", value: floatingStickSensitivity)
+        }
+    }
+    var floatingStickOpacity: Float {
+        didSet {
+            let clamped = min(max(floatingStickOpacity, 0.2), 1.0)
+            guard abs(floatingStickOpacity - clamped) <= 0.001 else { floatingStickOpacity = clamped; return }
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIFloat("ARMSX2iOS/Pad", key: "FloatingStickOpacity", value: floatingStickOpacity)
+        }
+    }
+    var floatingStickEdgeHaptic: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "FloatingStickEdgeHaptic", value: floatingStickEdgeHaptic) }
+    }
+    // AYS2: user request — landscape edge trigger zones. Pressing the left screen
+    // edge holds L, the right edge holds R, with a haptic buzz — like the grip
+    // triggers on a phone controller. INI-backed under ARMSX2iOS/Pad.
+    var edgeTriggerZones: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "EdgeTriggerZones", value: edgeTriggerZones) }
+    }
+    // 0 = L1/R1, 1 = L2/R2, 2 = both (L1+L2 / R1+R2)
+    var edgeTriggerMode: Int {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIInt("ARMSX2iOS/Pad", key: "EdgeTriggerMode", value: Int32(edgeTriggerMode)) }
+    }
+    var edgeTriggerHaptics: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "EdgeTriggerHaptics", value: edgeTriggerHaptics) }
+    }
+    var invertLeftStickX: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", value: invertLeftStickX) }
+    }
+    var invertLeftStickY: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", value: invertLeftStickY) }
+    }
+    var invertRightStickX: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", value: invertRightStickX) }
+    }
+    var invertRightStickY: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "InvertRightStickY", value: invertRightStickY) }
+    }
+    // AYS2: user request — interval auto-save. Minutes between background
+    // save-states (0 = off). Saves to a dedicated auto-slot (see
+    // AppState.autoSaveSlot) so manual slots aren't clobbered. INI-backed.
+    var autoSaveIntervalMinutes: Int {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIInt("ARMSX2iOS/UI", key: "AutoSaveIntervalMinutes", value: Int32(autoSaveIntervalMinutes)) }
+    }
+    // AYS2: user suggestion — when a game was launched from an external
+    // front-end (deep link), quit the app on game exit so the launcher regains
+    // focus instead of dropping into the library. Off by default.
+    var quitToLauncherOnExit: Bool {
+        didSet {
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", value: quitToLauncherOnExit)
+        }
+    }
+    // AYS2: user suggestion — a Performance Mode that strips the launcher's
+    // heavy visual effects (the full-bleed blurred ambient backdrop, the
+    // per-cover blur/scale transitions, and long UI animations) so the app
+    // spends as little GPU as possible. Off by default. Purely a launcher/UI
+    // toggle — it doesn't change emulation settings.
+    var performanceMode: Bool {
+        didSet {
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/UI", key: "PerformanceMode", value: performanceMode)
+        }
+    }
     var analogStickScale: Float {
         didSet {
             let clamped = Self.clampedAnalogStickScale(analogStickScale)
@@ -836,6 +1032,61 @@ final class SettingsStore: @unchecked Sendable {
     }
     var controllerMultitapMode: Int {
         didSet { ARMSX2Bridge.setINIInt("ARMSX2iOS/Gamepad", key: "MultitapMode", value: Int32(controllerMultitapMode)) }
+    }
+
+    // AYS2: analog stick / trigger tuning (seam) — these write directly to the
+    // "Pad1" section PadDualshock2 already reads (Pad.cpp LoadConfig): no new
+    // core plumbing needed, just exposing settings the emulator already
+    // supports but iOS never surfaced. requestGraphicsApply() (really "apply
+    // settings now", not GS-specific) reaches Pad::LoadConfig via
+    // VMManager::ApplySettings(), so these hot-apply mid-game.
+    var padAnalogDeadzone: Float {
+        didSet {
+            ARMSX2Bridge.setINIFloat("Pad1", key: "Deadzone", value: padAnalogDeadzone)
+            requestGraphicsApply()
+        }
+    }
+    var padAnalogSensitivity: Float {
+        didSet {
+            ARMSX2Bridge.setINIFloat("Pad1", key: "AxisScale", value: padAnalogSensitivity)
+            requestGraphicsApply()
+        }
+    }
+    var padButtonDeadzone: Float {
+        didSet {
+            ARMSX2Bridge.setINIFloat("Pad1", key: "ButtonDeadzone", value: padButtonDeadzone)
+            requestGraphicsApply()
+        }
+    }
+    var padInvertLeftStick: Int {
+        didSet {
+            ARMSX2Bridge.setINIInt("Pad1", key: "InvertL", value: Int32(padInvertLeftStick))
+            requestGraphicsApply()
+        }
+    }
+    var padInvertRightStick: Int {
+        didSet {
+            ARMSX2Bridge.setINIInt("Pad1", key: "InvertR", value: Int32(padInvertRightStick))
+            requestGraphicsApply()
+        }
+    }
+    var padLargeMotorScale: Float {
+        didSet {
+            ARMSX2Bridge.setINIFloat("Pad1", key: "LargeMotorScale", value: padLargeMotorScale)
+            requestGraphicsApply()
+        }
+    }
+    var padSmallMotorScale: Float {
+        didSet {
+            ARMSX2Bridge.setINIFloat("Pad1", key: "SmallMotorScale", value: padSmallMotorScale)
+            requestGraphicsApply()
+        }
+    }
+    var padPressureModifier: Float {
+        didSet {
+            ARMSX2Bridge.setINIFloat("Pad1", key: "PressureModifier", value: padPressureModifier)
+            requestGraphicsApply()
+        }
     }
     var autoOpenStikDebug: Bool {
         didSet {
@@ -1158,15 +1409,50 @@ final class SettingsStore: @unchecked Sendable {
         // UI
         padOpacity = ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "PadOpacity", defaultValue: 0.6)
         hapticFeedback = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HapticFeedback", defaultValue: true)
+        keepAwakeDuringGameplay = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "KeepAwakeDuringGameplay", defaultValue: true)
+        showBootAnimation = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowBootAnimation", defaultValue: true)
+        openMenuWithControllerButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "OpenMenuWithControllerButton", defaultValue: true)
         dpadDiagonalsEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "DpadDiagonalsEnabled", defaultValue: true)
         faceComboZonesEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "FaceComboZonesEnabled", defaultValue: true)
-        virtualPadSkin = VirtualPadSkin(rawValue: Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "VirtualPadSkin", defaultValue: 0))) ?? .armsx2Refresh
+        virtualPadSkin = VirtualPadSkin(rawValue: Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "VirtualPadSkin", defaultValue: Int32(VirtualPadSkin.ays2.rawValue)))) ?? .ays2
         autoHideVirtualPadWhenControllerConnected = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoHideVirtualPadWhenControllerConnected", defaultValue: true)
         autoFullscreen = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoFullscreen", defaultValue: true)
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
+        showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
+        showFrameLimiterButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", defaultValue: false)
+        showRecordButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowRecordButton", defaultValue: false)
+        floatingTouchSticks = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingTouchSticks", defaultValue: false)
+        floatingStickLeftEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingStickLeftEnabled", defaultValue: true)
+        floatingStickRightEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingStickRightEnabled", defaultValue: true)
+        floatingSticksSwapped = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingSticksSwapped", defaultValue: false)
+        floatingStickScale = Self.clampedFloatingStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickScale", defaultValue: 1.0))
+        floatingStickSkin = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Pad", key: "FloatingStickSkin", defaultValue: 0))
+        hideFixedAnalogSticks = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "HideFixedAnalogSticks", defaultValue: false)
+        floatingStickDeadzone = min(max(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickDeadzone", defaultValue: 0.06), 0.0), 0.4)
+        floatingStickSensitivity = min(max(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickSensitivity", defaultValue: 1.0), 0.5), 2.0)
+        floatingStickOpacity = min(max(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickOpacity", defaultValue: 1.0), 0.2), 1.0)
+        floatingStickEdgeHaptic = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingStickEdgeHaptic", defaultValue: false)
+        edgeTriggerZones = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "EdgeTriggerZones", defaultValue: false)
+        edgeTriggerMode = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Pad", key: "EdgeTriggerMode", defaultValue: 0))
+        edgeTriggerHaptics = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "EdgeTriggerHaptics", defaultValue: true)
+        invertLeftStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", defaultValue: false)
+        invertLeftStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", defaultValue: false)
+        invertRightStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", defaultValue: false)
+        invertRightStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickY", defaultValue: false)
+        autoSaveIntervalMinutes = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "AutoSaveIntervalMinutes", defaultValue: 0))
+        performanceMode = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "PerformanceMode", defaultValue: false)
+        quitToLauncherOnExit = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", defaultValue: false)
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))
         appLanguage = AppLanguage(rawValue: ARMSX2Bridge.getINIString("ARMSX2iOS/UI", key: "AppLanguage", defaultValue: AppLanguage.system.rawValue)) ?? .system
         controllerMultitapMode = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Gamepad", key: "MultitapMode", defaultValue: 0))
+        padAnalogDeadzone = ARMSX2Bridge.getINIFloat("Pad1", key: "Deadzone", defaultValue: 0.0)
+        padAnalogSensitivity = ARMSX2Bridge.getINIFloat("Pad1", key: "AxisScale", defaultValue: 1.33)
+        padButtonDeadzone = ARMSX2Bridge.getINIFloat("Pad1", key: "ButtonDeadzone", defaultValue: 0.0)
+        padInvertLeftStick = Int(ARMSX2Bridge.getINIInt("Pad1", key: "InvertL", defaultValue: 0))
+        padInvertRightStick = Int(ARMSX2Bridge.getINIInt("Pad1", key: "InvertR", defaultValue: 0))
+        padLargeMotorScale = ARMSX2Bridge.getINIFloat("Pad1", key: "LargeMotorScale", defaultValue: 1.0)
+        padSmallMotorScale = ARMSX2Bridge.getINIFloat("Pad1", key: "SmallMotorScale", defaultValue: 1.0)
+        padPressureModifier = ARMSX2Bridge.getINIFloat("Pad1", key: "PressureModifier", defaultValue: 1.0)
         autoOpenStikDebug = ARMSX2Bridge.getINIBool("ARMSX2iOS/JIT", key: "AutoOpenStikDebug", defaultValue: false)
         jitScriptProtocol = Self.loadedJITScriptProtocol()
         dev9HddEnabled = ARMSX2Bridge.getINIBool("DEV9/Hdd", key: "HddEnable", defaultValue: false)
@@ -1341,15 +1627,50 @@ final class SettingsStore: @unchecked Sendable {
         osdShowDeviceStats = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "OsdShowDeviceStats", defaultValue: osdPreset != .off)
         padOpacity = ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "PadOpacity", defaultValue: 0.6)
         hapticFeedback = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HapticFeedback", defaultValue: true)
+        keepAwakeDuringGameplay = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "KeepAwakeDuringGameplay", defaultValue: true)
+        showBootAnimation = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowBootAnimation", defaultValue: true)
+        openMenuWithControllerButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "OpenMenuWithControllerButton", defaultValue: true)
         dpadDiagonalsEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "DpadDiagonalsEnabled", defaultValue: true)
         faceComboZonesEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "FaceComboZonesEnabled", defaultValue: true)
-        virtualPadSkin = VirtualPadSkin(rawValue: Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "VirtualPadSkin", defaultValue: 0))) ?? .armsx2Refresh
+        virtualPadSkin = VirtualPadSkin(rawValue: Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "VirtualPadSkin", defaultValue: Int32(VirtualPadSkin.ays2.rawValue)))) ?? .ays2
         autoHideVirtualPadWhenControllerConnected = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoHideVirtualPadWhenControllerConnected", defaultValue: true)
         autoFullscreen = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "AutoFullscreen", defaultValue: true)
         hideMenuButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "HideMenuButton", defaultValue: false)
+        showQuickStateButtons = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowQuickStateButtons", defaultValue: false)
+        showFrameLimiterButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", defaultValue: false)
+        showRecordButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowRecordButton", defaultValue: false)
+        floatingTouchSticks = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingTouchSticks", defaultValue: false)
+        floatingStickLeftEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingStickLeftEnabled", defaultValue: true)
+        floatingStickRightEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingStickRightEnabled", defaultValue: true)
+        floatingSticksSwapped = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingSticksSwapped", defaultValue: false)
+        floatingStickScale = Self.clampedFloatingStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickScale", defaultValue: 1.0))
+        floatingStickSkin = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Pad", key: "FloatingStickSkin", defaultValue: 0))
+        hideFixedAnalogSticks = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "HideFixedAnalogSticks", defaultValue: false)
+        floatingStickDeadzone = min(max(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickDeadzone", defaultValue: 0.06), 0.0), 0.4)
+        floatingStickSensitivity = min(max(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickSensitivity", defaultValue: 1.0), 0.5), 2.0)
+        floatingStickOpacity = min(max(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickOpacity", defaultValue: 1.0), 0.2), 1.0)
+        floatingStickEdgeHaptic = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingStickEdgeHaptic", defaultValue: false)
+        edgeTriggerZones = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "EdgeTriggerZones", defaultValue: false)
+        edgeTriggerMode = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Pad", key: "EdgeTriggerMode", defaultValue: 0))
+        edgeTriggerHaptics = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "EdgeTriggerHaptics", defaultValue: true)
+        invertLeftStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", defaultValue: false)
+        invertLeftStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", defaultValue: false)
+        invertRightStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", defaultValue: false)
+        invertRightStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickY", defaultValue: false)
+        autoSaveIntervalMinutes = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/UI", key: "AutoSaveIntervalMinutes", defaultValue: 0))
+        performanceMode = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "PerformanceMode", defaultValue: false)
+        quitToLauncherOnExit = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "QuitToLauncherOnExit", defaultValue: false)
         analogStickScale = Self.clampedAnalogStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/UI", key: "AnalogStickScale", defaultValue: 1.0))
         appLanguage = AppLanguage(rawValue: ARMSX2Bridge.getINIString("ARMSX2iOS/UI", key: "AppLanguage", defaultValue: AppLanguage.system.rawValue)) ?? .system
         controllerMultitapMode = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Gamepad", key: "MultitapMode", defaultValue: 0))
+        padAnalogDeadzone = ARMSX2Bridge.getINIFloat("Pad1", key: "Deadzone", defaultValue: 0.0)
+        padAnalogSensitivity = ARMSX2Bridge.getINIFloat("Pad1", key: "AxisScale", defaultValue: 1.33)
+        padButtonDeadzone = ARMSX2Bridge.getINIFloat("Pad1", key: "ButtonDeadzone", defaultValue: 0.0)
+        padInvertLeftStick = Int(ARMSX2Bridge.getINIInt("Pad1", key: "InvertL", defaultValue: 0))
+        padInvertRightStick = Int(ARMSX2Bridge.getINIInt("Pad1", key: "InvertR", defaultValue: 0))
+        padLargeMotorScale = ARMSX2Bridge.getINIFloat("Pad1", key: "LargeMotorScale", defaultValue: 1.0)
+        padSmallMotorScale = ARMSX2Bridge.getINIFloat("Pad1", key: "SmallMotorScale", defaultValue: 1.0)
+        padPressureModifier = ARMSX2Bridge.getINIFloat("Pad1", key: "PressureModifier", defaultValue: 1.0)
         autoOpenStikDebug = ARMSX2Bridge.getINIBool("ARMSX2iOS/JIT", key: "AutoOpenStikDebug", defaultValue: false)
         jitScriptProtocol = Self.loadedJITScriptProtocol()
         dev9HddEnabled = ARMSX2Bridge.getINIBool("DEV9/Hdd", key: "HddEnable", defaultValue: false)
@@ -1399,6 +1720,11 @@ final class SettingsStore: @unchecked Sendable {
     private static func clampedAnalogStickScale(_ scale: Float) -> Float {
         guard scale.isFinite else { return 1.0 }
         return min(max(scale, 0.8), 1.6)
+    }
+
+    static func clampedFloatingStickScale(_ scale: Float) -> Float {
+        guard scale.isFinite else { return 1.0 }
+        return min(max(scale, 0.6), 1.8)
     }
 
     private static func clampedLibraryBackgroundDim(_ value: Double) -> Double {

@@ -65,7 +65,11 @@ struct ISOEntry: Identifiable {
 }
 
 @MainActor
-private final class GameLibrarySnapshot {
+// AYS2: no longer file-private — the Dashboard carousel's loadGames()
+// (DashboardView.swift) reuses this same metadata cache so relisting the
+// library there doesn't re-parse every ISO's metadata from scratch on
+// every reload (seam).
+final class GameLibrarySnapshot {
 	struct CachedGameMetadata: Codable {
 		let metadata: [String: String]
 		let modificationDate: Date?
@@ -160,6 +164,11 @@ struct GameListView: View {
 	@State private var fileImporter = FileImportHandler.shared
 	@State private var coverStore = CoverStore.shared
 	@State private var externalLibrary = ExternalGameLibrary.shared
+	// AYS2: user-hidden library entries (seam) — see HiddenGamesStore. The
+	// three library layouts (list/grid/cover-flow) all render `visibleGames`
+	// so a hidden entry disappears from every view at once, unless the user
+	// has flipped the toolbar's reveal toggle to un-hide something.
+	@State private var hiddenStore = HiddenGamesStore.shared
 	@State private var externalCoverAutoDownloadAttemptedIDs = Set<String>()
 	@State private var showGameImporter = false
 	@State private var isLoadingGames = false
@@ -182,6 +191,14 @@ struct GameListView: View {
     @State private var cheatsManagerTarget: ISOEntry?
     @State private var pendingDeleteGame: ISOEntry?
     @State private var pendingDeleteDataGame: ISOEntry?
+    // AYS2: per-game settings profile export/import (seam).
+    @State private var profileShareItem: ShareSheetItem?
+    @State private var showProfileImporter = false
+    @State private var profileImportGame: ISOEntry?
+    @State private var profileMessage: String?
+    // AYS2: custom display name editing (seam).
+    @State private var renameTarget: ISOEntry?
+    @State private var renameText = ""
     @State private var gameActionTitle = ""
     @State private var gameActionMessage: String?
     @AppStorage("ARMSX2iOSGameLibraryLayout") private var libraryLayout = "grid"
@@ -320,6 +337,18 @@ struct GameListView: View {
                                 Label(settings.localized("Landscape Cover Flow"), systemImage: "rectangle.landscape.rotate")
                             }
                         }
+
+                        // AYS2: reveal hidden entries so they can be un-hidden
+                        // (seam) — only offered when something is actually hidden.
+                        if hiddenStore.hiddenCount > 0 {
+                            Divider()
+                            Toggle(isOn: $hiddenStore.revealHidden) {
+                                Label(
+                                    settings.localized("Show Hidden Games") + " (\(hiddenStore.hiddenCount))",
+                                    systemImage: hiddenStore.revealHidden ? "eye" : "eye.slash"
+                                )
+                            }
+                        }
                     } label: {
                         Image(systemName: libraryLayout == "grid" ? "list.bullet" : "square.grid.2x2")
                     }
@@ -393,6 +422,26 @@ struct GameListView: View {
                 Button(settings.localized("OK")) {}
             } message: {
                 Text(coverStore.lastCoverMessage ?? "")
+            }
+            // AYS2: rename a game's display name (seam).
+            .alert(
+                settings.localized("Rename Game"),
+                isPresented: Binding(
+                    get: { renameTarget != nil },
+                    set: { if !$0 { renameTarget = nil } }
+                )
+            ) {
+                TextField(settings.localized("Display name"), text: $renameText)
+                Button(settings.localized("Cancel"), role: .cancel) { renameTarget = nil }
+                Button(settings.localized("Save")) {
+                    if let game = renameTarget {
+                        GameNameStore.shared.setName(renameText, forBoot: game.bootName)
+                        loadGames()
+                    }
+                    renameTarget = nil
+                }
+            } message: {
+                Text(settings.localized("Set a custom name shown in the library. Leave empty to restore the original."))
             }
             .alert(settings.localized("Cover Source"), isPresented: $showCoverTemplateEditor) {
                 TextField("https://.../${serial}.jpg", text: $coverTemplateDraft)
@@ -529,6 +578,27 @@ struct GameListView: View {
                     }
                 }
             }
+            // AYS2: per-game settings profile export/import (seam).
+            .sheet(item: $profileShareItem) { item in
+                ActivityShareSheet(activityItems: [item.url])
+            }
+            .sheet(isPresented: $showProfileImporter) {
+                ImportDocumentPicker(
+                    allowedContentTypes: [UTType(filenameExtension: "ini") ?? .data, .data],
+                    allowsMultipleSelection: false
+                ) { result in
+                    showProfileImporter = false
+                    importSettingsProfile(result)
+                }
+            }
+            .alert(settings.localized("Settings Profile"), isPresented: Binding(
+                get: { profileMessage != nil },
+                set: { if !$0 { profileMessage = nil } }
+            )) {
+                Button(settings.localized("OK")) { profileMessage = nil }
+            } message: {
+                Text(profileMessage ?? "")
+            }
             .photosPicker(
                 isPresented: $showCoverPhotoPicker,
                 selection: $selectedCoverPhotoItem,
@@ -592,12 +662,18 @@ struct GameListView: View {
 		}
     }
 
+    // AYS2: hidden-entry filter (seam) — see HiddenGamesStore. Reveal mode
+    // shows everything so hidden entries can be un-hidden from the same screen.
+    private var visibleGames: [ISOEntry] {
+        hiddenStore.revealHidden ? games : games.filter { !hiddenStore.isHidden($0.bootName) }
+    }
+
     private var listLibrary: some View {
         List {
             if let gameName = appState.runningGameName {
                 vmStatusSection(gameName: gameName)
             }
-            ForEach(games) { game in
+            ForEach(visibleGames) { game in
                 gameRow(game)
                     .libraryBackgroundListRow(hasCustomBackground)
             }
@@ -614,7 +690,7 @@ struct GameListView: View {
                 }
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 142), spacing: 14, alignment: .top)], spacing: 18) {
-                    ForEach(games) { game in
+                    ForEach(visibleGames) { game in
                         gameGridCard(game)
                     }
                 }
@@ -638,7 +714,7 @@ struct GameListView: View {
                     vmStatusCoverCard(gameName: gameName, metrics: metrics)
                 }
 
-                ForEach(games) { game in
+                ForEach(visibleGames) { game in
                     coverFlowCard(game, metrics: metrics)
                 }
             }
@@ -754,7 +830,7 @@ struct GameListView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text(coverStore.displayName(forGameName: game.name))
+                        Text(GameNameStore.shared.customName(forBoot: game.bootName) ?? coverStore.displayName(forGameName: game.name))
                             .font(.body)
                             .fontWeight(.medium)
                             .foregroundStyle(.primary)
@@ -825,7 +901,7 @@ struct GameListView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text(coverStore.displayName(forGameName: game.name))
+                        Text(GameNameStore.shared.customName(forBoot: game.bootName) ?? coverStore.displayName(forGameName: game.name))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(2)
@@ -897,7 +973,7 @@ struct GameListView: View {
                 }
 
                 VStack(spacing: 4) {
-                    Text(coverStore.displayName(forGameName: game.name))
+                    Text(GameNameStore.shared.customName(forBoot: game.bootName) ?? coverStore.displayName(forGameName: game.name))
                         .font((metrics.isCompact ? Font.subheadline : Font.headline).weight(.semibold))
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
@@ -1035,6 +1111,33 @@ struct GameListView: View {
             Label(settings.localized("Per-Game Settings"), systemImage: "slider.horizontal.3")
         }
 
+        // AYS2: custom display name (seam) — mainly for modded ISOs.
+        Button {
+            renameText = GameNameStore.shared.customName(forBoot: game.bootName) ?? ""
+            presentMenuPanel("rename") { renameTarget = game }
+        } label: {
+            Label(settings.localized("Rename"), systemImage: "pencil")
+        }
+
+        // AYS2: export/import this game's per-game settings profile (seam).
+        Menu {
+            Button {
+                exportSettingsProfile(for: game)
+            } label: {
+                Label(settings.localized("Export Profile"), systemImage: "square.and.arrow.up")
+            }
+            Button {
+                presentMenuPanel("import_profile") {
+                    profileImportGame = game
+                    showProfileImporter = true
+                }
+            } label: {
+                Label(settings.localized("Import Profile"), systemImage: "square.and.arrow.down")
+            }
+        } label: {
+            Label(settings.localized("Settings Profile"), systemImage: "doc.badge.gearshape")
+        }
+
         if game.isELF {
             discPathMenu(for: game)
         }
@@ -1087,6 +1190,15 @@ struct GameListView: View {
 
         Divider()
 
+        // AYS2: hide/show this entry in the library (seam) — see HiddenGamesStore.
+        Button {
+            hiddenStore.toggle(bootName: game.bootName)
+        } label: {
+            let hidden = hiddenStore.isHidden(game.bootName)
+            Label(settings.localized(hidden ? "Show in Library" : "Hide from Library"),
+                  systemImage: hidden ? "eye" : "eye.slash")
+        }
+
         Menu {
             Button {
                 clearGameCache(game)
@@ -1116,6 +1228,45 @@ struct GameListView: View {
 		}
 	}
 
+    // AYS2: per-game settings profile export/import (seam) — user request. Shares
+    // the game's per-game .ini as "<Game Name>.ini"; import writes it back for the
+    // same game (applies on next boot).
+    private func exportSettingsProfile(for game: ISOEntry) {
+        guard let path = ARMSX2Bridge.perGameSettingsFilePath(forISO: game.bootName) else {
+            profileMessage = settings.localized("This game has no per-game settings to export yet. Set some in Per-Game Settings first.")
+            return
+        }
+        let source = URL(fileURLWithPath: path)
+        let safeName = game.name.replacingOccurrences(of: "/", with: "-")
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName).ini")
+        do {
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: source, to: destination)
+            profileShareItem = ShareSheetItem(url: destination)
+        } catch {
+            profileMessage = "\(settings.localized("Could not export the profile:")) \(error.localizedDescription)"
+        }
+    }
+
+    private func importSettingsProfile(_ result: Result<[URL], Error>) {
+        guard let game = profileImportGame else { return }
+        profileImportGame = nil
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            let granted = url.startAccessingSecurityScopedResource()
+            defer { if granted { url.stopAccessingSecurityScopedResource() } }
+            let ok = ARMSX2Bridge.importPerGameSettings(fromFile: url.path, forISO: game.bootName)
+            profileMessage = ok
+                ? "\(settings.localized("Imported settings profile for")) \(game.name). \(settings.localized("It applies the next time this game boots."))"
+                : "\(settings.localized("Couldn't import the profile for")) \(game.name)."
+        case .failure(let error):
+            if !FileImportHandler.isUserCancelledPickerError(error) {
+                profileMessage = "\(settings.localized("Import failed:")) \(error.localizedDescription)"
+            }
+        }
+    }
+
 	@ViewBuilder
 	private func discPathMenu(for game: ISOEntry) -> some View {
 		let linkedDisc = ARMSX2Bridge.linkedDiscPath(forELF: game.bootName)
@@ -1143,7 +1294,12 @@ struct GameListView: View {
 
 	private func presentMenuPanel(_ name: String, _ action: @escaping () -> Void) {
 		NSLog("[ARMSX2 iOS GameListMenu] present \(name)")
+		// AYS2: guard against a scene backgrounding during this delay
+		// (seam/fix) — see RootView.swift's showCommunityWelcome timer for
+		// the full rationale (stuck sheet dimming overlay swallowing touches
+		// on foreground return, worse on iPad's non-fullscreen sheets).
 		DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+			guard UIApplication.shared.applicationState == .active else { return }
 			action()
 		}
 	}
@@ -1517,9 +1673,13 @@ private extension View {
     }
 }
 
-private struct GameInfoPanel: View {
+// AYS2: no longer file-private — the Dashboard carousel's long-press
+// context menu (DashboardView.swift) reuses this same panel (seam).
+struct GameInfoPanel: View {
     @Environment(\.dismiss) private var dismiss
     @State private var settings = SettingsStore.shared
+    // AYS2: play-time display (seam) — see PlayTimeStore.
+    @State private var playTimeStore = PlayTimeStore.shared
 
     let game: ISOEntry
     let coverStore: CoverStore
@@ -1538,7 +1698,7 @@ private struct GameInfoPanel: View {
                         )
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(coverStore.displayName(forGameName: game.name))
+                            Text(GameNameStore.shared.customName(forBoot: game.bootName) ?? coverStore.displayName(forGameName: game.name))
                                 .font(.headline)
                             Text(game.name)
                                 .font(.caption)
@@ -1566,6 +1726,20 @@ private struct GameInfoPanel: View {
                     }
                     LabeledContent(settings.localized("Size")) {
                         Text(formatSize(game.size))
+                    }
+                }
+
+                // AYS2: per-game play time (seam) — see PlayTimeStore.
+                Section(settings.localized("Play Time")) {
+                    LabeledContent(settings.localized("Total")) {
+                        Text(playTimeStore.formatted(forGame: game.bootName) ?? settings.localized("Never played"))
+                    }
+                    if playTimeStore.seconds(forGame: game.bootName) > 0 {
+                        Button(role: .destructive) {
+                            playTimeStore.resetTime(forGame: game.bootName)
+                        } label: {
+                            Text(settings.localized("Reset Play Time"))
+                        }
                     }
                 }
 
@@ -1644,7 +1818,8 @@ private struct DiscLinkPicker: View {
     }
 }
 
-private extension String {
+// AYS2: internal (not fileprivate) so the hub's list rows can reuse it too.
+extension String {
     var pathExtensionLabel: String {
         let ext = (self as NSString).pathExtension.uppercased()
         return ext.isEmpty ? "FILE" : ext

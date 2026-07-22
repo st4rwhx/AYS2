@@ -18,7 +18,7 @@ AYS2 is a PlayStation 2 emulator for iOS built on ARMSX2, which itself is built 
 └──────────────┬──────────────────────┘
                │
 ┌──────────────▼──────────────────────┐
-│    CPU/EE Recompiler (x86→arm64)    │
+│    CPU/EE Recompiler (MIPS→arm64)   │
 │    GPU Renderer (Metal)              │
 │    Sound Engine                      │
 │    Memory Management                 │
@@ -73,7 +73,7 @@ AYS2/
 │       │   ├── AppState.swift
 │       │   ├── SettingsStore.swift
 │       │   └── PadLayoutStore.swift
-│       └── Resources/
+│       └── Shaders/
 │
 ├── source/                         # SideStore feed infrastructure
 │   └── worker/
@@ -91,14 +91,14 @@ AYS2/
 │
 ├── docs/                           # Documentation
 │   ├── ARMSX2_MIGRATION.md
-│   └── ELORIS_OVERLAY.md
+│   └── AYS2_OVERLAY.md
 │
 ├── assets/                         # UI assets
 │   ├── app_icons/
 │   └── resources/
 │
 └── scripts/                        # Utility scripts
-    └── eloris-overlay.sh
+    └── ays2-overlay.sh
 ```
 
 ## Core Components
@@ -110,7 +110,7 @@ AYS2/
 **Purpose:** PlayStation 2 hardware emulation
 
 **Key Components:**
-- **CPU/EE (Emotion Engine):** x86 → arm64 JIT recompiler
+- **CPU/EE (Emotion Engine):** native MIPS (R5900/VU) → arm64 JIT recompiler
 - **Graphics (GS):** Metal renderer with shader compilation
 - **Sound (SPU):** PCM audio engine with effects
 - **Memory:** Page-based memory management
@@ -175,7 +175,7 @@ Swift calls EmulatorBridge.startGame()
     ↓
 C++ loads game ISO/CHD
     ↓
-CPU recompiler JIT-compiles x86 → arm64
+CPU recompiler JIT-compiles MIPS → arm64
     ↓
 GPU renders frame to Metal texture
     ↓
@@ -257,9 +257,8 @@ Background Thread (Emulation)
 - **SwiftUI:** iOS UI framework
 
 ### Build Tools
-- **CMake:** Cross-platform build
-- **Xcode:** iOS project generation
-- **Ninja:** Fast build execution
+- **CMake:** Build configuration (`-G Xcode` generator on iOS)
+- **xcodebuild:** Actual compile step, driven by CI (`.github/workflows/build-ios.yml`)
 
 ---
 
@@ -274,20 +273,18 @@ Background Thread (Emulation)
 
 ## Testing Strategy
 
-### Unit Tests
-- Recompiler correctness
-- Memory management
-- Save state integrity
+There is currently no automated test suite (no `add_test()`/`enable_testing()`
+wired into the CMake build). What exists today:
 
-### Integration Tests
-- Game compatibility suite
-- Controller input response
-- Performance benchmarks
+- **CI (`build-ios.yml`):** compiles the app and packages an unsigned IPA on
+  every push. This catches build breaks, not runtime/behavioral bugs.
+- **Manual device testing:** the actual verification step for anything
+  runtime-related (JIT behavior, rendering, input, save states) — real
+  hardware, real iOS versions, real games.
 
-### Manual Testing
-- Real device testing (iPhone 11+, iPad)
-- Various iOS versions (17.0+)
-- Game compatibility matrix
+Automated unit/integration tests (recompiler correctness, save-state
+integrity, compatibility regression suite) are not implemented. If you're
+looking for a place to contribute, this is one.
 
 ---
 

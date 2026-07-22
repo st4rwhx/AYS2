@@ -7,6 +7,8 @@ struct EmulatorSettingsView: View {
     @State private var settings = SettingsStore.shared
     @State private var stikDebugOpenFailed = false
     @State private var stikDebugOpenInProgress = false
+    @State private var trollStoreOpenFailed = false
+    @State private var trollStoreOpenInProgress = false
 
     var body: some View {
         Form {
@@ -69,7 +71,7 @@ struct EmulatorSettingsView: View {
                 Text(settings.localized("Rounding and clamping can improve compatibility for specific games, but may break others. Changes take effect on the next game boot."))
             }
 
-            Section(settings.localized("StikDebug")) {
+            Section(settings.localized("JIT")) {
                 Toggle(settings.localized("Auto-open StikDebug"), isOn: $settings.autoOpenStikDebug)
 
                 Picker(settings.localized("JIT Script"), selection: $settings.jitScriptProtocol) {
@@ -83,24 +85,57 @@ struct EmulatorSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                // AYS2: LiveContainer/host-container installs (seam) — our own
+                // deep link targets AYS2's own bundle id, but the process
+                // StikDebug actually needs to attach to is the container's, so
+                // the button can't work here. Swap it for accurate guidance
+                // instead of a tap that silently does nothing useful.
+                if AppInstallEnvironment.isLikelyExternalContainer {
+                    Text(settings.localized("Running inside a host container (e.g. LiveContainer): this button can't target the right process from in here. Set JIT Script to Universal above, then enable JIT from the container itself — hold AYS2 in its app list, open Settings, and turn on \"Launch with JIT\" (or run the matching script against the container, not AYS2, in StikDebug directly)."))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else {
+                    Button {
+                        stikDebugOpenInProgress = true
+                        stikDebugOpenFailed = false
+                        StikDebugLauncher.open(reason: "emulator-settings") { success in
+                            stikDebugOpenInProgress = false
+                            stikDebugOpenFailed = !success
+                        }
+                    } label: {
+                        Label(settings.localized("Open StikDebug"), systemImage: "bolt.horizontal.circle")
+                    }
+                    .disabled(stikDebugOpenInProgress)
+
+                    Text(settings.localized("Select the same script here that you run in StikDebug. This only changes the debugger breakpoint protocol used to prepare JIT memory. Fully close and relaunch AYS2 after switching scripts."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if stikDebugOpenFailed {
+                        Text(settings.localized("Open StikDebug manually, then run the selected script and relaunch AYS2."))
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+
                 Button {
-                    stikDebugOpenInProgress = true
-                    stikDebugOpenFailed = false
-                    StikDebugLauncher.open(reason: "emulator-settings") { success in
-                        stikDebugOpenInProgress = false
-                        stikDebugOpenFailed = !success
+                    trollStoreOpenInProgress = true
+                    trollStoreOpenFailed = false
+                    StikDebugLauncher.openTrollStore(reason: "emulator-settings") { success in
+                        trollStoreOpenInProgress = false
+                        trollStoreOpenFailed = !success
                     }
                 } label: {
-                    Label(settings.localized("Open StikDebug"), systemImage: "bolt.horizontal.circle")
+                    Label(settings.localized("Enable JIT via TrollStore"), systemImage: "bolt.horizontal.circle")
                 }
-                .disabled(stikDebugOpenInProgress)
+                .disabled(trollStoreOpenInProgress)
 
-                Text(settings.localized("Select the same script here that you run in StikDebug. This only changes the debugger breakpoint protocol used to prepare JIT memory. Fully close and relaunch ARMSX2 after switching scripts."))
+                Text(settings.localized("Only for TrollStore installs — a separate sideloading method from StikDebug/AltStore. If AYS2 isn't installed through TrollStore, this button won't do anything."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if stikDebugOpenFailed {
-                    Text(settings.localized("Open StikDebug manually, then run the selected script and relaunch ARMSX2."))
+                if trollStoreOpenFailed {
+                    Text(settings.localized("TrollStore didn't respond. If you don't use TrollStore, use StikDebug above instead."))
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -111,6 +146,38 @@ struct EmulatorSettingsView: View {
                 Text(settings.localized("Skips BIOS intro. Some games require this OFF."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            // AYS2: user request — keep the screen awake in-game so a game can't
+            // freeze on auto-lock (seam).
+            Section(settings.localized("Display")) {
+                Toggle(settings.localized("Keep Screen Awake During Gameplay"), isOn: $settings.keepAwakeDuringGameplay)
+                Text(settings.localized("Prevents the device from auto-locking while a game is running, so it won't freeze on sleep. Turn off to allow normal auto-lock."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // AYS2: external front-end integration (seam).
+            Section(settings.localized("External Launcher")) {
+                Toggle(settings.localized("Quit to Launcher on Game Exit"), isOn: $settings.quitToLauncherOnExit)
+                Text(settings.localized("When a game is opened from an external front-end (e.g. Cocoon, Daijishō), exiting it closes AYS2 so the launcher regains focus instead of showing the library. Only affects games launched externally."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // AYS2: user request — interval auto-save (see AppState).
+            Section {
+                Picker(settings.localized("Auto-Save Interval"), selection: $settings.autoSaveIntervalMinutes) {
+                    Text(settings.localized("Off")).tag(0)
+                    Text("1 min").tag(1)
+                    Text("5 min").tag(5)
+                    Text("10 min").tag(10)
+                    Text("15 min").tag(15)
+                }
+            } header: {
+                Text(settings.localized("Auto-Save"))
+            } footer: {
+                Text(settings.localized("Automatically saves a state at the chosen interval while a game is running, to a dedicated auto-slot (Slot 10) so your manual saves are never overwritten. Protects against crashes and battery loss."))
             }
 
             Section(settings.localized("Host Filesystem")) {

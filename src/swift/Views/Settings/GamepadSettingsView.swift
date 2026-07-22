@@ -91,6 +91,25 @@ struct GamepadSettingsView: View {
             }
 
             Section {
+                NavigationLink {
+                    AnalogStickSettingsView()
+                } label: {
+                    Label(settings.localized("Stick & Trigger Tuning"), systemImage: "slider.horizontal.3")
+                }
+            } footer: {
+                Text(settings.localized("Deadzone, sensitivity, inversion and vibration for the analog sticks and triggers."))
+            }
+
+            // AYS2: controller hotkeys (seam).
+            Section {
+                Toggle(settings.localized("Controller Hotkeys"), isOn: $settings.openMenuWithControllerButton)
+            } header: {
+                Text(settings.localized("Hotkeys"))
+            } footer: {
+                Text(settings.localized("Tap Menu (\u{2261}) / Options to open the pause menu — then navigate it with the controller. Or hold Menu and press: Cross = quick save, Circle = quick load, R1 = toggle fast-forward. No need to reach for the on-screen buttons."))
+            }
+
+            Section {
                 ForEach(ps2Buttons) { btn in
                     mappingRow(btn)
                 }
@@ -219,5 +238,102 @@ struct LocalMultiplayerSettingsView: View {
         }
         .navigationTitle(settings.localized("Local Multiplayer"))
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// AYS2: analog stick / trigger tuning (seam) — deadzone, anti-deadzone-style
+// sensitivity boost, button/trigger deadzone, stick inversion and vibration
+// scale. The emulator core already supports all of this (PadDualshock2's
+// SettingInfo array); it was simply never exposed on iOS.
+private let invertOptions: [(id: Int, title: String)] = [
+    (0, "Not Inverted"),
+    (1, "Invert Left/Right"),
+    (2, "Invert Up/Down"),
+    (3, "Invert Left/Right + Up/Down"),
+]
+
+struct AnalogStickSettingsView: View {
+    @State private var settings = SettingsStore.shared
+
+    var body: some View {
+        Form {
+            Section {
+                percentSlider(settings.localized("Deadzone"), value: $settings.padAnalogDeadzone, range: 0...1)
+                Text(settings.localized("Ignores small stick movements around center — raise this if your stick drifts at rest."))
+                    .font(.caption).foregroundStyle(.secondary)
+
+                percentSlider(settings.localized("Sensitivity"), value: $settings.padAnalogSensitivity, range: 0.01...2)
+                Text(settings.localized("Scales stick movement past the deadzone, so the full range is still reachable — 130-140% is recommended on most modern controllers."))
+                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text(settings.localized("Left/Right Analog Sticks"))
+            }
+
+            Section {
+                Picker(settings.localized("Invert Left Stick"), selection: $settings.padInvertLeftStick) {
+                    ForEach(invertOptions, id: \.id) { opt in
+                        Text(settings.localized(opt.title)).tag(opt.id)
+                    }
+                }
+                Picker(settings.localized("Invert Right Stick"), selection: $settings.padInvertRightStick) {
+                    ForEach(invertOptions, id: \.id) { opt in
+                        Text(settings.localized(opt.title)).tag(opt.id)
+                    }
+                }
+            } header: {
+                Text(settings.localized("Inversion"))
+            }
+
+            Section {
+                percentSlider(settings.localized("Button/Trigger Deadzone"), value: $settings.padButtonDeadzone, range: 0...1)
+                Text(settings.localized("Ignores light presses on L2/R2 and other pressure-sensitive buttons."))
+                    .font(.caption).foregroundStyle(.secondary)
+
+                percentSlider(settings.localized("Pressure Modifier"), value: $settings.padPressureModifier, range: 0.01...1)
+                Text(settings.localized("Pressure applied while a modifier button is held, for games that read analog button pressure."))
+                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text(settings.localized("Buttons & Triggers"))
+            }
+
+            Section {
+                percentSlider(settings.localized("Large Motor"), value: $settings.padLargeMotorScale, range: 0...2)
+                percentSlider(settings.localized("Small Motor"), value: $settings.padSmallMotorScale, range: 0...2)
+            } header: {
+                Text(settings.localized("Vibration Strength"))
+            } footer: {
+                Text(settings.localized("Scales the low-frequency (large) and high-frequency (small) rumble motors independently."))
+            }
+
+            Section {
+                Button(settings.localized("Reset to Default")) {
+                    settings.padAnalogDeadzone = 0.0
+                    settings.padAnalogSensitivity = 1.33
+                    settings.padButtonDeadzone = 0.0
+                    settings.padInvertLeftStick = 0
+                    settings.padInvertRightStick = 0
+                    settings.padLargeMotorScale = 1.0
+                    settings.padSmallMotorScale = 1.0
+                    settings.padPressureModifier = 1.0
+                }
+                .foregroundStyle(.red)
+            }
+        }
+        .navigationTitle(settings.localized("Stick & Trigger Tuning"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder
+    private func percentSlider(_ title: String, value: Binding<Float>, range: ClosedRange<Float>) -> some View {
+        HStack {
+            Text(title)
+            Slider(value: value, in: range, onEditingChanged: { editing in
+                if editing { settings.beginVisualSliderEdit() } else { settings.endVisualSliderEdit() }
+            })
+            Text("\(Int((value.wrappedValue * 100).rounded()))%")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 46, alignment: .trailing)
+        }
     }
 }

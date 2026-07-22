@@ -21,6 +21,16 @@ struct VirtualPadSettingsView: View {
     @State private var skinPendingDelete: VPadSkinDescriptor?
     @State private var skinPendingRename: VPadSkinDescriptor?
     @State private var skinRenameDraft = ""
+    // AYS2: per-button autofire (seam) — see TurboStore.
+    @State private var turbo = TurboStore.shared
+    // AYS2: gyro aim (seam) — see GyroAimStore.
+    @State private var gyro = GyroAimStore.shared
+
+    // Buttons offered for turbo, with their ARMSX2PadButton raw values.
+    private static let turboButtons: [(raw: Int, label: String)] = [
+        (4, "Cross (✕)"), (5, "Circle (○)"), (6, "Square (□)"), (7, "Triangle (△)"),
+        (8, "L1"), (9, "R1"), (10, "L2"), (11, "R2")
+    ]
 
     var body: some View {
         Form {
@@ -44,6 +54,151 @@ struct VirtualPadSettingsView: View {
                 }
             }
 
+            // AYS2: per-button autofire / turbo (seam) — see TurboStore.
+            Section {
+                VStack(alignment: .leading) {
+                    Text("\(settings.localized("Turbo Frequency")): \(Int(turbo.frequencyHz)) Hz")
+                    Slider(value: $turbo.frequencyHz,
+                           in: TurboStore.minFrequency...TurboStore.maxFrequency, step: 1)
+                }
+                ForEach(Self.turboButtons, id: \.raw) { item in
+                    Toggle(settings.localized(item.label), isOn: Binding(
+                        get: { turbo.isTurbo(item.raw) },
+                        set: { turbo.setTurbo($0, rawButton: item.raw) }
+                    ))
+                }
+            } header: {
+                Text(settings.localized("Turbo (Autofire)"))
+            } footer: {
+                Text(settings.localized("Marked buttons auto-repeat while held, at the frequency above. Handy for rapid-fire inputs."))
+            }
+
+            // AYS2: gyro aim (seam) — see GyroAimStore.
+            Section {
+                Toggle(settings.localized("Enable Gyro Aim"), isOn: $gyro.enabled)
+                if gyro.enabled {
+                    if !gyro.isAvailable {
+                        Text(settings.localized("Motion sensors are not available on this device."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading) {
+                        Text("\(settings.localized("Sensitivity")): \(sensitivityLabel)")
+                        Slider(value: $gyro.sensitivity,
+                               in: GyroAimStore.minSensitivity...GyroAimStore.maxSensitivity,
+                               step: 0.25)
+                    }
+                    Picker(settings.localized("Controlled Stick"), selection: $gyro.usesLeftStick) {
+                        Text(settings.localized("Right Stick (Aim)")).tag(false)
+                        Text(settings.localized("Left Stick (Move)")).tag(true)
+                    }
+                    Toggle(settings.localized("Invert Horizontal"), isOn: $gyro.invertX)
+                    Toggle(settings.localized("Invert Vertical"), isOn: $gyro.invertY)
+                }
+            } header: {
+                Text(settings.localized("Gyro Aim"))
+            } footer: {
+                Text(settings.localized("Tilt the device to nudge an analog stick — great for fine-tuning aim. Tuned for landscape; if a direction feels backwards, flip its Invert switch. The stick self-centers when the device is still."))
+            }
+
+            // AYS2: user request — invert analog stick axes.
+            Section {
+                Toggle(settings.localized("Invert Left Stick X"), isOn: $settings.invertLeftStickX)
+                Toggle(settings.localized("Invert Left Stick Y"), isOn: $settings.invertLeftStickY)
+                Toggle(settings.localized("Invert Right Stick X"), isOn: $settings.invertRightStickX)
+                Toggle(settings.localized("Invert Right Stick Y"), isOn: $settings.invertRightStickY)
+            } header: {
+                Text(settings.localized("Stick Inversion"))
+            } footer: {
+                Text(settings.localized("Flips analog stick axes — handy for games with inverted camera controls. Applies to the on-screen sticks and gyro aim."))
+            }
+
+            // AYS2: floating touch sticks (seam) — screen-half analog sticks.
+            Section {
+                Toggle(settings.localized("Floating Touch Sticks"), isOn: $settings.floatingTouchSticks)
+
+                if settings.floatingTouchSticks {
+                    Toggle(settings.localized("Left Floating Stick"), isOn: $settings.floatingStickLeftEnabled)
+                    Toggle(settings.localized("Right Floating Stick"), isOn: $settings.floatingStickRightEnabled)
+                    Toggle(settings.localized("Swap Floating Sticks (L ↔ R)"), isOn: $settings.floatingSticksSwapped)
+                    Toggle(settings.localized("Hide Fixed On-Screen Sticks"), isOn: $settings.hideFixedAnalogSticks)
+
+                    Picker(settings.localized("Floating Stick Skin"), selection: $settings.floatingStickSkin) {
+                        ForEach(FloatingStickSkin.allCases) { skin in
+                            Text(settings.localized(skin.title)).tag(skin.rawValue)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(settings.localized("Floating Stick Size"))
+                            Spacer()
+                            Text(String(format: "%.0f%%", Double(settings.floatingStickScale) * 100))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Slider(value: $settings.floatingStickScale, in: 0.6...1.8, step: 0.05)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(settings.localized("Floating Stick Opacity"))
+                            Spacer()
+                            Text(String(format: "%.0f%%", Double(settings.floatingStickOpacity) * 100))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Slider(value: $settings.floatingStickOpacity, in: 0.2...1.0, step: 0.05)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(settings.localized("Floating Stick Dead Zone"))
+                            Spacer()
+                            Text(String(format: "%.0f%%", Double(settings.floatingStickDeadzone) * 100))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Slider(value: $settings.floatingStickDeadzone, in: 0.0...0.4, step: 0.01)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(settings.localized("Floating Stick Sensitivity"))
+                            Spacer()
+                            Text(String(format: "%.2f×", Double(settings.floatingStickSensitivity)))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Slider(value: $settings.floatingStickSensitivity, in: 0.5...2.0, step: 0.05)
+                    }
+
+                    Toggle(settings.localized("Edge Haptic Feedback"), isOn: $settings.floatingStickEdgeHaptic)
+                }
+            } header: {
+                Text(settings.localized("Touch Sticks"))
+            } footer: {
+                Text(settings.localized("The left half of the game area becomes the left analog stick and the right half the right stick — a stick appears wherever your thumb lands and follows it. Hide either half, swap which stick each half drives, resize them, tune opacity / dead zone / sensitivity, pick a skin, and hide the fixed on-screen sticks so they don't get in the way. Works alongside the face buttons and a physical controller."))
+            }
+
+            // AYS2: user request — landscape edge trigger zones (grip triggers).
+            Section {
+                Toggle(settings.localized("Edge Trigger Zones (Landscape)"), isOn: $settings.edgeTriggerZones)
+
+                if settings.edgeTriggerZones {
+                    Picker(settings.localized("Trigger Buttons"), selection: $settings.edgeTriggerMode) {
+                        Text(settings.localized("L1 / R1")).tag(0)
+                        Text(settings.localized("L2 / R2")).tag(1)
+                        Text(settings.localized("Both (L1+L2 / R1+R2)")).tag(2)
+                    }
+                    Toggle(settings.localized("Trigger Vibration"), isOn: $settings.edgeTriggerHaptics)
+                }
+            } header: {
+                Text(settings.localized("Edge Triggers"))
+            } footer: {
+                Text(settings.localized("In landscape, press the left screen edge to hold L and the right edge to hold R — like squeezing the grip triggers of a phone gamepad, with a vibration on press and release. The zones sit on the upper edges so your index fingers rest there naturally; the rest of the screen still works for the sticks and buttons."))
+            }
+
             Section(settings.localized("Gameplay")) {
                 Toggle(settings.localized("Hide Virtual Pad When Controller Is Connected"), isOn: $settings.autoHideVirtualPadWhenControllerConnected)
                 Text(settings.localized("Automatically hides the on-screen controls while an external controller is connected."))
@@ -52,6 +207,24 @@ struct VirtualPadSettingsView: View {
 
                 Toggle(settings.localized("Auto Full Screen"), isOn: $settings.autoFullscreen)
                 Toggle(settings.localized("Hide Menu Button"), isOn: $settings.hideMenuButton)
+
+                // AYS2: on-screen quick save/load-state buttons (seam).
+                Toggle(settings.localized("On-Screen Quick Save/Load Buttons"), isOn: $settings.showQuickStateButtons)
+                Text(settings.localized("Adds floating Quick Save and Quick Load buttons to the game screen (they use a dedicated quick slot)."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                // AYS2: on-screen frame-limiter toggle button (seam).
+                Toggle(settings.localized("On-Screen Frame Limiter Button"), isOn: $settings.showFrameLimiterButton)
+                Text(settings.localized("Adds a floating button to toggle the frame limiter (unlimited speed) during gameplay."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                // AYS2: on-screen gameplay record button (ReplayKit) (seam).
+                Toggle(settings.localized("On-Screen Record Button"), isOn: $settings.showRecordButton)
+                Text(settings.localized("Adds a floating button to record gameplay from inside the app. Recording uses iOS's encoder, so it has the same performance cost as screen recording."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Toggle(settings.localized("D-pad Diagonals"), isOn: $settings.dpadDiagonalsEnabled)
                 Text(settings.localized("Allows one-finger diagonal and quarter-circle motions on the virtual D-pad."))
@@ -303,6 +476,10 @@ struct VirtualPadSettingsView: View {
                 )
             )
         }
+    }
+
+    private var sensitivityLabel: String {
+        String(format: "%.2f×", gyro.sensitivity)
     }
 
     private var selectedSkinDetail: String {

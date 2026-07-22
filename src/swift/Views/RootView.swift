@@ -22,7 +22,8 @@ struct RootView: View {
     @State private var appState = AppState.shared
     @State private var settings = SettingsStore.shared
     @State private var fileImporter = FileImportHandler.shared
-    @State private var showBootSplash = true
+    // AYS2: honor the "show boot animation" preference (seam) — start hidden when off.
+    @State private var showBootSplash = SettingsStore.shared.showBootAnimation
     @State private var showCommunityWelcome = false
     @State private var showCoreAccessUpsell = false // AYS2: post-game upsell (seam)
 
@@ -43,7 +44,15 @@ struct RootView: View {
                         showBootSplash = false
                     }
                     // Warm Discord / GitHub-star invite, once the splash clears.
+                    // AYS2: guard against the scene having backgrounded during
+                    // this delay (seam/fix) — presenting a sheet while the app
+                    // resigns active can leave its dimming overlay attached
+                    // without the card, swallowing every touch underneath once
+                    // the user returns foreground (worse on iPad, where
+                    // .sheet is a non-fullscreen form card and the stuck
+                    // overlay is invisible instead of an obvious blank screen).
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        guard UIApplication.shared.applicationState == .active else { return }
                         if appState.currentScreen == .menu {
                             showCommunityWelcome = true
                         }
@@ -58,6 +67,9 @@ struct RootView: View {
         .onAppear {
             applyAppColorScheme(settings.appColorScheme)
             StikDebugLauncher.autoOpenIfNeeded(reason: "app launch")
+            // AYS2: controller menu navigation is active whenever a menu (not a
+            // running game) is on screen (seam).
+            MenuControllerInput.shared.setMenuActive(appState.currentScreen == .menu)
         }
         .onChange(of: settings.appColorScheme) { _, newValue in
             applyAppColorScheme(newValue)
@@ -66,6 +78,9 @@ struct RootView: View {
         // CoreAccessStore enforces the cadence (never the first 3 days, ≥4 days
         // apart, never for members, permanent opt-out).
         .onChange(of: appState.currentScreen) { oldScreen, newScreen in
+            // AYS2: only poll the controller for menu navigation while a menu is
+            // shown; gameplay owns the controller during .playing (seam).
+            MenuControllerInput.shared.setMenuActive(newScreen == .menu)
             if oldScreen == .playing, newScreen == .menu,
                CoreAccessStore.shared.shouldShowPostGameUpsell {
                 CoreAccessStore.shared.markUpsellShown()

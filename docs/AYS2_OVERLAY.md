@@ -42,16 +42,21 @@ Copied forward untouched on every rebase.
 
 | File | What |
 |---|---|
-| `src/swift/Views/DashboardView.swift` | NXE dashboard shell, cover carousel, settings-tile hub, community bar |
+| `src/swift/Views/DashboardView.swift` | NXE dashboard shell, kinetic single-game-hero carousel (native `.scrollTargetBehavior(.viewAligned)` + centered `.scrollPosition` snaps exactly one game per swipe, `.scrollTransition` scale/opacity/blur falloff on neighbors), focused-game synopsis panel, settings-tile hub, community bar |
+| `src/swift/Views/GameHeroBackground.swift` | Full-bleed banner behind the games carousel: the focused game's own cover art, blurred and stretched to fill, cross-fading as focus moves — no per-item network/asset fetch, reuses the cover already loaded for the carousel |
+| `src/swift/Models/GameSynopsisStore.swift` | Per-game synopsis by serial, same fetch-by-serial pattern as CoverStore's cover art: Tom-Bruise/PS2-OPL-CFG-Database (GPL-3.0, ScreenScraper-sourced, EN/FR), disk-cached, works for the whole library automatically |
 | `src/swift/Views/RetroKit.swift` | Light/dark NXE design system (colors, TopNav chrome, PS glyphs, HintBar) |
 | `src/swift/Views/CommunityView.swift` | Discord/GitHub welcome sheet + floating community bar |
 | `src/swift/Views/DiscordLogoShape.swift` | Discord logo drawn natively as a SwiftUI Shape |
-| `src/swift/Models/SoundManager.swift` | UI sounds |
+| `src/swift/Models/SoundManager.swift` | UI sounds (nav/select/back/boot) — the four `.wav` assets it plays (`src/assets/resources/sounds/*.wav`) are ours, synthesized (no Sony/sample assets) |
 | `src/swift/Models/CoreAccessStore.swift` | CORE ACCESS membership: entitlement via our worker, upsell cadence |
 | `src/swift/Views/CoreAccessView.swift` | CORE ACCESS storefront + post-game upsell sheet |
 | `coreaccess/worker/*` | Stripe checkout redirect + entitlement API (Cloudflare Worker) |
 | `src/swift/Views/TermsOfUseView.swift` | Terms of use / privacy screen |
 | `src/assets/Assets.xcassets/AppIcon.appiconset/*` | Our app icon (13 sizes) |
+| `src/swift/Views/ShadeBoostPreviewView.swift` | Live Shade Boost preview: decodes the bundled clip, drives it through the shader below |
+| `src/swift/Shaders/ShadeBoostPreview.metal` | SwiftUI `.colorEffect` mirror of `ps_shadeboost` (convert.metal) for the preview above |
+| `src/assets/resources/shadeboost_preview.gif` | Bundled gameplay clip for the Shade Boost preview (user-supplied capture) |
 
 ### 2b. Seams — upstream files we edit (keep MINIMAL + MARKED)
 
@@ -59,10 +64,12 @@ Copied forward untouched on every rebase.
 |---|---|
 | `src/swift/Views/RootView.swift` | show `DashboardView()` instead of the tab menu; app color-scheme apply; community welcome sheet; post-game CORE ACCESS upsell |
 | `src/swift/Views/GameScreenView.swift` | pause button icon → `pause.fill` (menu itself is upstream's QuickMenuView; tile-grid redesign deferred) |
-| `src/swift/Models/SettingsStore.swift` | `AppColorScheme` (system/light/dark) setting |
+| `src/swift/Models/SettingsStore.swift` | `AppColorScheme` (system/light/dark) setting; live-apply (`requestGraphicsApply()`) wired to the 7 advanced-upscaling-hack properties, which upstream leaves reset-only; 8 analog-stick/trigger tuning properties (deadzone, sensitivity, invert, vibration, pressure modifier) writing straight to the `Pad1` section PadDualshock2 already reads — core support existed, iOS never exposed it |
 | `src/swift/Views/Settings/AppearanceSettingsView.swift` | Theme picker |
+| `src/swift/Views/Settings/GraphicsSettingsView.swift` | `ShadeBoostPreviewView` inserted above the Shade Boost sliders; corrected two hack captions that no longer require reset/relaunch |
 | `src/swift/Views/GameListView.swift` | cover-flow carousel enabled in portrait (drop landscape-only gate) |
-| `src/cpp/ios_main.mm` | JIT protocol default → `legacy` (brk #0x69) + one-time V2 migration |
+| `src/cpp/ios_main.mm` | JIT protocol default → `legacy` (brk #0x69) + one-time V2 migration; JIT keepalive timer (12s, checks during gameplay too, reworked from upstream's reverted attempt — see §3 note) + boot watchdog (15s), ported early from ARMSX2's iOS JIT resilience layer ahead of a full rebase; `EnablePINE` defaults to `true` on first run (`ARMSX2EnsureIOSPINEDefault`) so an external PINE-speaking tool can attach without a Settings toggle — PINE binds loopback-only (`pcsx2/PINE.cpp`), not network-reachable; moved `checkAndConfigureBIOS` to after `VMManager::Internal::LoadStartupSettings()` in scene-connect — its "already configured" fast path reads `EmuConfig.BaseFilenames.Bios`, which wasn't populated yet at the original call site, so every launch fell through to a full Documents-root directory scan instead of short-circuiting (multi-second startup delay fix) |
+| `src/cpp/common/Darwin/DarwinMisc.h` / `.cpp` | `DarwinMisc::ValidateJITAlive()` (CS_DEBUGGED + JIT RW alias canary re-check, called by the keepalive timer); 8s worker-thread timeout on the Universal TXM path in `MmapCodeDualMap`, falling back to Legacy `brk #0x69` on hang — same upstream JIT resilience layer |
 | `src/cpp/pcsx2/PrecompiledHeader.h` | `#include <TargetConditionals.h>` so `TARGET_OS_IPHONE` resolves |
 | `src/cpp/common/PrecompiledHeader.h` | same TargetConditionals include |
 | `src/cpp/pcsx2/ImGui/ImGuiOverlays.cpp` | in-game OSD brand → `AYS2` |
@@ -81,6 +88,57 @@ Copied forward untouched on every rebase.
 ---
 
 ## 3. Rebase playbook — moving to a newer ARMSX2 iOS tag
+
+> **STALE as of 2026-07-18, verify before following.** Upstream did a monorepo
+> refactor (commit "refactor: move iOS frontend to platforms/ios on single
+> shared core", 2026-07-08): the layout below (`app/src/main/{cpp,swift,assets}`)
+> may no longer match `github.com/ARMSX2/ARMSX2` — it's now `platforms/ios/app/...`.
+> Re-verify the actual current layout before running this playbook; it hasn't
+> been re-run/re-tested against the new structure yet.
+>
+> We also ported all 5 pieces of upstream's iOS JIT resilience layer
+> (keepalive timer, `ValidateJITAlive`, boot watchdog, and the Universal-JIT
+> 8s-worker-thread-timeout-with-Legacy-fallback — see §2b, `ios_main.mm` /
+> `DarwinMisc.cpp`) **out of band, ahead of a full rebase**. The Universal
+> timeout piece was initially held back over a suspected `sigsetjmp` cross-
+> thread UB risk; verified false via `raw.githubusercontent.com` (readable
+> even though `github.com` diff/API views are blocked in-session) — the
+> `sigsetjmp` is called fresh on the worker thread itself, right before the
+> op that might trap, so the SIGTRAP (synchronous, instruction-triggered) is
+> delivered to that same thread. Carried over one accepted trade-off from
+> upstream verbatim: if that worker thread hangs, `sa_brk_old` is restored
+> unconditionally afterward, so a late trap after the Legacy fallback would
+> hit the old handler instead of ours. Upstream's own comment calls this
+> "bounded... Universal protocol + hang + late trap" — and AYS2 defaults to
+> Legacy always (`ios_main.mm`), so this branch is only reachable at all if
+> a user opts into Universal from Settings.
+>
+> None of this was verified against a real diff via authenticated repo
+> access (that session couldn't add `ARMSX2/ARMSX2` — cross-owner add is
+> blocked; forking it was also blocked). Verified only by cross-referencing
+> `raw.githubusercontent.com` fetches against our own already-trusted code
+> (matching identifiers, matching surrounding logic) — high confidence, not
+> a substitute for a real rebase diff when one becomes possible.
+>
+> **2026-07-18 follow-up, with direct upstream contact:** upstream (J1coding)
+> confirmed on Discord that `b8e94ea` ("fix JIT keepalive timer running
+> during gameplay") was reverted because it "didn't work correctly" — no
+> further detail given — and gave the project owner explicit permission to
+> finish it ("work is 95% done, go ahead"). We reworked our keepalive to
+> validate during gameplay again (matching `b8e94ea`'s intent, not the
+> reverted state) with two unconfirmed defensive changes: the canary byte
+> now targets the tail of the JIT region instead of the head (real code
+> fills from the start forward, so the head is more likely to be live code
+> at the moment of the write — reduces, does not prove, collision safety),
+> and a real revocation must fail 2 consecutive checks (24s apart) before
+> we force interpreter mode. **We do not know upstream's actual root cause
+> for the original failure** — these are our best-guess fixes for the most
+> plausible failure mode (self-modifying-code hazard from writing into live
+> compiled code), not a confirmed fix. Needs real device testing before
+> being treated as solved. If upstream ever shares the real cause, reconcile
+> against it.
+> When the actual rebase happens, diff our 3 ported pieces against upstream's
+> real versions and reconcile — ours may differ from what actually shipped.
 
 Upstream layout is `app/src/main/{cpp,swift,assets}`; ours is `src/{cpp,swift,assets}`.
 Upstream is a partial clone at `scratchpad/armsx2` with `origin =

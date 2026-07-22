@@ -4,6 +4,7 @@
 import Foundation
 
 enum VirtualPadSkin: Int, CaseIterable, Identifiable {
+    case ays2 = 13
     case armsx2Refresh = 0
     case legacyRefresh = 3
     case fullWhite = 4
@@ -35,6 +36,8 @@ enum VirtualPadSkin: Int, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
+        case .ays2:
+            return "AYS2 Signature"
         case .armsx2Refresh:
             return "White Colored"
         case .crispVector:
@@ -42,7 +45,7 @@ enum VirtualPadSkin: Int, CaseIterable, Identifiable {
         case .custom:
             return "Custom Imported"
         case .legacyRefresh:
-            return "ARMSX2 Refresh Legacy"
+            return "AYS2 Refresh Legacy"
         case .fullWhite:
             return "Full White"
         case .whiteDS:
@@ -66,6 +69,8 @@ enum VirtualPadSkin: Int, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
+        case .ays2:
+            return "The AYS2 signature pad — thin lines of blue light that ignite when touched."
         case .armsx2Refresh:
             return "Uses the bundled white controller art as the default on-screen pad."
         case .crispVector:
@@ -73,7 +78,7 @@ enum VirtualPadSkin: Int, CaseIterable, Identifiable {
         case .custom:
             return "Loads user-imported button images or a full portrait/landscape skin from the custom skin folder."
         case .legacyRefresh:
-            return "Uses the previous ARMSX2 refresh controller art."
+            return "Uses the previous AYS2 refresh controller art."
         case .fullWhite, .whiteDS, .whiteFullColorButton, .blackColored, .blackDS, .blackWhite, .liquidGlass, .black, .xbox:
             return "Uses a bundled controller skin."
         }
@@ -83,6 +88,8 @@ enum VirtualPadSkin: Int, CaseIterable, Identifiable {
         switch self {
         case .armsx2Refresh, .crispVector, .custom:
             return nil
+        case .ays2:
+            return "ays2"
         case .legacyRefresh:
             return "legacy_refresh"
         case .fullWhite:

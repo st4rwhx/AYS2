@@ -40,7 +40,7 @@ final class PatchStore: @unchecked Sendable {
             case .success: return "Patch installed. Some changes apply after restarting the game."
             case .invalid(let reason): return "This is not a valid patch: \(reason)"
             case .blockedByHardcore: return "Enabling cheats and patches is blocked while RetroAchievements Hardcore Mode is enabled."
-            case .noIdentity: return "ARMSX2 could not find a safe patch location for this game."
+            case .noIdentity: return "AYS2 could not find a safe patch location for this game."
             case .writeFailed(let reason): return "Could not save the patch: \(reason)"
             }
         }

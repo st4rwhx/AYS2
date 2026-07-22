@@ -35,8 +35,8 @@ extension AppIconOption {
         AppIconOption(id: "appicon-light", displayName: "Light", previewName: "appicon-light"),
         AppIconOption(id: "appicon-mystic", displayName: "Mystic Purple", previewName: "appicon-mystic"),
         AppIconOption(id: "appicon-purple", displayName: "Purple", previewName: "appicon-purple"),
-        AppIconOption(id: "appicon-pridedark", displayName: "ARMSX2 Pride Dark", previewName: "appicon-pridedark"),
-        AppIconOption(id: "appicon-pridelight", displayName: "ARMSX2 Pride Light", previewName: "appicon-pridelight")
+        AppIconOption(id: "appicon-pridedark", displayName: "AYS2 Pride Dark", previewName: "appicon-pridedark"),
+        AppIconOption(id: "appicon-pridelight", displayName: "AYS2 Pride Light", previewName: "appicon-pridelight")
     ]
 }
 
@@ -68,11 +68,22 @@ enum AppIconManager {
 
 // Best-effort detection of a host-container / LiveContainer-style install.
 // Such installs relocate the app bundle under the host’s Documents/Applications
-// folder; there the Home Screen icon belongs to the host, not ARMSX2, so native
+// folder; there the Home Screen icon belongs to the host, not AYS2, so native
 // alternate-icon switching does not apply. This is advisory only — normal
 // installs are never flagged, and a missed detection still falls back to the
 // clearer failure alert below.
-private enum AppInstallEnvironment {
+//
+// AYS2: no longer file-private (seam) — StikDebugLauncher (EmulatorBridge.swift)
+// also needs this. A host container like LiveContainer loads the guest app's
+// own Info.plist, so Bundle.main.bundleIdentifier inside AYS2 still reports
+// AYS2's own bundle id even though the actual running OS process (the one
+// StikDebug would need to attach a debugger to) is the host container's.
+// Firing our own stikdebug://enable-jit?bundle-id=<AYS2's id> deep link in
+// that case switches to StikDebug and reports success, but doesn't grant JIT
+// to the right process — JIT has to be requested for the container itself,
+// which is exactly why this is normally a manual, container-side setup step
+// and not something we can silently automate.
+enum AppInstallEnvironment {
     static var isLikelyExternalContainer: Bool {
         Bundle.main.bundlePath
             .range(of: "/Documents/Applications/", options: .caseInsensitive) != nil
@@ -96,7 +107,7 @@ struct AppIconSettingsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(settings.localized("External container install detected"))
                             .font(.subheadline.weight(.semibold))
-                        Text(settings.localized("Apps running inside a host container such as LiveContainer can’t change their Home Screen icon directly — the icon belongs to the host, not ARMSX2. Export an icon and set it as your LiveContainer Home Screen shortcut icon."))
+                        Text(settings.localized("Apps running inside a host container such as LiveContainer can’t change their Home Screen icon directly — the icon belongs to the host, not AYS2. Export an icon and set it as your LiveContainer Home Screen shortcut icon."))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -140,7 +151,7 @@ struct AppIconSettingsView: View {
         } message: {
             Text(settings.localized(inExportMode
                 ? "This install method can’t change the Home Screen icon directly. Export an icon and use it for a LiveContainer Home Screen shortcut instead."
-                : "iOS rejected the icon change. This can happen when ARMSX2 runs inside another app’s container. The icons are bundled — you can export one instead."))
+                : "iOS rejected the icon change. This can happen when AYS2 runs inside another app’s container. The icons are bundled — you can export one instead."))
         }
         .alert(settings.localized("Couldn’t export the icon."), isPresented: $showExportError) {
             Button(settings.localized("OK"), role: .cancel) {}
@@ -251,7 +262,7 @@ struct AppIconSettingsView: View {
             return nil
         }
         let destination = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ARMSX2 Icon - \(option.displayName).png")
+            .appendingPathComponent("AYS2 Icon - \(option.displayName).png")
         do {
             if FileManager.default.fileExists(atPath: destination.path) {
                 try FileManager.default.removeItem(at: destination)

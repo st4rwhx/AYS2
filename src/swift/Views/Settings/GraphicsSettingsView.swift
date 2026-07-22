@@ -179,6 +179,17 @@ struct GraphicsSettingsView: View {
             Section {
                 Toggle(settings.localized("Shade Boost"), isOn: $settings.shadeBoost)
                 if settings.shadeBoost {
+                    // AYS2: live preview so the sliders below show their effect
+                    // without a game loaded (seam)
+                    ShadeBoostPreviewView(
+                        brightnessPercent: settings.shadeBoostBrightness,
+                        contrastPercent: settings.shadeBoostContrast,
+                        saturationPercent: settings.shadeBoostSaturation,
+                        gammaPercent: settings.shadeBoostGamma
+                    )
+                    .listRowInsets(EdgeInsets())
+                    .padding(12)
+
                     percentSlider("Brightness", value: $settings.shadeBoostBrightness)
                     percentSlider("Contrast", value: $settings.shadeBoostContrast)
                     percentSlider("Saturation", value: $settings.shadeBoostSaturation)
@@ -195,7 +206,7 @@ struct GraphicsSettingsView: View {
                     get: { manualAdvancedHacks },
                     set: { settings.enableGameDBHardwareFixes = !$0 }
                 ))
-                Text(settings.localized("GameDB Graphics Fixes are safest for most games. Manual Advanced Hacks disable those automatic graphics fixes and allow the sprite, texture-offset, and Skipdraw values below. Reset/relaunch may be needed."))
+                Text(settings.localized("GameDB Graphics Fixes are safest for most games. Manual Advanced Hacks disable those automatic graphics fixes and allow the sprite, texture-offset, and Skipdraw values below. Changes apply to the running game; resume to see them."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -243,7 +254,7 @@ struct GraphicsSettingsView: View {
 
                 ClampedIntField(title: settings.localized("Skipdraw Start"), value: skipDrawStartBinding, range: SettingsStore.skipDrawRange, isEnabled: manualAdvancedHacks)
                 ClampedIntField(title: settings.localized("Skipdraw End"), value: skipDrawEndBinding, range: SettingsStore.skipDrawRange, isEnabled: manualAdvancedHacks)
-                Text(settings.localized("For Skipdraw 1, use Start 1 and End 1. Changes apply after reset/relaunch."))
+                Text(settings.localized("For Skipdraw 1, use Start 1 and End 1. Applies to the running game; resume to see it."))
                     .font(.caption)
                     .foregroundStyle(.orange)
             }

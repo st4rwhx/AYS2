@@ -6,7 +6,14 @@ import SwiftUI
 import UIKit
 
 struct BootSplashView: View {
-    private static let hardTimeout: UInt64 = 6_000_000_000
+    // AYS2: the old boot_intro.mp4 was a corrupt 32-byte stub (a bare MP4
+    // container header, no actual video track) — AVPlayer couldn't play it
+    // cleanly, and the splash likely rode out close to this whole timeout on
+    // every launch before falling through here. The new intro is a real,
+    // self-generated ~2.4s clip that ends via AVPlayerItemDidPlayToEndTime
+    // well before this fires — kept as a safety net only, tightened down
+    // now that it's not doing the real work (seam/fix).
+    private static let hardTimeout: UInt64 = 4_000_000_000
 
     let onFinished: () -> Void
     @State private var finished = false

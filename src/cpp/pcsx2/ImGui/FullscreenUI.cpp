@@ -1323,6 +1323,7 @@ void FullscreenUI::DrawLandingTemplate(ImVec2* menu_pos, ImVec2* menu_size)
 				ImGui::RenderTextClipped(name_pos, name_pos + name_size, username, nullptr, &name_size);
 
 				// TODO: should we cache this? heap allocations bad...
+				float group_left_x = name_pos.x;
 				std::string badge_path = Achievements::GetLoggedInUserBadgePath();
 				if (!badge_path.empty()) [[likely]]
 				{
@@ -1333,6 +1334,30 @@ void FullscreenUI::DrawLandingTemplate(ImVec2* menu_pos, ImVec2* menu_size)
 
 					dl->AddImage(reinterpret_cast<ImTextureID>(GetCachedTextureAsync(badge_path)->GetNativeHandle()),
 						badge_pos, badge_pos + badge_size);
+					group_left_x = badge_pos.x;
+				}
+
+				// AYS2: show the user's points — Hardcore, plus Casual (softcore)
+				// when they have any — next to the name (seam). Restores what the
+				// pre-overhaul UI showed. Drawn on the same line, to the left of the
+				// avatar/name group, so it never overflows the heading vertically.
+				u32 hardcore_points = 0, softcore_points = 0;
+				if (Achievements::GetLoggedInUserScore(&hardcore_points, &softcore_points))
+				{
+					const std::pair<ImFont*, float> points_font = g_medium_font;
+					SmallString points_str;
+					if (softcore_points > 0)
+						points_str.format(FSUI_FSTR("{} pts  \xC2\xB7  casual {}"), hardcore_points, softcore_points);
+					else
+						points_str.format(FSUI_FSTR("{} pts"), hardcore_points);
+
+					const ImVec2 points_size = points_font.first->CalcTextSizeA(
+						points_font.second, FLT_MAX, 0.0f, points_str.c_str(), points_str.end_ptr());
+					const ImVec2 points_pos(
+						group_left_x - points_size.x - LayoutScale(LAYOUT_MENU_BUTTON_X_PADDING),
+						name_pos.y + (name_size.y - points_size.y) * 0.5f);
+					ImGuiFullscreen::AddTextWithShadow(dl, points_font, points_pos,
+						ImGui::GetColorU32(ImGuiCol_Text), points_str.c_str(), points_str.end_ptr());
 				}
 			}
 		}

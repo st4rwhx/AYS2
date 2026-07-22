@@ -92,6 +92,10 @@ struct GameScreenView: View {
     @State private var externalControllerConnected = false
     @State private var fullScreen = false
     @State private var menuButtonHidden = false
+    // AYS2: reflects the on-screen frame-limiter toggle (see toggleFrameLimiter).
+    @State private var frameLimiterOff = false
+    // AYS2: in-app gameplay recorder (ReplayKit) — see ScreenRecorderStore.
+    @State private var recorder = ScreenRecorderStore.shared
     @State private var vmMenuAvailable = false
     @State private var gameMenuAvailable = false
     // MARK: Overlay Route
@@ -122,6 +126,19 @@ struct GameScreenView: View {
     // from SDL/core. Started when the menu is hidden during gameplay, stopped on restore.
     @State private var menuRestorePollTimer: Timer?
     @State private var lastControllerInputActive = false
+    // AYS2: gameplay hotkey poll (seam) — opens the pause menu when the
+    // controller's Menu/Options button is pressed. Snapshot reads only, so it
+    // never steals input from SDL/core; the game may also see the press but the
+    // VM pauses instantly, so it's inert.
+    @State private var hotkeyPollTimer: Timer?
+    @State private var lastHotkeyMenuPressed = false
+    // AYS2: hold-Menu + button combos (seam) — a combo used during a Menu hold
+    // suppresses the pause-menu-open on release, and each combo button is
+    // edge-detected so it fires once per press.
+    @State private var hotkeyComboUsed = false
+    @State private var lastComboSavePressed = false
+    @State private var lastComboLoadPressed = false
+    @State private var lastComboFastForwardPressed = false
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -181,7 +198,13 @@ struct GameScreenView: View {
                     },
                     onBackToMenu: {
                         overlayRoute = .hidden
-                        appState.returnToMenu()
+                        // AYS2: quit to the external front-end instead of the
+                        // library when launched externally and opted in (seam).
+                        if appState.launchedExternally && settings.quitToLauncherOnExit {
+                            appState.quitToLauncher()
+                        } else {
+                            appState.returnToMenu()
+                        }
                     },
                     onResume: {
                         if settings.hapticFeedback { HapticManager.light.impactOccurred() }
@@ -190,6 +213,23 @@ struct GameScreenView: View {
                 )
             }
         }
+    }
+
+    // AYS2: floating touch sticks configured from user settings (per-half enable,
+    // swap L/R, size, skin). Shared by the landscape and portrait layouts.
+    private var floatingSticks: some View {
+        FloatingTouchSticksView(
+            enabled: overlayRoute == .hidden,
+            leftEnabled: settings.floatingStickLeftEnabled,
+            rightEnabled: settings.floatingStickRightEnabled,
+            swapped: settings.floatingSticksSwapped,
+            scale: CGFloat(settings.floatingStickScale),
+            skin: FloatingStickSkin(rawValue: settings.floatingStickSkin) ?? .glow,
+            deadzone: settings.floatingStickDeadzone,
+            sensitivity: settings.floatingStickSensitivity,
+            opacity: CGFloat(settings.floatingStickOpacity),
+            edgeHaptic: settings.floatingStickEdgeHaptic
+        )
     }
 
     // MARK: - Body
@@ -204,6 +244,21 @@ struct GameScreenView: View {
                     ZStack {
                         MetalGameView()
                             .onTapGesture { restoreMenuButtonIfHidden() }
+                        // AYS2: floating touch sticks (seam) — screen-half analog
+                        // sticks, below the pad so face buttons keep priority.
+                        if settings.floatingTouchSticks {
+                            floatingSticks
+                        }
+                        // AYS2: landscape edge trigger zones (seam) — press the
+                        // left/right edges to hold L/R. Above the sticks so its
+                        // strips win, but it passes non-edge touches through.
+                        if settings.edgeTriggerZones {
+                            EdgeTriggerZonesView(
+                                enabled: overlayRoute == .hidden,
+                                mode: settings.edgeTriggerMode,
+                                haptics: settings.edgeTriggerHaptics
+                            )
+                        }
                         if effectiveVirtualPadVisible {
                             VirtualControllerView(
                                 isLandscape: true,
@@ -213,6 +268,13 @@ struct GameScreenView: View {
                             .id(padRebuildToken)
                         }
                         menuButtonOverlay(isLandscape: true)
+                        VStack {
+                            HStack {
+                                quickStateButtonsOverlay(isLandscape: true)
+                                Spacer()
+                            }
+                            Spacer()
+                        }
                     }
                     .ignoresSafeArea()
                 } else {
@@ -225,6 +287,12 @@ struct GameScreenView: View {
                             .frame(height: gameHeight)
                             .clipped()
                             .onTapGesture { restoreMenuButtonIfHidden() }
+                            // AYS2: floating touch sticks over the portrait game viewport (seam).
+                            .overlay {
+                                if settings.floatingTouchSticks {
+                                    floatingSticks
+                                }
+                            }
 
                         if effectiveVirtualPadVisible {
                             ZStack {
@@ -246,6 +314,9 @@ struct GameScreenView: View {
                                 .padding(.trailing, 4)
                         }
                     }
+                    .overlay(alignment: .topLeading) {
+                        quickStateButtonsOverlay(isLandscape: false)
+                    }
                     .ignoresSafeArea(.container, edges: .bottom)
                 }
             }
@@ -265,6 +336,14 @@ struct GameScreenView: View {
                     displayDuration: isImportant ? Self.importantStatusDisplayDuration : Self.briefStatusDisplayDuration
                 )
             }
+        }
+        // AYS2: gameplay recording (seam) — share the finished clip, and surface
+        // the recorder's status messages through the normal status toast.
+        .sheet(item: $recorder.shareItem) { item in
+            ActivityShareSheet(activityItems: [item.url])
+        }
+        .onChange(of: recorder.lastStatusMessage) { _, message in
+            if let message { presentStatusMessage(message) }
         }
         .sheet(isPresented: childPresentedBinding(.speed)) {
             SpeedControlPanel(settings: settings)
@@ -293,6 +372,20 @@ struct GameScreenView: View {
                 launchContext: .inGame
             )
             .presentationDetents([.medium, .large])
+        }
+        // AYS2: in-app walkthrough/guide viewer (seam) — opens a web guide for the
+        // running game without leaving AYS2, remembered per game via GuideStore.
+        .sheet(isPresented: childPresentedBinding(.guide)) {
+            GuideView(
+                settings: settings,
+                gameKey: ARMSX2Bridge.currentGameISOName(),
+                displayTitle: currentRuntimeGameName() ?? "",
+                onDismiss: {
+                    if case .pausedPresenting(.guide) = overlayRoute {
+                        overlayRoute = .paused
+                    }
+                }
+            )
         }
         .overlay(alignment: .bottom) {
             statusToastOverlay
@@ -331,12 +424,29 @@ struct GameScreenView: View {
             refreshRuntimeMenuState()
             consumePendingRetroAchievementsToast()
             startMenuRestorePollingIfNeeded()
+            startHotkeyPollingIfNeeded()
+            // AYS2: gyro aim (seam) — only run motion while gameplay is on screen.
+            GyroAimStore.shared.setGameplayActive(overlayRoute == .hidden)
+            // AYS2: keep the screen awake in-game so a game can't freeze on
+            // auto-lock (seam) — opt-out via Settings.
+            UIApplication.shared.isIdleTimerDisabled = settings.keepAwakeDuringGameplay
+        }
+        .onChange(of: settings.keepAwakeDuringGameplay) { _, keepAwake in
+            UIApplication.shared.isIdleTimerDisabled = keepAwake
         }
         .onDisappear {
             statusMessageDismissTask?.cancel()
             retroAchievementsToastDismissTask?.cancel()
             stopMenuRestorePolling()
+            stopHotkeyPolling()
             leaveGameplaySystemChromeMode()
+            GyroAimStore.shared.setGameplayActive(false)
+            // AYS2: release the wake lock when leaving gameplay (seam).
+            UIApplication.shared.isIdleTimerDisabled = false
+            // AYS2: leaving gameplay hands controller navigation back to the menu
+            // authority (seam) — resync so a lingering pause-card activation from
+            // the exit transition can't leave menu polling off on the Dashboard.
+            MenuControllerInput.shared.setMenuActive(appState.currentScreen == .menu)
         }
         // Single chokepoint for runtime pause: VM pause derives only from `overlayRoute`
         // (any non-hidden route keeps the VM paused), so one observer covers every child
@@ -344,10 +454,19 @@ struct GameScreenView: View {
         // observers that existed for the old independent booleans.
         .onChange(of: overlayRoute) { _, _ in
             updateRuntimeOverlayPause()
+            // AYS2: gyro aim follows the same pause signal as the VM — active
+            // only when gameplay is visible (route hidden), suspended otherwise.
+            GyroAimStore.shared.setGameplayActive(overlayRoute == .hidden)
+            // AYS2: controller menu navigation is active only while the pause card
+            // itself is shown (seam) — so a controller can drive the pause menu but
+            // never steals input during gameplay or a touch-driven child screen.
+            MenuControllerInput.shared.setMenuActive(overlayRoute == .paused)
             if overlayRoute != .hidden {
                 stopMenuRestorePolling()
+                stopHotkeyPolling()
             } else {
                 startMenuRestorePollingIfNeeded()
+                startHotkeyPollingIfNeeded()
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -428,6 +547,114 @@ struct GameScreenView: View {
         }
         .accessibilityLabel(settings.localized("Pause Menu"))
         .accessibilityHint(settings.localized("Opens the pause menu"))
+    }
+
+    // AYS2: on-screen quick save/load-state buttons (seam) — user suggestion,
+    // like Aether/Nether. Float at top-leading (opposite the pause button),
+    // shown only during actual gameplay and only when the user opted in.
+    // Operates on a fixed "quick" slot; the full slot picker stays in the
+    // pause menu's Save States panel.
+    private static let quickStateSlot: Int = 1
+
+    @ViewBuilder
+    private func quickStateButtonsOverlay(isLandscape: Bool) -> some View {
+        let anyButtonEnabled = settings.showQuickStateButtons || settings.showFrameLimiterButton
+            || settings.showRecordButton
+        if anyButtonEnabled && !menuButtonHidden && overlayRoute == .hidden {
+            HStack(spacing: 10) {
+                if settings.showQuickStateButtons {
+                    // AYS2: user request — a floppy disk for Quick Save (the
+                    // universal "save" glyph) and a reload arrow for Quick Load.
+                    quickStateButton(label: "Quick Save", action: { quickSaveState() }) {
+                        FloppyDiskShape()
+                            .fill(.white, style: FillStyle(eoFill: true))
+                            .frame(width: 18, height: 18)
+                    }
+                    quickStateButton(label: "Quick Load", action: { quickLoadState() }) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 17, weight: .heavy))
+                            .foregroundStyle(.white)
+                    }
+                }
+                if settings.showFrameLimiterButton {
+                    // AYS2: user request — toggle the frame limiter (unlimited
+                    // speed) on screen, just like the save/load buttons.
+                    quickStateButton(label: "Toggle Frame Limiter", action: { toggleFrameLimiter() }) {
+                        Image(systemName: "speedometer")
+                            .font(.system(size: 17, weight: .heavy))
+                            .foregroundStyle(frameLimiterOff ? .yellow : .white)
+                    }
+                }
+                if settings.showRecordButton && recorder.isAvailable {
+                    // AYS2: user request — record gameplay from inside the app.
+                    quickStateButton(label: "Record Gameplay", action: { toggleRecording() }) {
+                        Image(systemName: recorder.isRecording ? "stop.circle.fill" : "record.circle")
+                            .font(.system(size: 17, weight: .heavy))
+                            .foregroundStyle(recorder.isRecording ? .red : .white)
+                    }
+                }
+            }
+            .padding(.top, isLandscape ? 8 : 4)
+            .padding(.leading, isLandscape ? 8 : 4)
+        }
+    }
+
+    private func toggleFrameLimiter() {
+        // Nominal (0) <-> Unlimited (3): "unlimited" removes the speed cap so the
+        // emulator runs as fast as it can. We reflect the resulting state so the
+        // icon shows whether the limiter is currently off.
+        let unlimited: Int32 = 3, nominal: Int32 = 0
+        let nowOff = ARMSX2Bridge.limiterMode() == unlimited
+        ARMSX2Bridge.setLimiterMode(nowOff ? nominal : unlimited)
+        frameLimiterOff = !nowOff
+        presentStatusMessage(frameLimiterOff
+            ? settings.localized("Frame limiter off (unlimited speed)")
+            : settings.localized("Frame limiter on"))
+    }
+
+    private func toggleRecording() {
+        recorder.toggle()
+    }
+
+    private func quickStateButton<Icon: View>(
+        label: String,
+        action: @escaping () -> Void,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
+        Button {
+            if settings.hapticFeedback { HapticManager.light.impactOccurred() }
+            action()
+        } label: {
+            icon()
+                .frame(width: 28, height: 28)
+                .padding(6)
+                .background(.black.opacity(0.28), in: Circle())
+        }
+        .accessibilityLabel(settings.localized(label))
+    }
+
+    private func quickSaveState() {
+        ARMSX2Bridge.saveState(toSlot: Self.quickStateSlot) { success in
+            Task { @MainActor in
+                presentStatusMessage(success
+                    ? "\(settings.localized("Quick saved")) (\(settings.localized("slot")) \(Self.quickStateSlot))"
+                    : settings.localized("Quick save failed. Try again after gameplay has fully loaded."))
+            }
+        }
+    }
+
+    private func quickLoadState() {
+        if ARMSX2Bridge.isRetroAchievementsHardcoreActive() {
+            presentStatusMessage(settings.localized("Hardcore mode blocks loading save states."))
+            return
+        }
+        ARMSX2Bridge.loadState(fromSlot: Self.quickStateSlot) { success in
+            Task { @MainActor in
+                presentStatusMessage(success
+                    ? "\(settings.localized("Quick loaded")) (\(settings.localized("slot")) \(Self.quickStateSlot))"
+                    : settings.localized("No quick save in this slot yet."))
+            }
+        }
     }
 
     @ViewBuilder
@@ -619,6 +846,112 @@ struct GameScreenView: View {
         lastControllerInputActive = false
     }
 
+    /// True while the controller's Menu (≡) or Options button is pressed. Snapshot
+    /// read only — does not install handlers, so it never conflicts with SDL/core.
+    private func controllerMenuButtonPressed() -> Bool {
+        for controller in GCController.controllers() {
+            guard let gamepad = controller.extendedGamepad else { continue }
+            if gamepad.buttonMenu.isPressed { return true }
+            if #available(iOS 13, *), let options = gamepad.buttonOptions, options.isPressed { return true }
+        }
+        return false
+    }
+
+    /// Snapshot of the combo action buttons (used while Menu is held): Cross → quick
+    /// save, Circle → quick load, R1 → toggle fast-forward.
+    private func hotkeyComboButtons() -> (save: Bool, load: Bool, fastForward: Bool) {
+        var save = false, load = false, fastForward = false
+        for controller in GCController.controllers() {
+            guard let gamepad = controller.extendedGamepad else { continue }
+            if gamepad.buttonA.isPressed { save = true }
+            if gamepad.buttonB.isPressed { load = true }
+            if gamepad.rightShoulder.isPressed { fastForward = true }
+        }
+        return (save, load, fastForward)
+    }
+
+    /// Polls the controller during gameplay for hotkeys (the most-requested
+    /// controller feature). Runs only while gameplay is active, a controller is
+    /// connected, and hotkeys are enabled.
+    ///
+    /// - Tap Menu/Options → open the pause menu (fires on release, so a combo can
+    ///   be distinguished from a plain press).
+    /// - Hold Menu + Cross → quick save state.
+    /// - Hold Menu + Circle → quick load state.
+    /// - Hold Menu + R1 → toggle fast-forward.
+    ///
+    /// A combo used during a Menu hold suppresses the pause-menu-open on release.
+    private func startHotkeyPollingIfNeeded() {
+        guard settings.openMenuWithControllerButton,
+              externalControllerConnected,
+              overlayRoute == .hidden,
+              hotkeyPollTimer == nil else { return }
+        lastHotkeyMenuPressed = controllerMenuButtonPressed()
+        resetHotkeyComboState()
+        hotkeyPollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+            Task { @MainActor in
+                guard settings.openMenuWithControllerButton,
+                      externalControllerConnected,
+                      overlayRoute == .hidden else {
+                    stopHotkeyPolling()
+                    return
+                }
+                let menuNow = controllerMenuButtonPressed()
+
+                if menuNow {
+                    // Menu just pressed: begin a fresh hold (no combo used yet).
+                    if !lastHotkeyMenuPressed {
+                        hotkeyComboUsed = false
+                        resetHotkeyComboState()
+                    }
+                    // Menu held: combo buttons act as hotkeys (edge-detected).
+                    let combo = hotkeyComboButtons()
+                    if combo.save && !lastComboSavePressed {
+                        hotkeyComboUsed = true
+                        if settings.hapticFeedback { HapticManager.light.impactOccurred() }
+                        quickSaveState()
+                    }
+                    if combo.load && !lastComboLoadPressed {
+                        hotkeyComboUsed = true
+                        if settings.hapticFeedback { HapticManager.light.impactOccurred() }
+                        quickLoadState()
+                    }
+                    if combo.fastForward && !lastComboFastForwardPressed {
+                        hotkeyComboUsed = true
+                        if settings.hapticFeedback { HapticManager.light.impactOccurred() }
+                        toggleFrameLimiter()
+                    }
+                    lastComboSavePressed = combo.save
+                    lastComboLoadPressed = combo.load
+                    lastComboFastForwardPressed = combo.fastForward
+                } else if lastHotkeyMenuPressed {
+                    // Menu just released: open the pause menu only if it was a plain
+                    // press (no combo fired during the hold).
+                    if !hotkeyComboUsed {
+                        if settings.hapticFeedback { HapticManager.light.impactOccurred() }
+                        overlayRoute = .paused
+                    }
+                    resetHotkeyComboState()
+                }
+                lastHotkeyMenuPressed = menuNow
+            }
+        }
+    }
+
+    private func resetHotkeyComboState() {
+        lastComboSavePressed = false
+        lastComboLoadPressed = false
+        lastComboFastForwardPressed = false
+    }
+
+    private func stopHotkeyPolling() {
+        hotkeyPollTimer?.invalidate()
+        hotkeyPollTimer = nil
+        lastHotkeyMenuPressed = false
+        hotkeyComboUsed = false
+        resetHotkeyComboState()
+    }
+
     /// Reads a non-destructive snapshot of every external controller's input state. Returns
     /// true if any face button, shoulder, trigger, d-pad direction, thumbstick, or the
     /// menu/options/L3/R3 buttons are currently active. Setting valueChangedHandler would
@@ -688,7 +1021,7 @@ struct GameScreenView: View {
         switch destination {
         case .perGame:
             openPerGameSettingsForCurrentGame()
-        case .speed, .saveStates, .cheats, .retroAchievements, .padLayout, .resetROM:
+        case .speed, .saveStates, .cheats, .retroAchievements, .padLayout, .resetROM, .guide:
             overlayRoute = .pausedPresenting(destination)
         }
     }
@@ -729,6 +1062,12 @@ struct GameScreenView: View {
         let connected = !GCController.controllers().isEmpty
         if externalControllerConnected != connected {
             externalControllerConnected = connected
+        }
+        // AYS2: a controller (dis)connecting mid-game starts/stops the hotkey poll.
+        if connected {
+            startHotkeyPollingIfNeeded()
+        } else {
+            stopHotkeyPolling()
         }
     }
 
@@ -1719,8 +2058,16 @@ private struct SaveStateSlotRow: View {
                     .frame(width: 96, height: 72)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("\(settings.localized("Slot")) \(info.slot)")
-                        .font(.headline)
+                    // AYS2: mark the reserved auto-save slot so it's clearly
+                    // distinguishable from manual slots when auto-save is on.
+                    if settings.autoSaveIntervalMinutes > 0 && info.slot == AppState.autoSaveSlot {
+                        Text("\(settings.localized("Auto-Save")) (\(settings.localized("Slot")) \(info.slot))")
+                            .font(.headline)
+                            .foregroundStyle(.orange)
+                    } else {
+                        Text("\(settings.localized("Slot")) \(info.slot)")
+                            .font(.headline)
+                    }
 
                     if info.occupied {
                         if let modifiedDate = info.modifiedDate {

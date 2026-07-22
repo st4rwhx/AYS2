@@ -5,6 +5,7 @@ import Foundation
 import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 
 struct CoverGameInfo: Sendable {
     let name: String
@@ -24,7 +25,10 @@ struct CoverDownloadSummary: Sendable {
 final class CoverStore: @unchecked Sendable {
     static let shared = CoverStore()
 
-    static let defaultCoverURLTemplate = "https://raw.githubusercontent.com/xlenore/ps2-covers/main/covers/default/${serial}.jpg"
+    // AYS2: default to the 3D box renders from xlenore/ps2-covers; the flat 2D
+    // covers are the automatic fallback for games that have no 3D render.
+    static let defaultCoverURLTemplate = "https://raw.githubusercontent.com/xlenore/ps2-covers/main/covers/3d/${serial}.png"
+    static let fallback2DCoverURLTemplate = "https://raw.githubusercontent.com/xlenore/ps2-covers/main/covers/default/${serial}.jpg"
 
     static let imageExtensions: [String] = ["jpg", "jpeg", "png", "webp", "heic", "heif"]
     static let coverContentTypes: [UTType] = {
@@ -104,7 +108,19 @@ final class CoverStore: @unchecked Sendable {
         }
 
         isDownloadingCovers = true
-        defer { isDownloadingCovers = false }
+        // AYS2: a bulk download (adding a whole library at once) can run
+        // long enough to cross the device's auto-lock timeout with the user
+        // not touching the screen while it waits — that backgrounds the
+        // scene mid-operation, which is exactly the condition that leaves a
+        // delayed sheet/alert presentation stuck (see the RootView.swift/
+        // GameListView.swift presentMenuPanel fix). Disabling the idle timer
+        // for the duration removes the most likely trigger for that outright
+        // (seam/fix), rather than only guarding individual presentations.
+        UIApplication.shared.isIdleTimerDisabled = true
+        defer {
+            isDownloadingCovers = false
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
 
         var downloaded = 0
         var skipped = 0
@@ -275,9 +291,27 @@ final class CoverStore: @unchecked Sendable {
     }
 
     func buildCoverCandidateURLs(forGameName gameName: String, metadata: [String: String], template: String? = nil) -> [URL] {
-        let template = (template ?? coverURLTemplate).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !template.isEmpty else { return [] }
+        let primary = (template ?? coverURLTemplate).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !primary.isEmpty else { return [] }
 
+        // AYS2: try the active template (3D by default), then the flat 2D covers
+        // as a fallback — some games have no 3D render, so we degrade gracefully.
+        var templates = [primary]
+        let fallback = Self.fallback2DCoverURLTemplate
+        if !fallback.isEmpty, fallback != primary {
+            templates.append(fallback)
+        }
+
+        var rawURLs: [String] = []
+        for template in templates {
+            rawURLs.append(contentsOf: rawCoverCandidateStrings(forGameName: gameName, metadata: metadata, template: template))
+        }
+        return uniqueStrings(rawURLs)
+            .filter { !$0.contains("${") }
+            .compactMap(URL.init(string:))
+    }
+
+    private func rawCoverCandidateStrings(forGameName gameName: String, metadata: [String: String], template: String) -> [String] {
         let fileBase = displayName(forGameName: gameName)
         let title = metadata["title"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         let serial = metadata["serial"]?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -311,9 +345,7 @@ final class CoverStore: @unchecked Sendable {
             }
         }
 
-        return uniqueStrings(rawURLs)
-            .filter { !$0.contains("${") }
-            .compactMap(URL.init(string:))
+        return rawURLs
     }
 
     private func managedCoverDirectories() -> [URL] {
@@ -601,5 +633,29 @@ final class CoverStore: @unchecked Sendable {
             }
         }
         return result
+    }
+
+    /// Converts a raw PS2 serial (e.g. "SLUS-20312", the format
+    /// `GameList::Entry.serial` already produces) to the OPL-style
+    /// "SLUS_203.12" form used by other serial-keyed community databases
+    /// (GameSynopsisStore). Shared here since CoverStore already does this
+    /// exact conversion internally for cover-art candidate URLs. `nonisolated`
+    /// because it's a pure string computation — GameSynopsisStore (its own
+    /// actor, not MainActor) calls it directly without an actor hop.
+    nonisolated static func oplSerial(from rawSerial: String) -> String? {
+        let pattern = "^([A-Za-z]{4})[_-]?([0-9]{3})[._-]?([0-9]{2})"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(rawSerial.startIndex..<rawSerial.endIndex, in: rawSerial)
+        guard let match = regex.firstMatch(in: rawSerial, range: range),
+              match.numberOfRanges >= 4,
+              let prefixRange = Range(match.range(at: 1), in: rawSerial),
+              let firstRange = Range(match.range(at: 2), in: rawSerial),
+              let secondRange = Range(match.range(at: 3), in: rawSerial) else {
+            return nil
+        }
+        let prefix = String(rawSerial[prefixRange]).uppercased()
+        let first = String(rawSerial[firstRange])
+        let second = String(rawSerial[secondRange])
+        return "\(prefix)_\(first).\(second)"
     }
 }

@@ -140,14 +140,22 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		${CMAKE_SOURCE_DIR}/../swift/Views/RootView.swift
 		# AYS2: additive Swift sources (seam)
 		${CMAKE_SOURCE_DIR}/../swift/Views/DashboardView.swift
+		${CMAKE_SOURCE_DIR}/../swift/Views/GameHeroBackground.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/RetroKit.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/CommunityView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/DiscordLogoShape.swift
+		${CMAKE_SOURCE_DIR}/../swift/Views/FloppyDiskShape.swift
+		${CMAKE_SOURCE_DIR}/../swift/Views/WebView.swift
+		${CMAKE_SOURCE_DIR}/../swift/Views/GuideView.swift
+		${CMAKE_SOURCE_DIR}/../swift/Views/MenuControllerScope.swift
+		${CMAKE_SOURCE_DIR}/../swift/Views/FloatingTouchSticksView.swift
+		${CMAKE_SOURCE_DIR}/../swift/Views/EdgeTriggerZonesView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/TermsOfUseView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/SoundManager.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/CoreAccessStore.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/CoreAccessView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/BootSplashView.swift
+		${CMAKE_SOURCE_DIR}/../swift/Views/ShadeBoostPreviewView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/GameListView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/PerGameSettingsPanel.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/CoverThumbnailView.swift
@@ -193,9 +201,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		${CMAKE_SOURCE_DIR}/../swift/Models/ImportDocumentPicker.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/ShareSheet.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/CoverStore.swift
+		${CMAKE_SOURCE_DIR}/../swift/Models/GameSynopsisStore.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/PatchModels.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/PnachParser.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/PatchStore.swift
+		${CMAKE_SOURCE_DIR}/../swift/Models/HiddenGamesStore.swift
+		${CMAKE_SOURCE_DIR}/../swift/Models/PlayTimeStore.swift
+		${CMAKE_SOURCE_DIR}/../swift/Models/TurboStore.swift
+		${CMAKE_SOURCE_DIR}/../swift/Models/GyroAimStore.swift
+		${CMAKE_SOURCE_DIR}/../swift/Models/ScreenRecorderStore.swift
+		${CMAKE_SOURCE_DIR}/../swift/Models/GuideStore.swift
+		${CMAKE_SOURCE_DIR}/../swift/Models/MenuControllerInput.swift
+		${CMAKE_SOURCE_DIR}/../swift/Models/GameNameStore.swift
 	)
 
 	configure_file("${CMAKE_SOURCE_DIR}/Info.plist.in" "${CMAKE_BINARY_DIR}/Info.plist" @ONLY)
@@ -432,7 +449,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		"${CMAKE_SOURCE_DIR}/../assets/resources/RedumpDatabase.yaml"
 		"${CMAKE_SOURCE_DIR}/../assets/resources/patches.zip"
 		"${CMAKE_SOURCE_DIR}/../assets/resources/game_controller_db.txt"
+		# AYS2: bundled clip for the Shade Boost live preview (seam)
+		"${CMAKE_SOURCE_DIR}/../assets/resources/shadeboost_preview.gif"
 	)
+
+	# AYS2: SwiftUI-side shader (default Metal compile, unlike METAL_SHADERS
+	# below which the GS renderer loads by name at runtime) (seam)
+	target_sources(ARMSX2iOS PRIVATE "${CMAKE_SOURCE_DIR}/../swift/Shaders/ShadeBoostPreview.metal")
 
 	target_sources(ARMSX2iOS PRIVATE ${METAL_SHADERS} ${FONTS} ${IOS_SHADER_RESOURCES})
 	set_source_files_properties(${METAL_SHADERS} PROPERTIES

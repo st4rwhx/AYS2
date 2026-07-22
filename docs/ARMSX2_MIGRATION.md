@@ -34,7 +34,7 @@ mismatches = cascade of breakage).
 3. Keep SideStore distribution (unsigned IPA, versioned URL, source.json) + our CI.
 4. Keep JIT entitlements (StikDebug flow).
 
-### Phases (each: CI-green by me → device-test by user before relying on it)
+### Phases (each: CI-green in CI → device-test before relying on it)
 - **P1 – Baseline**: import ARMSX2 iOSv2.3.0 clean core, set bundle id
   `com.ayano.aysx2`, app name AYS2. Get CI to build an unsigned IPA.
   ✅ **DONE — CI GREEN on `7ea136d` (2026-07-14), 18.2 MB IPA produced.**
@@ -92,7 +92,7 @@ device-test it. Any red/staged commit is never the "ship" build.
   (Re-verify the `iso`/games dir in P2.)
 
 ## Practical note
-Full tree migration is a large, multi-build effort; CI (compile) verified by the
-assistant, runtime verified on-device by the user. Build #101 (`6465644`) stays the
+Full tree migration is a large, multi-build effort; CI verifies the compile,
+device-testing verifies runtime behavior. Build #101 (`6465644`) stays the
 installable build until the migrated tree is CI-green AND device-tested. Disk in a
 single session is limited — the ARMSX2 base may need a shallow/pinned checkout.

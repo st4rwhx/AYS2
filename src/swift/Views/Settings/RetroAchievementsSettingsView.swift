@@ -65,7 +65,7 @@ struct RetroAchievementsSettingsView: View {
                 Text(settings.localized("RetroAchievements"))
             } footer: {
                 Text(settings.localized(achievementsSupported ?
-                    "Uses the same achievements core as ARMSX2 Android. Login tokens are stored in ARMSX2's local config; passwords are not stored by this screen." :
+                    "Uses the same achievements core as ARMSX2 Android. Login tokens are stored in AYS2's local config; passwords are not stored by this screen." :
                     unavailableMessage))
             }
 

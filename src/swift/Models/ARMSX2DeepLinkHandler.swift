@@ -24,7 +24,7 @@ enum ARMSX2DeepLinkHandler {
             return true
         }
 
-        showMessage("Unsupported ARMSX2 link: \(url.absoluteString)")
+        showMessage("Unsupported AYS2 link: \(url.absoluteString)")
         NSLog("[ARMSX2 iOS DeepLink] unsupported url=%@", url.absoluteString)
         return true
     }
@@ -136,7 +136,7 @@ enum ARMSX2DeepLinkHandler {
 
         return [
             "schema": "com.armsx2.library.v1",
-            "app": "ARMSX2 iOS",
+            "app": "AYS2 iOS",
             "version": ARMSX2Bridge.buildVersion(),
             "generatedAt": ISO8601DateFormatter().string(from: Date()),
             "gameCount": games.count,
@@ -161,20 +161,22 @@ enum ARMSX2DeepLinkHandler {
 
     private static func launchGame(from url: URL) {
         guard let game = queryValue(["game", "iso", "file", "name"], in: url)?.removingPercentEncoding else {
-            showMessage("ARMSX2 launch link is missing a game filename.")
+            showMessage("AYS2 launch link is missing a game filename.")
             NSLog("[ARMSX2 iOS DeepLink] launch missing game url=%@", url.absoluteString)
             return
         }
 
         let available = Set(ARMSX2Bridge.availableISOs())
         guard available.contains(game) else {
-            showMessage("ARMSX2 could not find \(game).")
+            showMessage("AYS2 could not find \(game).")
             NSLog("[ARMSX2 iOS DeepLink] launch missing local game=%@", game)
             return
         }
 
         NSLog("[ARMSX2 iOS DeepLink] launching game=%@", game)
-        AppState.shared.bootGame(isoName: game)
+        // Mark as externally launched so "Quit to Launcher on game exit" can
+        // close the app back to the front-end instead of the library.
+        AppState.shared.bootGame(isoName: game, external: true)
     }
 
     private static func callbackURL(base: String, payload: String) -> URL? {

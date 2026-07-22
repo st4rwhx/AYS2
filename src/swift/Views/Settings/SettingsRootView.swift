@@ -102,6 +102,7 @@ struct SettingsRootView: View {
     @State private var noJITFallbackActive = ARMSX2Bridge.isNoJITFallbackActive()
     @State private var stikDebugOpenFailed = false
     @State private var stikDebugOpenInProgress = false
+    @State private var trollStoreOpenInProgress = false
 #if targetEnvironment(macCatalyst)
     @State private var selectedPane: SettingsPane? = .emulator
 #endif
@@ -125,18 +126,42 @@ struct SettingsRootView: View {
             Section {
                 jitStatusRow
 
+                // AYS2: LiveContainer/host-container installs (seam) — see the
+                // matching guard in EmulatorSettingsView.swift for why this
+                // button can't work from inside a container.
+                if AppInstallEnvironment.isLikelyExternalContainer {
+                    Text(settings.localized("Running inside a host container (e.g. LiveContainer): this button can't target the right process from in here. Set JIT Script to Universal in Emulator settings, then enable JIT from the container itself — hold AYS2 in its app list, open Settings, and turn on \"Launch with JIT\" (or run the matching script against the container, not AYS2, in StikDebug directly)."))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else {
+                    Button {
+                        stikDebugOpenInProgress = true
+                        stikDebugOpenFailed = false
+                        StikDebugLauncher.open(reason: "settings-root") { success in
+                            stikDebugOpenInProgress = false
+                            stikDebugOpenFailed = !success
+                            refreshJITStatus()
+                        }
+                    } label: {
+                        Label(settings.localized("Open StikDebug"), systemImage: "bolt.horizontal.circle")
+                    }
+                    .disabled(stikDebugOpenInProgress)
+                }
+
+                // AYS2: TrollStore is a separate sideloading method from
+                // StikDebug/AltStore (seam) — kept as its own explicit
+                // button rather than folded into the status row/badge
+                // above, which stays focused on StikDebug's own state.
                 Button {
-                    stikDebugOpenInProgress = true
-                    stikDebugOpenFailed = false
-                    StikDebugLauncher.open(reason: "settings-root") { success in
-                        stikDebugOpenInProgress = false
-                        stikDebugOpenFailed = !success
+                    trollStoreOpenInProgress = true
+                    StikDebugLauncher.openTrollStore(reason: "settings-root") { _ in
+                        trollStoreOpenInProgress = false
                         refreshJITStatus()
                     }
                 } label: {
-                    Label(settings.localized("Open StikDebug"), systemImage: "bolt.horizontal.circle")
+                    Label(settings.localized("Enable JIT via TrollStore"), systemImage: "bolt.horizontal.circle")
                 }
-                .disabled(stikDebugOpenInProgress)
+                .disabled(trollStoreOpenInProgress)
 
                 Text(settings.localized("JIT Access means iOS currently allows executable memory. Confirm the real runtime state in-game: the OSD should show EE:JIT, IOP:JIT, and VU:JIT. Match the StikDebug script to the JIT Script setting in Emulator settings."))
                     .font(.caption)
@@ -297,7 +322,7 @@ struct SettingsRootView: View {
 
     private var jitStatusSubtitle: String {
         if stikDebugOpenFailed {
-            return "Open StikDebug manually, then run the selected script and relaunch ARMSX2."
+            return "Open StikDebug manually, then run the selected script and relaunch AYS2."
         }
         if jitAvailable {
             return "Access is available. Confirm EE:JIT / IOP:JIT / VU:JIT in the in-game OSD. Current script: \(settings.jitScriptProtocol.label)."
@@ -379,7 +404,7 @@ private struct LanguageSettingsView: View {
                         Text(settings.localized(language.label)).tag(language)
                     }
                 }
-                Text(settings.localized("ARMSX2 iOS menus will use this language where available. Some emulator terms and debug messages may still appear in English."))
+                Text(settings.localized("AYS2 iOS menus will use this language where available. Some emulator terms and debug messages may still appear in English."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

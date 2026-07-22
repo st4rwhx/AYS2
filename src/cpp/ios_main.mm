@@ -580,6 +580,25 @@ static void ARMSX2EnsureIOSSpeedhackDefaults(SettingsInterface* si, const char* 
         si->Save();
 }
 
+// AYS2: PINE enabled by default on iOS (seam) — lets an external tool (MCP
+// debugger bridge, PINE-speaking memory/register inspector) attach to a
+// running instance without the user having to find a setting. PINE binds
+// PINE_DEFAULT_SLOT (28011) on INADDR_LOOPBACK only (pcsx2/PINE.cpp) — not
+// reachable from the network, and iOS app sandboxing means no other app on
+// the device can reach it either. Only sets the default the first time
+// (ContainsValue guard), so it never overrides an explicit user choice.
+static void ARMSX2EnsureIOSPINEDefault(SettingsInterface* si, const char* reason)
+{
+    if (!si)
+        return;
+    if (!si->ContainsValue("EmuCore", "EnablePINE")) {
+        si->SetBoolValue("EmuCore", "EnablePINE", true);
+        si->Save();
+        std::fprintf(stderr, "@@PINE_DEFAULT@@ reason=%s value=1\n", reason ? reason : "unknown");
+        std::fflush(stderr);
+    }
+}
+
 static bool ARMSX2RepairIOSARM64JITSettings(SettingsInterface* si, const char* reason)
 {
     if (!si)
@@ -1334,6 +1353,70 @@ static std::atomic<bool> s_requestVMBoot{false};     // signal VM thread to boot
 static std::mutex s_vmMutex;
 static std::condition_variable s_vmCV;
 static bool s_vmThreadCreated = false;               // guarded by s_vmMutex
+
+// AYS2: JIT keepalive (seam) — ported from ARMSX2 upstream's iOS JIT
+// resilience layer, then reworked after their own attempt at validating
+// during active gameplay (b8e94ea) was reverted (922772f) as "not working
+// correctly" (per upstream, no further detail available). iOS can revoke
+// CS_DEBUGGED mid-frame, not just while idle, which is exactly the case
+// skipping validation during gameplay cannot catch — so this keeps checking
+// during gameplay like their reverted attempt did, but changes two things
+// we believe caused it to misbehave, both defensive rather than confirmed
+// root causes since we could not get the real failure details:
+//  1. ValidateJITAlive's canary write now targets the tail of the JIT
+//     region instead of the head — real compiled code fills the region
+//     from the start forward, so the head is far more likely to be live,
+//     actively-executing code at the moment we write/restore a byte in it.
+//     This reduces, but does not provably eliminate, collision risk — a
+//     fully separate dedicated canary allocation would be provably safe
+//     but requires redoing the TXM/brk registration a second time, which
+//     we are not confident is safe to do without deeper upstream input.
+//  2. Requires 2 consecutive failed checks (24s apart) before forcing
+//     interpreter mode, so one transient/racy false positive doesn't
+//     needlessly degrade a healthy session.
+static dispatch_source_t s_jitKeepaliveTimer = nil;
+static int s_jitKeepaliveConsecutiveFailures = 0;
+
+static void ARMSX2StopJITKeepalive()
+{
+    if (s_jitKeepaliveTimer) {
+        dispatch_source_cancel(s_jitKeepaliveTimer);
+        s_jitKeepaliveTimer = nil;
+    }
+}
+
+static void ARMSX2StartJITKeepalive()
+{
+    if (s_jitKeepaliveTimer)
+        return;
+    dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0);
+    s_jitKeepaliveTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
+    // 1s leeway: this is a low-priority idle check, let the system coalesce
+    // it with other timers instead of waking the device on the dot.
+    dispatch_source_set_timer(s_jitKeepaliveTimer,
+        dispatch_time(DISPATCH_TIME_NOW, 12 * NSEC_PER_SEC), 12 * NSEC_PER_SEC, 1 * NSEC_PER_SEC);
+    dispatch_source_set_event_handler(s_jitKeepaliveTimer, ^{
+        // AYS2: checks during active gameplay too, not just idle — see the
+        // block comment above for why and what changed vs upstream's
+        // reverted attempt.
+        if (DarwinMisc::ValidateJITAlive()) {
+            s_jitKeepaliveConsecutiveFailures = 0;
+            return;
+        }
+        if (++s_jitKeepaliveConsecutiveFailures < 2) {
+            std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=0 action=defer consecutive=%d\n",
+                s_jitKeepaliveConsecutiveFailures);
+            std::fflush(stderr);
+            return;
+        }
+        DarwinMisc::iPSX2_FORCE_EE_INTERP = 1;
+        std::fprintf(stderr, "@@JIT_KEEPALIVE@@ alive=0 action=force_interp consecutive=%d\n",
+            s_jitKeepaliveConsecutiveFailures);
+        std::fflush(stderr);
+        ARMSX2StopJITKeepalive();
+    });
+    dispatch_resume(s_jitKeepaliveTimer);
+}
 
 struct CPUThreadTask
 {
@@ -3621,9 +3704,22 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
 
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)connectionOptions {
     if (![scene isKindOfClass:[UIWindowScene class]]) return;
-    
+
+    // AYS2: launch timing (seam) — the window doesn't become key/visible
+    // (and SwiftUI's boot splash can't render a frame) until this whole
+    // method returns, since everything here runs synchronously on the main
+    // thread. These checkpoints log wall-clock deltas so a slow launch can
+    // be pinpointed to a specific phase from the device log, instead of
+    // guessing blind — see @@LAUNCH_TIMING@@ lines in pcsx2_log.txt.
+    const CFAbsoluteTime armsx2LaunchT0 = CFAbsoluteTimeGetCurrent();
+#define ARMSX2_LAUNCH_MARK(phase) \
+    std::fprintf(stderr, "@@LAUNCH_TIMING@@ phase=%s t=%.3fs\n", (phase), CFAbsoluteTimeGetCurrent() - armsx2LaunchT0); \
+    std::fflush(stderr)
+
     UIWindowScene *windowScene = (UIWindowScene *)scene;
     
+    ARMSX2_LAUNCH_MARK("scene_connect_start");
+
     // --- SDL Initialization ---
     static bool s_initialized = false;
     if (!s_initialized) {
@@ -3635,7 +3731,8 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
         s_initialized = true;
     }
     ARMSX2InstallNativeGamepadDpadObserversOnMain();
-    
+    ARMSX2_LAUNCH_MARK("sdl_init_done");
+
     // --- Setup PCSX2 Environment ---
     // (Moved to AppDelegate)
     // We still need local variables if used below, but EmuFolders are global.
@@ -3708,6 +3805,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     }
     ARMSX2RepairIOSARM64JITSettings(s_settings_interface, "scene-connect");
     ARMSX2MigrateJITScriptProtocolForIOS(s_settings_interface, "scene-connect");
+    ARMSX2StartJITKeepalive(); // AYS2: seam — start once per app launch
     // One-time migration for existing INI (runs once, then conditions are false)
     if (!s_settings_interface->ContainsValue("SPU2/Output", "Backend")) {
         s_settings_interface->SetStringValue("SPU2/Output", "Backend", "SDL");
@@ -3732,10 +3830,11 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     }
     ARMSX2IOSSanitizeFolderSettings(s_settings_interface, dataRoot, "scene-connect");
     ARMSX2EnsureIOSSpeedhackDefaults(s_settings_interface, "scene-connect");
+    ARMSX2EnsureIOSPINEDefault(s_settings_interface, "scene-connect");
     ARMSX2SanitizeFrameLimiterConfig("scene-connect");
     ARMSX2ApplyIOSMultitapConfig("scene-connect");
     s_settings_interface->Save();
-    [self checkAndConfigureBIOS];
+    ARMSX2_LAUNCH_MARK("settings_interface_ready");
 
     // GS Renderer: Metal fixed on iOS. Only override if not already Metal.
 #if DEBUG
@@ -3750,6 +3849,17 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     s_settings_interface->Save();
 
     VMManager::Internal::LoadStartupSettings();
+    // AYS2: moved after LoadStartupSettings (seam/fix) — checkAndConfigureBIOS's
+    // fast path short-circuits on `!EmuConfig.BaseFilenames.Bios.empty()`, but
+    // EmuConfig isn't populated from settings until LoadStartupSettings runs.
+    // Called before it (as originally ordered), that check always saw an empty
+    // string and fell through to a full Documents-root directory scan on every
+    // single launch, even for a user with a BIOS already configured — multi-
+    // second startup delay scanning past potentially several GB-sized game
+    // files sitting in the same folder.
+    ARMSX2_LAUNCH_MARK("load_startup_settings_done");
+    [self checkAndConfigureBIOS];
+    ARMSX2_LAUNCH_MARK("check_and_configure_bios_done");
     if (!ARMSX2IOSRetroAchievementsHardcoreAvailable) {
         EmuConfig.Achievements.HardcoreMode = false;
     }
@@ -3758,16 +3868,18 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
     ARMSX2IOSApplyRetroAchievementsOverlayDefaults(s_settings_interface, "after-startup-settings");
     s_settings_interface->Save();
     VMManager::ApplySettings();
+    ARMSX2_LAUNCH_MARK("apply_settings_done");
     ARMSX2IOSLogMemoryCardConfig("scene-connect-after-apply-settings");
     ARMSX2_PostRetroAchievementsStateChanged();
-    
+
     // --- Create SDL Window ---
     Host::g_sdl_window = SDL_CreateWindow("PCSX2 iOS", 1280, 720, SDL_WINDOW_METAL | SDL_WINDOW_RESIZABLE);
     if (!Host::g_sdl_window) {
         Console.Error("Failed to create SDL window: %s", SDL_GetError());
         return;
     }
-    
+    ARMSX2_LAUNCH_MARK("sdl_window_created");
+
     // --- Attach UIWindow ---
     UIWindow *uiWindow = (__bridge UIWindow*)SDL_GetPointerProperty(SDL_GetWindowProperties(Host::g_sdl_window), SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER, NULL);
     if (uiWindow) {
@@ -3828,6 +3940,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
             }
             Console.WriteLn("[UI] SwiftUI menu attached (screen: %.0fx%.0f)",
                 rootVC.view.bounds.size.width, rootVC.view.bounds.size.height);
+            ARMSX2_LAUNCH_MARK("swiftui_menu_attached");
 
 }
     }
@@ -3933,6 +4046,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
         }
     }
 #endif
+#undef ARMSX2_LAUNCH_MARK
 }
 
 - (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)URLContexts {
@@ -4216,7 +4330,35 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
         std::fflush(stderr);
         ARMSX2ConfigureImGuiFonts("vm-thread");
         Console.WriteLn("[VM] VM Thread: CPUThreadInitialize (once)...");
-        if (!VMManager::Internal::CPUThreadInitialize()) {
+
+        // AYS2: boot watchdog (seam) — ported from ARMSX2 upstream's iOS JIT
+        // resilience layer. CPUThreadInitialize() allocates the JIT code
+        // regions (dual-map/TXM); if that hangs, this reports an error and
+        // returns to the menu instead of a silent black screen forever.
+        // shared_ptr (not a stack local captured by reference): the watchdog
+        // thread must never touch memory that a return below could destroy.
+        auto vmInitComplete = std::make_shared<std::atomic<bool>>(false);
+        std::thread bootWatchdog([vmInitComplete]() {
+            for (int i = 0; i < 150 && !vmInitComplete->load(std::memory_order_relaxed); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            if (!vmInitComplete->load(std::memory_order_relaxed)) {
+                std::fprintf(stderr, "@@BOOT_FAIL@@ reason=vm_init_timeout\n");
+                std::fflush(stderr);
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (s_rootVC)
+                        s_rootVC.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
+                    [[NSNotificationCenter defaultCenter]
+                        postNotificationName:@"ARMSX2iOSReturnToMenu" object:nil];
+                });
+                Host::ReportErrorAsync("JIT Init Timeout",
+                    "JIT memory setup took too long. Try Settings -> Emulator -> JIT Script -> Legacy, then relaunch.");
+            }
+        });
+        bootWatchdog.detach();
+
+        const bool cpuInitOk = VMManager::Internal::CPUThreadInitialize();
+        vmInitComplete->store(true, std::memory_order_relaxed);
+        if (!cpuInitOk) {
             std::fprintf(stderr, "@@BOOT_THREAD_INIT@@ ok=0\n");
             std::fflush(stderr);
             Console.Error("VM Thread: CPUThreadInitialize failed.");
@@ -4352,6 +4494,7 @@ INISettingsInterface* g_p44_settings_interface = nullptr;
 
             ARMSX2SanitizeFrameLimiterConfig("pre-vm-initialize");
             ARMSX2EnsureIOSSpeedhackDefaults(s_settings_interface, "pre-vm-initialize");
+            ARMSX2EnsureIOSPINEDefault(s_settings_interface, "pre-vm-initialize");
             ARMSX2RepairIOSARM64JITSettings(s_settings_interface, "pre-vm-initialize");
             ARMSX2MigrateJITScriptProtocolForIOS(s_settings_interface, "pre-vm-initialize");
             ARMSX2IOSSanitizeFolderSettings(s_settings_interface, EmuFolders::DataRoot, "pre-vm-initialize");

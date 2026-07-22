@@ -65,9 +65,21 @@ private enum PadLayoutNameAction: Identifiable {
     }
 }
 
+// AYS2: user suggestion — snap-to-grid for the on-screen button layout editor
+// (like PPSSPP). A drag's final normalized position is rounded to a fixed grid
+// so buttons line up cleanly. Enabled per-editor-session via the options menu
+// (persisted in UserDefaults); read at drag-end time by both draggable views.
+private let padEditorSnapToGridKey = "ARMSX2iOSPadEditorSnapToGrid"
+private let padEditorSnapStep: CGFloat = 0.05 // 20-cell grid on each axis
+private func padEditorSnapEnabled() -> Bool { UserDefaults.standard.bool(forKey: padEditorSnapToGridKey) }
+private func padEditorSnapped(_ value: CGFloat) -> CGFloat {
+    (value / padEditorSnapStep).rounded() * padEditorSnapStep
+}
+
 struct PadLayoutEditView: View {
     let onDismiss: () -> Void
     let context: PadLayoutEditorContext
+    @AppStorage(padEditorSnapToGridKey) private var snapToGrid = false
     @State private var settings = SettingsStore.shared
     @State private var layout = PadLayoutStore.shared
     @State private var layoutPresets = PadLayoutPresetStore.shared
@@ -539,6 +551,12 @@ struct PadLayoutEditView: View {
                 visibilityMenuItem(id: "circle", label: "O")
                 visibilityMenuItem(id: "triangle", label: "Triangle")
                 visibilityMenuItem(id: "square", label: "Square")
+            }
+
+            Section("Grid") {
+                Toggle(isOn: $snapToGrid) {
+                    Label("Snap to Grid", systemImage: "grid")
+                }
             }
 
             Section("Reset") {
@@ -1042,8 +1060,12 @@ private struct DraggableGroup: View {
                     let hasMoved = abs(v.translation.width) > 1 || abs(v.translation.height) > 1
                     hasPushedSnapshot = false
                     if hasMoved {
-                        let newX = (pos.x * areaW + v.translation.width) / areaW
-                        let newY = (pos.y * areaH + v.translation.height) / areaH
+                        var newX = (pos.x * areaW + v.translation.width) / areaW
+                        var newY = (pos.y * areaH + v.translation.height) / areaH
+                        if padEditorSnapEnabled() {
+                            newX = padEditorSnapped(newX)
+                            newY = padEditorSnapped(newY)
+                        }
                         updatePosition(x: newX.clamped(0, 1), y: newY.clamped(0, 1))
                     }
                     dragOffset = .zero
@@ -1209,8 +1231,12 @@ private struct DraggableButton: View {
                     let hasMoved = abs(v.translation.width) > 1 || abs(v.translation.height) > 1
                     hasPushedSnapshot = false
                     if hasMoved {
-                        let newX = (pos.x * areaW + v.translation.width) / areaW
-                        let newY = (pos.y * areaH + v.translation.height) / areaH
+                        var newX = (pos.x * areaW + v.translation.width) / areaW
+                        var newY = (pos.y * areaH + v.translation.height) / areaH
+                        if padEditorSnapEnabled() {
+                            newX = padEditorSnapped(newX)
+                            newY = padEditorSnapped(newY)
+                        }
                         updatePosition(x: newX.clamped(0, 1), y: newY.clamped(0, 1))
                     }
                     dragOffset = .zero

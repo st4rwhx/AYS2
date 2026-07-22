@@ -2367,6 +2367,33 @@ static std::string ARMSX2PerGameSettingsPath(const std::string& serial, u32 crc)
     return [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
 }
 
+// AYS2: in-app diagnostic log management (seam) — user suggestion to clear
+// and export logs from within the app. The unified sink is stderr/stdout
+// freopen'd to Documents/pcsx2_log.txt (see ios_main.mm). Reading a snapshot
+// while it's being appended to is fine; clearing must go through the live
+// stream, so we re-freopen with "w" (truncate) rather than deleting the file
+// out from under the still-open FILE* (which would leave a sparse file since
+// the stream keeps its old offset). freopen reuses the same descriptor, so
+// the crash-handler FD registered on fileno(stderr) stays valid.
++ (nonnull NSString *)diagnosticLogPath {
+    return [[self documentsDirectory] stringByAppendingPathComponent:@"pcsx2_log.txt"];
+}
+
++ (long long)diagnosticLogSize {
+    NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:[self diagnosticLogPath] error:nil];
+    return attrs ? (long long)[attrs fileSize] : 0;
+}
+
++ (void)clearDiagnosticLog {
+    NSString *path = [self diagnosticLogPath];
+    if (freopen([path fileSystemRepresentation], "w", stderr) != NULL) {
+        dup2(fileno(stderr), fileno(stdout));
+        setvbuf(stderr, NULL, _IONBF, 0);
+        setvbuf(stdout, NULL, _IONBF, 0);
+        fprintf(stderr, "@@LOG_CLEARED@@ by user\n");
+    }
+}
+
 + (nonnull NSArray<NSString *> *)availableISOs {
 	NSFileManager *fm = [NSFileManager defaultManager];
 	NSMutableSet *seen = [NSMutableSet set];
@@ -2575,6 +2602,49 @@ static std::string ARMSX2PerGameSettingsPath(const std::string& serial, u32 crc)
 
     ARMSX2ApplyPerGameSettingsOverrides(result, serial, crc);
     return result;
+}
+
+// AYS2: per-game settings profile export/import (seam) — user request, à la
+// AethersX2. Each game's per-game overrides live in a single .ini keyed by
+// serial/crc; exporting hands back that file, importing copies an .ini onto it.
+// The profile applies the next time the game boots (same as editing per-game
+// settings), so no live reload is attempted here.
++ (nullable NSString *)perGameSettingsFilePathForISO:(nonnull NSString *)isoName {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForISO(isoName, &serial, &crc))
+        return nil;
+
+    const std::string path = ARMSX2PerGameSettingsPath(serial, crc);
+    if (!FileSystem::FileExists(path.c_str()))
+        return nil;
+
+    return [NSString stringWithUTF8String:path.c_str()];
+}
+
++ (BOOL)importPerGameSettingsFromFile:(nonnull NSString *)sourcePath forISO:(nonnull NSString *)isoName {
+    std::string serial;
+    u32 crc = 0;
+    if (!ARMSX2PerGameIdentityForISO(isoName, &serial, &crc)) {
+        NSLog(@"[ARMSX2Bridge] Per-game settings import rejected: cannot resolve %@", isoName);
+        return NO;
+    }
+
+    NSError* error = nil;
+    NSString* contents = [NSString stringWithContentsOfFile:sourcePath encoding:NSUTF8StringEncoding error:&error];
+    if (!contents) {
+        NSLog(@"[ARMSX2Bridge] Per-game settings import failed to read %@: %@", sourcePath, error);
+        return NO;
+    }
+
+    const std::string destination = ARMSX2PerGameSettingsPath(serial, crc);
+    if (![contents writeToFile:[NSString stringWithUTF8String:destination.c_str()]
+                    atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
+        NSLog(@"[ARMSX2Bridge] Per-game settings import failed to write %s: %@", destination.c_str(), error);
+        return NO;
+    }
+
+    return YES;
 }
 
 + (void)setGameSettingsForISO:(nonnull NSString *)isoName
