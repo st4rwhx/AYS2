@@ -116,10 +116,34 @@ struct VirtualPadSettingsView: View {
             // AYS2: floating touch sticks (seam) — screen-half analog sticks.
             Section {
                 Toggle(settings.localized("Floating Touch Sticks"), isOn: $settings.floatingTouchSticks)
+
+                if settings.floatingTouchSticks {
+                    Toggle(settings.localized("Left Floating Stick"), isOn: $settings.floatingStickLeftEnabled)
+                    Toggle(settings.localized("Right Floating Stick"), isOn: $settings.floatingStickRightEnabled)
+                    Toggle(settings.localized("Swap Floating Sticks (L ↔ R)"), isOn: $settings.floatingSticksSwapped)
+                    Toggle(settings.localized("Hide Fixed On-Screen Sticks"), isOn: $settings.hideFixedAnalogSticks)
+
+                    Picker(settings.localized("Floating Stick Skin"), selection: $settings.floatingStickSkin) {
+                        ForEach(FloatingStickSkin.allCases) { skin in
+                            Text(settings.localized(skin.title)).tag(skin.rawValue)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(settings.localized("Floating Stick Size"))
+                            Spacer()
+                            Text(String(format: "%.0f%%", Double(settings.floatingStickScale) * 100))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Slider(value: $settings.floatingStickScale, in: 0.6...1.8, step: 0.05)
+                    }
+                }
             } header: {
                 Text(settings.localized("Touch Sticks"))
             } footer: {
-                Text(settings.localized("The left half of the game area becomes the left analog stick and the right half the right stick — a stick appears wherever your thumb lands and follows it. Best used with the on-screen sticks hidden in the pad editor. Works alongside the face buttons and a physical controller."))
+                Text(settings.localized("The left half of the game area becomes the left analog stick and the right half the right stick — a stick appears wherever your thumb lands and follows it. Hide either half, swap which stick each half drives, resize them, pick a skin, and hide the fixed on-screen sticks so they don't get in the way. Works alongside the face buttons and a physical controller."))
             }
 
             Section(settings.localized("Gameplay")) {

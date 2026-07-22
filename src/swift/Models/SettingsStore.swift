@@ -889,6 +889,45 @@ final class SettingsStore: @unchecked Sendable {
         didSet { guard !suppressINIWrites else { return }
             ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "FloatingTouchSticks", value: floatingTouchSticks) }
     }
+    // AYS2: user request — per-half enable for the floating touch sticks, so the
+    // player can keep only the left, only the right, or neither.
+    var floatingStickLeftEnabled: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "FloatingStickLeftEnabled", value: floatingStickLeftEnabled) }
+    }
+    var floatingStickRightEnabled: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "FloatingStickRightEnabled", value: floatingStickRightEnabled) }
+    }
+    // AYS2: user request — swap the floating sticks so the left half drives the
+    // RIGHT analog stick and the right half drives the LEFT stick.
+    var floatingSticksSwapped: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "FloatingSticksSwapped", value: floatingSticksSwapped) }
+    }
+    // AYS2: user request — size of the floating touch sticks (ring radius scale).
+    var floatingStickScale: Float {
+        didSet {
+            let clamped = Self.clampedFloatingStickScale(floatingStickScale)
+            guard abs(floatingStickScale - clamped) <= 0.001 else {
+                floatingStickScale = clamped
+                return
+            }
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIFloat("ARMSX2iOS/Pad", key: "FloatingStickScale", value: floatingStickScale)
+        }
+    }
+    // AYS2: user request — visual style of the floating touch sticks.
+    var floatingStickSkin: Int {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIInt("ARMSX2iOS/Pad", key: "FloatingStickSkin", value: Int32(floatingStickSkin)) }
+    }
+    // AYS2: user request — hide the fixed on-screen analog sticks (lstick/rstick)
+    // so they don't clutter the pad while the floating touch sticks are in use.
+    var hideFixedAnalogSticks: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "HideFixedAnalogSticks", value: hideFixedAnalogSticks) }
+    }
     var invertLeftStickX: Bool {
         didSet { guard !suppressINIWrites else { return }
             ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", value: invertLeftStickX) }
@@ -1338,6 +1377,12 @@ final class SettingsStore: @unchecked Sendable {
         showFrameLimiterButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", defaultValue: false)
         showRecordButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowRecordButton", defaultValue: false)
         floatingTouchSticks = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingTouchSticks", defaultValue: false)
+        floatingStickLeftEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingStickLeftEnabled", defaultValue: true)
+        floatingStickRightEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingStickRightEnabled", defaultValue: true)
+        floatingSticksSwapped = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingSticksSwapped", defaultValue: false)
+        floatingStickScale = Self.clampedFloatingStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickScale", defaultValue: 1.0))
+        floatingStickSkin = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Pad", key: "FloatingStickSkin", defaultValue: 0))
+        hideFixedAnalogSticks = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "HideFixedAnalogSticks", defaultValue: false)
         invertLeftStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", defaultValue: false)
         invertLeftStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", defaultValue: false)
         invertRightStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", defaultValue: false)
@@ -1543,6 +1588,12 @@ final class SettingsStore: @unchecked Sendable {
         showFrameLimiterButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowFrameLimiterButton", defaultValue: false)
         showRecordButton = ARMSX2Bridge.getINIBool("ARMSX2iOS/UI", key: "ShowRecordButton", defaultValue: false)
         floatingTouchSticks = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingTouchSticks", defaultValue: false)
+        floatingStickLeftEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingStickLeftEnabled", defaultValue: true)
+        floatingStickRightEnabled = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingStickRightEnabled", defaultValue: true)
+        floatingSticksSwapped = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingSticksSwapped", defaultValue: false)
+        floatingStickScale = Self.clampedFloatingStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickScale", defaultValue: 1.0))
+        floatingStickSkin = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Pad", key: "FloatingStickSkin", defaultValue: 0))
+        hideFixedAnalogSticks = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "HideFixedAnalogSticks", defaultValue: false)
         invertLeftStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", defaultValue: false)
         invertLeftStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", defaultValue: false)
         invertRightStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", defaultValue: false)
@@ -1610,6 +1661,11 @@ final class SettingsStore: @unchecked Sendable {
     private static func clampedAnalogStickScale(_ scale: Float) -> Float {
         guard scale.isFinite else { return 1.0 }
         return min(max(scale, 0.8), 1.6)
+    }
+
+    static func clampedFloatingStickScale(_ scale: Float) -> Float {
+        guard scale.isFinite else { return 1.0 }
+        return min(max(scale, 0.6), 1.8)
     }
 
     private static func clampedLibraryBackgroundDim(_ value: Double) -> Double {

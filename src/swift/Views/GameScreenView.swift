@@ -215,6 +215,19 @@ struct GameScreenView: View {
         }
     }
 
+    // AYS2: floating touch sticks configured from user settings (per-half enable,
+    // swap L/R, size, skin). Shared by the landscape and portrait layouts.
+    private var floatingSticks: some View {
+        FloatingTouchSticksView(
+            enabled: overlayRoute == .hidden,
+            leftEnabled: settings.floatingStickLeftEnabled,
+            rightEnabled: settings.floatingStickRightEnabled,
+            swapped: settings.floatingSticksSwapped,
+            scale: CGFloat(settings.floatingStickScale),
+            skin: FloatingStickSkin(rawValue: settings.floatingStickSkin) ?? .glow
+        )
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -230,7 +243,7 @@ struct GameScreenView: View {
                         // AYS2: floating touch sticks (seam) — screen-half analog
                         // sticks, below the pad so face buttons keep priority.
                         if settings.floatingTouchSticks {
-                            FloatingTouchSticksView(enabled: overlayRoute == .hidden)
+                            floatingSticks
                         }
                         if effectiveVirtualPadVisible {
                             VirtualControllerView(
@@ -263,7 +276,7 @@ struct GameScreenView: View {
                             // AYS2: floating touch sticks over the portrait game viewport (seam).
                             .overlay {
                                 if settings.floatingTouchSticks {
-                                    FloatingTouchSticksView(enabled: overlayRoute == .hidden)
+                                    floatingSticks
                                 }
                             }
 

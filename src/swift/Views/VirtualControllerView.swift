@@ -989,10 +989,10 @@ struct VirtualControllerView: View {
             if isVisible("start") {
                 placedPadButton(id: "start", label: "START", w: 48, h: 22, btn: .start, landscape: true, areaW: w, areaH: h)
             }
-            if isVisible("lstick") {
+            if isVisible("lstick") && !settings.hideFixedAnalogSticks {
                 placedStick(id: "lstick", isLeft: true, landscape: true, areaW: w, areaH: h)
             }
-            if isVisible("rstick") {
+            if isVisible("rstick") && !settings.hideFixedAnalogSticks {
                 placedStick(id: "rstick", isLeft: false, landscape: true, areaW: w, areaH: h)
             }
         }
@@ -1070,10 +1070,10 @@ struct VirtualControllerView: View {
                     }
                 }
 
-                if isVisible("lstick") {
+                if isVisible("lstick") && !settings.hideFixedAnalogSticks {
                     placedStick(id: "lstick", isLeft: true, landscape: false, areaW: cW, areaH: cH)
                 }
-                if isVisible("rstick") {
+                if isVisible("rstick") && !settings.hideFixedAnalogSticks {
                     placedStick(id: "rstick", isLeft: false, landscape: false, areaW: cW, areaH: cH)
                 }
             }
