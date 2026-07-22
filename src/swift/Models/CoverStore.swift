@@ -25,7 +25,10 @@ struct CoverDownloadSummary: Sendable {
 final class CoverStore: @unchecked Sendable {
     static let shared = CoverStore()
 
-    static let defaultCoverURLTemplate = "https://raw.githubusercontent.com/xlenore/ps2-covers/main/covers/default/${serial}.jpg"
+    // AYS2: default to the 3D box renders from xlenore/ps2-covers; the flat 2D
+    // covers are the automatic fallback for games that have no 3D render.
+    static let defaultCoverURLTemplate = "https://raw.githubusercontent.com/xlenore/ps2-covers/main/covers/3d/${serial}.png"
+    static let fallback2DCoverURLTemplate = "https://raw.githubusercontent.com/xlenore/ps2-covers/main/covers/default/${serial}.jpg"
 
     static let imageExtensions: [String] = ["jpg", "jpeg", "png", "webp", "heic", "heif"]
     static let coverContentTypes: [UTType] = {
@@ -288,9 +291,27 @@ final class CoverStore: @unchecked Sendable {
     }
 
     func buildCoverCandidateURLs(forGameName gameName: String, metadata: [String: String], template: String? = nil) -> [URL] {
-        let template = (template ?? coverURLTemplate).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !template.isEmpty else { return [] }
+        let primary = (template ?? coverURLTemplate).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !primary.isEmpty else { return [] }
 
+        // AYS2: try the active template (3D by default), then the flat 2D covers
+        // as a fallback — some games have no 3D render, so we degrade gracefully.
+        var templates = [primary]
+        let fallback = Self.fallback2DCoverURLTemplate
+        if !fallback.isEmpty, fallback != primary {
+            templates.append(fallback)
+        }
+
+        var rawURLs: [String] = []
+        for template in templates {
+            rawURLs.append(contentsOf: rawCoverCandidateStrings(forGameName: gameName, metadata: metadata, template: template))
+        }
+        return uniqueStrings(rawURLs)
+            .filter { !$0.contains("${") }
+            .compactMap(URL.init(string:))
+    }
+
+    private func rawCoverCandidateStrings(forGameName gameName: String, metadata: [String: String], template: String) -> [String] {
         let fileBase = displayName(forGameName: gameName)
         let title = metadata["title"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         let serial = metadata["serial"]?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -324,9 +345,7 @@ final class CoverStore: @unchecked Sendable {
             }
         }
 
-        return uniqueStrings(rawURLs)
-            .filter { !$0.contains("${") }
-            .compactMap(URL.init(string:))
+        return rawURLs
     }
 
     private func managedCoverDirectories() -> [URL] {
