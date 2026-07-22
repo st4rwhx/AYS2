@@ -224,7 +224,11 @@ struct GameScreenView: View {
             rightEnabled: settings.floatingStickRightEnabled,
             swapped: settings.floatingSticksSwapped,
             scale: CGFloat(settings.floatingStickScale),
-            skin: FloatingStickSkin(rawValue: settings.floatingStickSkin) ?? .glow
+            skin: FloatingStickSkin(rawValue: settings.floatingStickSkin) ?? .glow,
+            deadzone: settings.floatingStickDeadzone,
+            sensitivity: settings.floatingStickSensitivity,
+            opacity: CGFloat(settings.floatingStickOpacity),
+            edgeHaptic: settings.floatingStickEdgeHaptic
         )
     }
 
@@ -244,6 +248,16 @@ struct GameScreenView: View {
                         // sticks, below the pad so face buttons keep priority.
                         if settings.floatingTouchSticks {
                             floatingSticks
+                        }
+                        // AYS2: landscape edge trigger zones (seam) — press the
+                        // left/right edges to hold L/R. Above the sticks so its
+                        // strips win, but it passes non-edge touches through.
+                        if settings.edgeTriggerZones {
+                            EdgeTriggerZonesView(
+                                enabled: overlayRoute == .hidden,
+                                mode: settings.edgeTriggerMode,
+                                haptics: settings.edgeTriggerHaptics
+                            )
                         }
                         if effectiveVirtualPadVisible {
                             VirtualControllerView(

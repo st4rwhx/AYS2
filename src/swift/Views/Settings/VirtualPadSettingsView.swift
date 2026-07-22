@@ -139,11 +139,64 @@ struct VirtualPadSettingsView: View {
                         }
                         Slider(value: $settings.floatingStickScale, in: 0.6...1.8, step: 0.05)
                     }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(settings.localized("Floating Stick Opacity"))
+                            Spacer()
+                            Text(String(format: "%.0f%%", Double(settings.floatingStickOpacity) * 100))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Slider(value: $settings.floatingStickOpacity, in: 0.2...1.0, step: 0.05)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(settings.localized("Floating Stick Dead Zone"))
+                            Spacer()
+                            Text(String(format: "%.0f%%", Double(settings.floatingStickDeadzone) * 100))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Slider(value: $settings.floatingStickDeadzone, in: 0.0...0.4, step: 0.01)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(settings.localized("Floating Stick Sensitivity"))
+                            Spacer()
+                            Text(String(format: "%.2f×", Double(settings.floatingStickSensitivity)))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Slider(value: $settings.floatingStickSensitivity, in: 0.5...2.0, step: 0.05)
+                    }
+
+                    Toggle(settings.localized("Edge Haptic Feedback"), isOn: $settings.floatingStickEdgeHaptic)
                 }
             } header: {
                 Text(settings.localized("Touch Sticks"))
             } footer: {
-                Text(settings.localized("The left half of the game area becomes the left analog stick and the right half the right stick — a stick appears wherever your thumb lands and follows it. Hide either half, swap which stick each half drives, resize them, pick a skin, and hide the fixed on-screen sticks so they don't get in the way. Works alongside the face buttons and a physical controller."))
+                Text(settings.localized("The left half of the game area becomes the left analog stick and the right half the right stick — a stick appears wherever your thumb lands and follows it. Hide either half, swap which stick each half drives, resize them, tune opacity / dead zone / sensitivity, pick a skin, and hide the fixed on-screen sticks so they don't get in the way. Works alongside the face buttons and a physical controller."))
+            }
+
+            // AYS2: user request — landscape edge trigger zones (grip triggers).
+            Section {
+                Toggle(settings.localized("Edge Trigger Zones (Landscape)"), isOn: $settings.edgeTriggerZones)
+
+                if settings.edgeTriggerZones {
+                    Picker(settings.localized("Trigger Buttons"), selection: $settings.edgeTriggerMode) {
+                        Text(settings.localized("L1 / R1")).tag(0)
+                        Text(settings.localized("L2 / R2")).tag(1)
+                        Text(settings.localized("Both (L1+L2 / R1+R2)")).tag(2)
+                    }
+                    Toggle(settings.localized("Trigger Vibration"), isOn: $settings.edgeTriggerHaptics)
+                }
+            } header: {
+                Text(settings.localized("Edge Triggers"))
+            } footer: {
+                Text(settings.localized("In landscape, press the left screen edge to hold L and the right edge to hold R — like squeezing the grip triggers of a phone gamepad, with a vibration on press and release. The zones sit on the upper edges so your index fingers rest there naturally; the rest of the screen still works for the sticks and buttons."))
             }
 
             Section(settings.localized("Gameplay")) {

@@ -928,6 +928,51 @@ final class SettingsStore: @unchecked Sendable {
         didSet { guard !suppressINIWrites else { return }
             ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "HideFixedAnalogSticks", value: hideFixedAnalogSticks) }
     }
+    // AYS2: mobile-friendly tuning for the floating touch sticks.
+    var floatingStickDeadzone: Float {
+        didSet {
+            let clamped = min(max(floatingStickDeadzone, 0.0), 0.4)
+            guard abs(floatingStickDeadzone - clamped) <= 0.001 else { floatingStickDeadzone = clamped; return }
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIFloat("ARMSX2iOS/Pad", key: "FloatingStickDeadzone", value: floatingStickDeadzone)
+        }
+    }
+    var floatingStickSensitivity: Float {
+        didSet {
+            let clamped = min(max(floatingStickSensitivity, 0.5), 2.0)
+            guard abs(floatingStickSensitivity - clamped) <= 0.001 else { floatingStickSensitivity = clamped; return }
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIFloat("ARMSX2iOS/Pad", key: "FloatingStickSensitivity", value: floatingStickSensitivity)
+        }
+    }
+    var floatingStickOpacity: Float {
+        didSet {
+            let clamped = min(max(floatingStickOpacity, 0.2), 1.0)
+            guard abs(floatingStickOpacity - clamped) <= 0.001 else { floatingStickOpacity = clamped; return }
+            guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIFloat("ARMSX2iOS/Pad", key: "FloatingStickOpacity", value: floatingStickOpacity)
+        }
+    }
+    var floatingStickEdgeHaptic: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "FloatingStickEdgeHaptic", value: floatingStickEdgeHaptic) }
+    }
+    // AYS2: user request — landscape edge trigger zones. Pressing the left screen
+    // edge holds L, the right edge holds R, with a haptic buzz — like the grip
+    // triggers on a phone controller. INI-backed under ARMSX2iOS/Pad.
+    var edgeTriggerZones: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "EdgeTriggerZones", value: edgeTriggerZones) }
+    }
+    // 0 = L1/R1, 1 = L2/R2, 2 = both (L1+L2 / R1+R2)
+    var edgeTriggerMode: Int {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIInt("ARMSX2iOS/Pad", key: "EdgeTriggerMode", value: Int32(edgeTriggerMode)) }
+    }
+    var edgeTriggerHaptics: Bool {
+        didSet { guard !suppressINIWrites else { return }
+            ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "EdgeTriggerHaptics", value: edgeTriggerHaptics) }
+    }
     var invertLeftStickX: Bool {
         didSet { guard !suppressINIWrites else { return }
             ARMSX2Bridge.setINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", value: invertLeftStickX) }
@@ -1383,6 +1428,13 @@ final class SettingsStore: @unchecked Sendable {
         floatingStickScale = Self.clampedFloatingStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickScale", defaultValue: 1.0))
         floatingStickSkin = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Pad", key: "FloatingStickSkin", defaultValue: 0))
         hideFixedAnalogSticks = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "HideFixedAnalogSticks", defaultValue: false)
+        floatingStickDeadzone = min(max(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickDeadzone", defaultValue: 0.06), 0.0), 0.4)
+        floatingStickSensitivity = min(max(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickSensitivity", defaultValue: 1.0), 0.5), 2.0)
+        floatingStickOpacity = min(max(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickOpacity", defaultValue: 1.0), 0.2), 1.0)
+        floatingStickEdgeHaptic = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingStickEdgeHaptic", defaultValue: false)
+        edgeTriggerZones = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "EdgeTriggerZones", defaultValue: false)
+        edgeTriggerMode = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Pad", key: "EdgeTriggerMode", defaultValue: 0))
+        edgeTriggerHaptics = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "EdgeTriggerHaptics", defaultValue: true)
         invertLeftStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", defaultValue: false)
         invertLeftStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", defaultValue: false)
         invertRightStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", defaultValue: false)
@@ -1594,6 +1646,13 @@ final class SettingsStore: @unchecked Sendable {
         floatingStickScale = Self.clampedFloatingStickScale(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickScale", defaultValue: 1.0))
         floatingStickSkin = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Pad", key: "FloatingStickSkin", defaultValue: 0))
         hideFixedAnalogSticks = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "HideFixedAnalogSticks", defaultValue: false)
+        floatingStickDeadzone = min(max(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickDeadzone", defaultValue: 0.06), 0.0), 0.4)
+        floatingStickSensitivity = min(max(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickSensitivity", defaultValue: 1.0), 0.5), 2.0)
+        floatingStickOpacity = min(max(ARMSX2Bridge.getINIFloat("ARMSX2iOS/Pad", key: "FloatingStickOpacity", defaultValue: 1.0), 0.2), 1.0)
+        floatingStickEdgeHaptic = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "FloatingStickEdgeHaptic", defaultValue: false)
+        edgeTriggerZones = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "EdgeTriggerZones", defaultValue: false)
+        edgeTriggerMode = Int(ARMSX2Bridge.getINIInt("ARMSX2iOS/Pad", key: "EdgeTriggerMode", defaultValue: 0))
+        edgeTriggerHaptics = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "EdgeTriggerHaptics", defaultValue: true)
         invertLeftStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickX", defaultValue: false)
         invertLeftStickY = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertLeftStickY", defaultValue: false)
         invertRightStickX = ARMSX2Bridge.getINIBool("ARMSX2iOS/Pad", key: "InvertRightStickX", defaultValue: false)

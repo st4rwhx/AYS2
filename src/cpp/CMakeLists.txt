@@ -149,6 +149,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 		${CMAKE_SOURCE_DIR}/../swift/Views/GuideView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/MenuControllerScope.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/FloatingTouchSticksView.swift
+		${CMAKE_SOURCE_DIR}/../swift/Views/EdgeTriggerZonesView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Views/TermsOfUseView.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/SoundManager.swift
 		${CMAKE_SOURCE_DIR}/../swift/Models/CoreAccessStore.swift

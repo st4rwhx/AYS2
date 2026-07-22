@@ -51,6 +51,10 @@ struct FloatingTouchSticksView: View {
     var swapped: Bool = false
     var scale: CGFloat = 1.0
     var skin: FloatingStickSkin = .glow
+    var deadzone: Float = 0.06
+    var sensitivity: Float = 1.0
+    var opacity: CGFloat = 1.0
+    var edgeHaptic: Bool = false
 
     var body: some View {
         TouchSticksRepresentable(
@@ -59,7 +63,11 @@ struct FloatingTouchSticksView: View {
             rightEnabled: rightEnabled,
             swapped: swapped,
             scale: scale,
-            skin: skin
+            skin: skin,
+            deadzone: deadzone,
+            sensitivity: sensitivity,
+            opacity: opacity,
+            edgeHaptic: edgeHaptic
         )
     }
 }
@@ -71,6 +79,10 @@ private struct TouchSticksRepresentable: UIViewRepresentable {
     var swapped: Bool
     var scale: CGFloat
     var skin: FloatingStickSkin
+    var deadzone: Float
+    var sensitivity: Float
+    var opacity: CGFloat
+    var edgeHaptic: Bool
 
     func makeUIView(context: Context) -> TouchSticksUIView {
         let view = TouchSticksUIView()
@@ -89,20 +101,29 @@ private struct TouchSticksRepresentable: UIViewRepresentable {
         view.rightEnabled = rightEnabled
         view.swapped = swapped
         view.stickScale = scale
+        view.deadzone = deadzone
+        view.sensitivity = sensitivity
+        view.edgeHaptic = edgeHaptic
+        view.alpha = opacity
         view.applySkin(skin)
     }
 }
 
 private final class TouchSticksUIView: UIView {
     private let baseRadius: CGFloat = 62
-    private let deadzone: Float = 0.06
 
     var leftEnabled = true
     var rightEnabled = true
     var swapped = false
+    var deadzone: Float = 0.06
+    var sensitivity: Float = 1.0
+    var edgeHaptic = false
     var stickScale: CGFloat = 1.0 { didSet { if abs(oldValue - stickScale) > 0.001 { relayoutActive() } } }
     private var skin: FloatingStickSkin = .glow
     private var skinApplied = false
+    private var leftAtEdge = false
+    private var rightAtEdge = false
+    private let edgeHaptics = UIImpactFeedbackGenerator(style: .rigid)
 
     private var maxRadius: CGFloat { baseRadius * stickScale }
 
@@ -125,6 +146,7 @@ private final class TouchSticksUIView: UIView {
             layer.addSublayer(l)
         }
         applySkin(.glow)
+        edgeHaptics.prepare()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -280,10 +302,12 @@ private final class TouchSticksUIView: UIView {
         for touch in touches {
             if touch === leftTouch {
                 leftTouch = nil
+                leftAtEdge = false
                 hideStick(ring: leftRing, knob: leftKnob)
                 setStick(forLeftHalf: true, x: 0, y: 0)
             } else if touch === rightTouch {
                 rightTouch = nil
+                rightAtEdge = false
                 hideStick(ring: rightRing, knob: rightKnob)
                 setStick(forLeftHalf: false, x: 0, y: 0)
             }
@@ -304,10 +328,22 @@ private final class TouchSticksUIView: UIView {
         let clamped = min(dist, maxRadius)
         moveKnob(knob, to: CGPoint(x: origin.x + cos(angle) * clamped,
                                    y: origin.y + sin(angle) * clamped))
+
+        // Optional haptic tick the moment the thumb reaches the ring's edge.
+        if edgeHaptic {
+            let atEdge = dist >= maxRadius - 0.5
+            let wasAtEdge = isLeftHalf ? leftAtEdge : rightAtEdge
+            if atEdge && !wasAtEdge { edgeHaptics.impactOccurred(intensity: 0.6) }
+            if isLeftHalf { leftAtEdge = atEdge } else { rightAtEdge = atEdge }
+        }
+
+        // Normalize, apply deadzone, then scale by sensitivity (clamped to unit).
         var nx = Float(cos(angle) * clamped / maxRadius)   // right positive
         var ny = Float(sin(angle) * clamped / maxRadius)   // down positive (matches on-screen stick)
         if abs(nx) < deadzone { nx = 0 }
         if abs(ny) < deadzone { ny = 0 }
+        nx = max(-1, min(1, nx * sensitivity))
+        ny = max(-1, min(1, ny * sensitivity))
         setStick(forLeftHalf: isLeftHalf, x: nx, y: ny)
     }
 
@@ -326,11 +362,13 @@ private final class TouchSticksUIView: UIView {
     func releaseAll() {
         if leftTouch != nil {
             leftTouch = nil
+            leftAtEdge = false
             hideStick(ring: leftRing, knob: leftKnob)
             setStick(forLeftHalf: true, x: 0, y: 0)
         }
         if rightTouch != nil {
             rightTouch = nil
+            rightAtEdge = false
             hideStick(ring: rightRing, knob: rightKnob)
             setStick(forLeftHalf: false, x: 0, y: 0)
         }
