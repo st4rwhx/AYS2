@@ -16,7 +16,17 @@
 import SwiftUI
 import UIKit
 
-struct FloatingTouchSticksView: UIViewRepresentable {
+/// Public entry point (a plain SwiftUI View) so the private UIKit types below are
+/// never exposed to the generated Objective-C header — an internal UIView
+/// subclass emitted there breaks the C++ bridge (which has no UIKit import).
+struct FloatingTouchSticksView: View {
+    var enabled: Bool
+    var body: some View {
+        TouchSticksRepresentable(enabled: enabled)
+    }
+}
+
+private struct TouchSticksRepresentable: UIViewRepresentable {
     var enabled: Bool
 
     func makeUIView(context: Context) -> TouchSticksUIView {
@@ -31,7 +41,7 @@ struct FloatingTouchSticksView: UIViewRepresentable {
     }
 }
 
-final class TouchSticksUIView: UIView {
+private final class TouchSticksUIView: UIView {
     private let maxRadius: CGFloat = 62
     private let deadzone: Float = 0.06
 
